@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "This API key cannot access the requested model.",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": null
+  }
+}

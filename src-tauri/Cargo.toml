@@ -1,0 +1,15 @@
+[package]
+name = "ruth-ide"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [".", "crates/meta"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+ruth-meta = { path = "crates/meta" }

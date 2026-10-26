@@ -1,0 +1,40 @@
+# Dependencias
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Compilados y salidas
+dist/
+dist-ssr/
+target/
+src-tauri/target/
+*.node
+
+# Secretos y entorno local (nunca commitear claves)
+.env
+.env.*
+*.pem
+*.key
+
+# Tauri / bundling
+src-tauri/WixTools/
+*.AppImage
+*.deb
+*.rpm
+*.dmg
+*.msi
+*.exe
+
+# Editores y sistema
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Registros
+logs/
+*.log

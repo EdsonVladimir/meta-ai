@@ -1,0 +1,195 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #5c5c5c;
+  --line: #d8d8d8;
+  --surface: #f4f4f4;
+  --accent: #0b5cad;
+  --accent-fg: #ffffff;
+  --ok: #1c7a3d;
+  --warn: #9a6200;
+  --err: #b3261e;
+  --idle: #6d6d6d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161616;
+    --fg: #e8e8e8;
+    --muted: #a8a8a8;
+    --line: #3a3a3a;
+    --surface: #202020;
+    --accent: #4da3ff;
+    --accent-fg: #0a0a0a;
+    --ok: #5fce7d;
+    --warn: #e0a63c;
+    --err: #f27a72;
+    --idle: #9a9a9a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+
+.page {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 3rem;
+}
+
+.brand h1 {
+  font-size: 1.75rem;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.brand p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 38rem;
+}
+
+.panel {
+  margin-top: 2rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.5rem;
+  background: var(--bg);
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.panel-head h2 {
+  font-size: 1.125rem;
+  margin: 0;
+}
+
+.status {
+  margin: 0;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--idle);
+  flex: none;
+}
+
+.dot-unconfigured,
+.dot-checking {
+  background: var(--warn);
+}
+
+.dot-available {
+  background: var(--ok);
+}
+
+.dot-error {
+  background: var(--err);
+}
+
+.facts {
+  margin: 1.25rem 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.facts > div {
+  display: grid;
+  grid-template-columns: 11rem 1fr;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  border-radius: 6px;
+}
+
+.facts dt {
+  margin: 0;
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.primary {
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.6rem 1.25rem;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primary:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-bottom: 0;
+}
+
+.notice {
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.925rem;
+}
+
+.result {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.result h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.result p {
+  margin: 0.5rem 0;
+}
+
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}

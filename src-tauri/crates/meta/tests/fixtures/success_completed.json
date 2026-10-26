@@ -1,0 +1,31 @@
+{
+  "id": "resp_fixture_001",
+  "object": "response",
+  "created_at": 1792177394,
+  "status": "completed",
+  "model": "muse-spark-1.3",
+  "output": [
+    {
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Ruth IDE listo",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 18,
+    "input_tokens_details": { "cached_tokens": 0 },
+    "output_tokens": 42,
+    "output_tokens_details": { "reasoning_tokens": 38 },
+    "total_tokens": 60
+  }
+}
