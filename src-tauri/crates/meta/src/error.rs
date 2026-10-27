@@ -46,11 +46,7 @@ pub struct MetaError {
 const MAX_MESSAGE_CHARS: usize = 280;
 
 impl MetaError {
-    pub fn new(
-        kind: MetaErrorKind,
-        message: impl Into<String>,
-        retryable: bool,
-    ) -> Self {
+    pub fn new(kind: MetaErrorKind, message: impl Into<String>, retryable: bool) -> Self {
         Self {
             kind,
             message: sanitize(message.into()),

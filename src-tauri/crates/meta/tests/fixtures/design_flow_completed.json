@@ -1,0 +1,19 @@
+{
+  "id": "resp_design_flow_001",
+  "object": "response",
+  "status": "completed",
+  "model": "muse-spark-1.3",
+  "output": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"title\": \"Confirmar venta con stock\", \"nodes\": [{\"id\": \"inicio\", \"kind\": \"start\", \"label\": \"Venta creada\", \"requirements\": [\"req-3\"]}, {\"id\": \"revisar\", \"kind\": \"step\", \"label\": \"Revisar stock disponible\", \"requirements\": [\"req-3\"]}, {\"id\": \"decision\", \"kind\": \"decision\", \"label\": \"¿Hay stock suficiente?\", \"requirements\": []}, {\"id\": \"fin\", \"kind\": \"end\", \"label\": \"Venta confirmada\", \"requirements\": []}], \"edges\": [{\"from\": \"inicio\", \"to\": \"revisar\"}, {\"from\": \"revisar\", \"to\": \"decision\"}, {\"from\": \"decision\", \"to\": \"fin\", \"label\": \"sí\"}, {\"from\": \"decision\", \"to\": \"revisar\", \"label\": \"no\"}], \"explanation\": \"El flujo revisa el stock antes de confirmar y reintenta si falta.\", \"questions\": [\"¿Cuántos reintentos se permiten?\"]}"
+        }
+      ]
+    }
+  ],
+  "usage": {"input_tokens": 900, "output_tokens": 400, "total_tokens": 1300}
+}

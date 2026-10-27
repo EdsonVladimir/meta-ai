@@ -55,6 +55,17 @@ pub fn build_request_body(model: &str) -> serde_json::Value {
 
 /// Interpreta una respuesta HTTP 2xx. `secret` se usa solo para redactar.
 pub fn parse_success(status: u16, body: &str, secret: &str) -> Result<ParsedResponse, MetaError> {
+    parse_success_capped(status, body, secret, MAX_TEXT_CHARS)
+}
+
+/// Variante con tope de texto propio: la generación estructurada necesita
+/// mucho más que los 500 caracteres de la prueba mínima.
+pub fn parse_success_capped(
+    status: u16,
+    body: &str,
+    secret: &str,
+    max_chars: usize,
+) -> Result<ParsedResponse, MetaError> {
     if !(200..300).contains(&status) {
         return Err(MetaError::new(
             MetaErrorKind::InvalidResponse,
@@ -83,7 +94,7 @@ pub fn parse_success(status: u16, body: &str, secret: &str) -> Result<ParsedResp
     }
 
     let text = extract_output_text(&json)
-        .map(|t| truncate(&redact(&t, secret), MAX_TEXT_CHARS))
+        .map(|t| truncate(&redact(&t, secret), max_chars))
         .unwrap_or_default();
     if !text.is_empty() {
         let model = json
@@ -212,12 +223,7 @@ fn extract_usage(json: &serde_json::Value) -> Option<TokenUsage> {
 /// Clasifica un estado HTTP de error según la tabla oficial de errores
 /// (401 autenticación, 402 facturación, 429 rate limit, 5xx servidor...).
 /// `retry_after` es el valor crudo de la cabecera `Retry-After`, si existe.
-pub fn parse_error(
-    status: u16,
-    body: &str,
-    retry_after: Option<&str>,
-    secret: &str,
-) -> MetaError {
+pub fn parse_error(status: u16, body: &str, retry_after: Option<&str>, secret: &str) -> MetaError {
     let detail = api_error_detail(body, secret);
     let (kind, base, retryable) = match status {
         401 => (
@@ -324,7 +330,10 @@ mod tests {
         assert_eq!(parsed.model, "muse-spark-1.3");
         assert!(!parsed.truncated);
         let usage = parsed.usage.expect("usage");
-        assert_eq!((usage.input_tokens, usage.output_tokens, usage.total_tokens), (18, 42, 60));
+        assert_eq!(
+            (usage.input_tokens, usage.output_tokens, usage.total_tokens),
+            (18, 42, 60)
+        );
     }
 
     #[test]
@@ -350,7 +359,11 @@ mod tests {
         assert_eq!(err.kind, MetaErrorKind::Incomplete);
         assert!(!err.retryable);
         assert_eq!(err.status, Some(200));
-        assert!(err.message.contains("límite de salida"), "mensaje: {}", err.message);
+        assert!(
+            err.message.contains("límite de salida"),
+            "mensaje: {}",
+            err.message
+        );
         assert!(
             err.message.contains(&MAX_OUTPUT_TOKENS.to_string()),
             "mensaje: {}",

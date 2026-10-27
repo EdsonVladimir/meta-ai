@@ -2,6 +2,7 @@
 // aquí, solo cuando la persona pulsa "Probar conexión". `getMetaStatus` es
 // una lectura local del entorno del proceso nativo, sin red.
 import { invoke } from "@tauri-apps/api/core";
+import { isTauriEnvironment } from "../../lib/env";
 import {
   asErrorKind,
   type ConnectionTestOk,
@@ -10,11 +11,7 @@ import {
   type MetaTestError,
 } from "./types";
 
-export function isTauriEnvironment(): boolean {
-  if (typeof window === "undefined") return false;
-  const w = window as unknown as Record<string, unknown>;
-  return "__TAURI_INTERNALS__" in w || "__TAURI__" in w;
-}
+export { isTauriEnvironment };
 
 export async function getMetaStatus(): Promise<MetaStatus> {
   return invoke<MetaStatus>("meta_status");

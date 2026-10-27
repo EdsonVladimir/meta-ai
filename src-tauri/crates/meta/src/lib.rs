@@ -6,7 +6,9 @@
 //!
 //! Este crate no depende de Tauri ni de React: es dominio + adaptador puros.
 
+pub mod design;
 pub mod error;
+pub mod generation;
 pub mod protocol;
 
 use std::fmt;
@@ -16,11 +18,11 @@ use serde::Serialize;
 
 use crate::error::redact;
 use crate::protocol::{
-    build_request_body, classify_transport, parse_error, parse_success, TokenUsage,
-    DEFAULT_MODEL, REQUEST_TIMEOUT_SECS, RESPONSES_URL,
+    build_request_body, classify_transport, parse_error, parse_success, TokenUsage, DEFAULT_MODEL,
+    REQUEST_TIMEOUT_SECS, RESPONSES_URL,
 };
 
-pub use crate::error::{MetaError, MetaErrorKind, sanitize, truncate};
+pub use crate::error::{sanitize, truncate, MetaError, MetaErrorKind};
 
 /// Nombre de la variable de entorno con la clave de Meta.
 pub const API_KEY_ENV: &str = "META_API_KEY";

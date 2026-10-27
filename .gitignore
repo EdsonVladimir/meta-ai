@@ -38,3 +38,9 @@ Thumbs.db
 # Registros
 logs/
 *.log
+
+# Bases SQLite de desarrollo (la base real vive en app-data, fuera del repo)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal

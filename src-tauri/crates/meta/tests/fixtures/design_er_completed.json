@@ -1,0 +1,19 @@
+{
+  "id": "resp_design_er_001",
+  "object": "response",
+  "status": "completed",
+  "model": "muse-spark-1.3",
+  "output": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"title\": \"Ventas y stock\", \"entities\": [{\"name\": \"VENTA\", \"attributes\": [{\"name\": \"id\", \"key\": true}, {\"name\": \"estado\", \"key\": false}], \"requirements\": [\"req-3\"]}, {\"name\": \"LINEA\", \"attributes\": [{\"name\": \"id\", \"key\": true}, {\"name\": \"cantidad\", \"key\": false}], \"requirements\": []}], \"relations\": [{\"from\": \"VENTA\", \"to\": \"LINEA\", \"label\": \"contiene\", \"from_card\": \"1\", \"to_card\": \"N\"}], \"explanation\": \"Una venta agrupa líneas con cantidades.\", \"questions\": []}"
+        }
+      ]
+    }
+  ],
+  "usage": {"input_tokens": 800, "output_tokens": 350, "total_tokens": 1150}
+}

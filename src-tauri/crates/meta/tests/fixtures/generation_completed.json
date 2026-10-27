@@ -1,0 +1,29 @@
+{
+  "id": "resp_fixture_gen_001",
+  "object": "response",
+  "created_at": 1792177394,
+  "status": "completed",
+  "model": "muse-spark-1.3",
+  "output": [
+    {
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"proposals\": [{\"temp_id\": \"p1\", \"title\": \"Confirmar venta descuenta stock\", \"description\": \"Al confirmar una venta, el stock de cada producto se reduce en la cantidad vendida.\", \"acceptance\": [\"Confirmar con stock suficiente reduce el stock\", \"Confirmar sin stock suficiente se rechaza con aviso\"], \"assumptions\": [\"El stock se gestiona por producto, sin lotes\"]}, {\"temp_id\": \"p2\", \"title\": \"Reservar antes de confirmar\", \"description\": \"Una venta puede reservar stock antes de confirmarse y liberar la reserva al cancelarse.\", \"acceptance\": [\"Reservar bloquea las unidades\", \"Cancelar libera la reserva\"], \"assumptions\": []}], \"questions\": [\"¿Las reservas caducan solas tras un tiempo?\"]}",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 812,
+    "output_tokens": 388,
+    "total_tokens": 1200
+  }
+}
