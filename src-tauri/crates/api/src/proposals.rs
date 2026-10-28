@@ -19,7 +19,7 @@
 
 use ruth_core::application::Store;
 use ruth_core::domain::{
-    AgentId, ArtifactType, Content, CoreError, ModuleId, ProjectId, VersionId,
+    AgentId, ArtifactId, ArtifactType, Content, CoreError, ModuleId, ProjectId, VersionId,
 };
 use ruth_meta::generation::{
     GenerationContextItem, ValidatedGeneration, MAX_ACCEPTANCE_ITEMS, MAX_ASSUMPTION_ITEMS,
@@ -72,12 +72,19 @@ pub fn snapshot_context(
     if store.project(&project).is_none() {
         return Err(CoreError::ProjectNotFound { project }.into());
     }
-    if store.module(&module).is_none() {
+    let Some(module_ref) = store.module(&module) else {
         return Err(CoreError::ModuleNotFound { module }.into());
+    };
+    if module_ref.archived() {
+        return Err(CoreError::ArchivedModule { module }.into());
     }
     let mut items = Vec::new();
     for artifact in store.artifacts_of(&project, &module) {
         if artifact.artifact_type() != ArtifactType::Requirement {
+            continue;
+        }
+        // Los archivados no se envían como contexto: están fuera del trabajo.
+        if artifact.archived() {
             continue;
         }
         let Some(current) = store.current_version(artifact.id()) else {
@@ -103,11 +110,18 @@ pub fn context_preview(
             .into_iter()
             .map(|item| {
                 let chars = item.content.chars().count();
+                // El título vigente es solo presentación de la vista previa;
+                // la foto registrada (versiones exactas) no cambia.
+                let title = ArtifactId::new(item.artifact_id.clone())
+                    .ok()
+                    .and_then(|id| store.artifact(&id))
+                    .and_then(|a| a.title().map(str::to_string));
                 GenerationContextPreview {
                     artifact_id: item.artifact_id,
                     version_id: item.version_id,
                     chars,
                     excerpt: excerpt(&item.content),
+                    title,
                 }
             })
             .collect(),
@@ -151,6 +165,11 @@ pub fn record_generation(
     db: &DbActor,
     input: RecordInput,
 ) -> Result<GenerationDto, ApiError> {
+    // El módulo pudo archivarse durante la red: revalidar antes de registrar.
+    let module = ModuleId::new(input.module_id.clone())?;
+    if store.module(&module).is_some_and(|m| m.archived()) {
+        return Err(CoreError::ArchivedModule { module }.into());
+    }
     let mut ids_draft = ids.clone();
     let id = ids_draft.generation();
     let generation = StoredGeneration {

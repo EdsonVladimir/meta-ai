@@ -211,6 +211,7 @@ impl ProjectDto {
     fn from_project(project: &Project) -> Self {
         Self {
             id: project.id().as_str().to_string(),
+            name: project.name().to_string(),
         }
     }
 }
@@ -220,6 +221,8 @@ impl ModuleDto {
         Self {
             id: module.id().as_str().to_string(),
             project_id: module.project().as_str().to_string(),
+            name: module.name().to_string(),
+            archived: module.archived(),
         }
     }
 }
@@ -234,8 +237,11 @@ impl ArtifactDto {
                 ArtifactType::Requirement => "requirement",
                 ArtifactType::Flow => "flow",
                 ArtifactType::DataModel => "data_model",
+                ArtifactType::Mockup => "mockup",
             }
             .to_string(),
+            title: artifact.title().map(str::to_string),
+            archived: artifact.archived(),
         }
     }
 }

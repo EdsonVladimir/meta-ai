@@ -39,6 +39,7 @@ id_type!(ModuleId, "module");
 id_type!(ArtifactId, "artifact");
 id_type!(VersionId, "version");
 id_type!(BaselineId, "baseline");
+id_type!(DeliveryId, "delivery");
 id_type!(HumanId, "human");
 id_type!(AgentId, "agent");
 

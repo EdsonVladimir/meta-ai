@@ -101,6 +101,11 @@ impl ProposalLog {
         Ok(())
     }
 
+    /// Todas las generaciones, en orden de registro. Solo lectura.
+    pub fn all(&self) -> &[StoredGeneration] {
+        &self.generations
+    }
+
     pub fn generation(&self, id: &str) -> Option<&StoredGeneration> {
         self.generations.iter().find(|g| g.id == id)
     }

@@ -18,7 +18,7 @@ use std::sync::Mutex;
 
 use ruth_api::IdGen;
 use ruth_core::application::Store;
-use ruth_store::{DbActor, DesignLog, ProposalLog};
+use ruth_store::{BaselineMetaLog, DbActor, DesignLog, LayoutLog, ProposalLog};
 
 pub struct AppState {
     pub db_path: PathBuf,
@@ -28,17 +28,21 @@ pub struct AppState {
     pub inflight: Mutex<HashSet<String>>,
 }
 
+/// Contenido del estado listo. Vive en un `Box` dentro del enum para no
+/// mover cientos de bytes cada vez que se inspecciona el estado.
+pub struct ReadyState {
+    pub store: Store,
+    pub ids: IdGen,
+    pub db: DbActor,
+    pub proposals: ProposalLog,
+    pub designs: DesignLog,
+    pub baseline_meta: BaselineMetaLog,
+    pub layouts: LayoutLog,
+}
+
 pub enum AppStateInner {
-    Ready {
-        store: Store,
-        ids: IdGen,
-        db: DbActor,
-        proposals: ProposalLog,
-        designs: DesignLog,
-    },
-    Unavailable {
-        message: String,
-    },
+    Ready(Box<ReadyState>),
+    Unavailable { message: String },
 }
 
 impl AppState {
@@ -49,16 +53,20 @@ impl AppState {
         db: DbActor,
         proposals: ProposalLog,
         designs: DesignLog,
+        baseline_meta: BaselineMetaLog,
+        layouts: LayoutLog,
     ) -> Self {
         Self {
             db_path,
-            inner: Mutex::new(AppStateInner::Ready {
+            inner: Mutex::new(AppStateInner::Ready(Box::new(ReadyState {
                 store,
                 ids,
                 db,
                 proposals,
                 designs,
-            }),
+                baseline_meta,
+                layouts,
+            }))),
             inflight: Mutex::new(HashSet::new()),
         }
     }

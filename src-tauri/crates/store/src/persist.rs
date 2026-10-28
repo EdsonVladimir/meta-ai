@@ -11,11 +11,14 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 use ruth_core::application::{Snapshot, Store};
 use ruth_core::domain::{
     Approval, Artifact, ArtifactId, ArtifactType, Baseline, BaselineId, Content, CoreError, Date,
-    HumanId, Module, ModuleId, Project, ProjectId, Version, VersionId,
+    DeliveryId, HumanId, Module, ModuleId, Name, Project, ProjectId, TitleChange, Version,
+    VersionId, WorkDelivery,
 };
 
+use crate::baseline_meta::{BaselineMeta, BaselineMetaLog};
 use crate::design::{DesignLog, StoredDesignGeneration, StoredDesignProposal};
 use crate::error::StoreError;
+use crate::layout::LayoutLog;
 use crate::proposals::{ProposalLog, ProposalState, StoredGeneration, StoredProposal};
 
 fn invalid(message: impl Into<String>) -> StoreError {
@@ -55,15 +58,21 @@ fn save_domain(
     store: &Store,
     next_id: u64,
 ) -> Result<(), StoreError> {
+    // Orden de borrado hijo→padre: `baselines` referencia a `projects`,
+    // así que debe vaciarse antes que él (hasta el hito 9 la tabla estaba
+    // siempre vacía y el orden erróneo nunca se notó).
     for table in [
         "baseline_entries",
+        "baselines",
+        "work_delivery_entries",
+        "work_deliveries",
         "approvals",
         "version_sources",
         "versions",
+        "title_history",
         "artifacts",
         "modules",
         "projects",
-        "baselines",
     ] {
         tx.execute(&format!("DELETE FROM {table}"), [])
             .map_err(|e| StoreError::convert(path, e))?;
@@ -71,24 +80,31 @@ fn save_domain(
     let mut pending_sources: Vec<(VersionId, usize, VersionId)> = Vec::new();
     for project in store.projects() {
         tx.execute(
-            "INSERT INTO projects(id) VALUES (?)",
-            [project.id().as_str()],
+            "INSERT INTO projects(id, name) VALUES (?, ?)",
+            [project.id().as_str(), project.name()],
         )
         .map_err(|e| StoreError::convert(path, e))?;
         for module in store.modules_of(project.id()) {
             tx.execute(
-                "INSERT INTO modules(id, project_id) VALUES (?, ?)",
-                [module.id().as_str(), project.id().as_str()],
+                "INSERT INTO modules(id, project_id, name, archived) VALUES (?, ?, ?, ?)",
+                rusqlite::params![
+                    module.id().as_str(),
+                    project.id().as_str(),
+                    module.name(),
+                    i64::from(module.archived())
+                ],
             )
             .map_err(|e| StoreError::convert(path, e))?;
             for artifact in store.artifacts_of(project.id(), module.id()) {
                 tx.execute(
-                    "INSERT INTO artifacts(id, project_id, module_id, kind) VALUES (?, ?, ?, ?)",
-                    [
+                    "INSERT INTO artifacts(id, project_id, module_id, kind, title, archived) VALUES (?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![
                         artifact.id().as_str(),
                         project.id().as_str(),
                         module.id().as_str(),
                         artifact_kind(artifact.artifact_type()),
+                        artifact.title(),
+                        i64::from(artifact.archived())
                     ],
                 )
                 .map_err(|e| StoreError::convert(path, e))?;
@@ -146,12 +162,60 @@ fn save_domain(
         )
         .map_err(|e| StoreError::convert(path, e))?;
         for (artifact, version) in baseline.entries() {
+            let title = baseline.title_of(artifact).flatten();
             tx.execute(
-                "INSERT INTO baseline_entries(baseline_id, artifact_id, version_id) VALUES (?, ?, ?)",
-                [baseline.id().as_str(), artifact.as_str(), version.as_str()],
+                "INSERT INTO baseline_entries(baseline_id, artifact_id, version_id, title) VALUES (?, ?, ?, ?)",
+                rusqlite::params![
+                    baseline.id().as_str(),
+                    artifact.as_str(),
+                    version.as_str(),
+                    title,
+                ],
             )
             .map_err(|e| StoreError::convert(path, e))?;
         }
+    }
+    for delivery in store.deliveries() {
+        tx.execute(
+            "INSERT INTO work_deliveries(id, project_id, name, description, scope_module, at) VALUES (?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                delivery.id().as_str(),
+                delivery.project().as_str(),
+                delivery.name(),
+                delivery.description(),
+                delivery.scope_module().map(ModuleId::as_str),
+                delivery.at().as_str(),
+            ],
+        )
+        .map_err(|e| StoreError::convert(path, e))?;
+        for (artifact, version) in delivery.entries() {
+            let title = delivery.title_of(artifact).flatten();
+            tx.execute(
+                "INSERT INTO work_delivery_entries(delivery_id, artifact_id, version_id, title) VALUES (?, ?, ?, ?)",
+                rusqlite::params![
+                    delivery.id().as_str(),
+                    artifact.as_str(),
+                    version.as_str(),
+                    title,
+                ],
+            )
+            .map_err(|e| StoreError::convert(path, e))?;
+        }
+    }
+    // Historial de títulos con posición global: la carga lo reconstruye
+    // en el orden exacto de registro.
+    for (pos, change) in store.title_changes().iter().enumerate() {
+        tx.execute(
+            "INSERT INTO title_history(artifact_id, pos, title, changed_by, at) VALUES (?, ?, ?, ?, ?)",
+            rusqlite::params![
+                change.artifact().as_str(),
+                pos as u32,
+                change.title(),
+                change.by().as_str(),
+                change.at().as_str(),
+            ],
+        )
+        .map_err(|e| StoreError::convert(path, e))?;
     }
     tx.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES ('next_id', ?)",
@@ -356,8 +420,9 @@ pub(crate) fn save_design_generation(
     let convert = |e| StoreError::convert(path, e);
     tx.execute(
         "INSERT INTO design_generations(id, project_id, module_id, kind, model,
-         template_version, input_tokens, output_tokens, total_tokens, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         template_version, input_tokens, output_tokens, total_tokens, created_at,
+         target_artifact_id, target_version_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             generation.id,
             generation.project_id,
@@ -369,6 +434,8 @@ pub(crate) fn save_design_generation(
             generation.output_tokens,
             generation.total_tokens,
             generation.created_at,
+            generation.target_artifact_id,
+            generation.target_version_id,
         ],
     )
     .map_err(&convert)?;
@@ -438,6 +505,61 @@ pub(crate) fn accept_design_proposal(
     Ok(())
 }
 
+/// Guardado de revisión manual de diseño: dominio + disposición visual en
+/// una sola transacción. Sin disposición (`None`), solo se guarda el
+/// dominio; la disposición anterior de otras versiones queda intacta.
+pub(crate) fn save_design_layout(
+    conn: &mut Connection,
+    path: &Path,
+    store: &Store,
+    next_id: u64,
+    artifact_id: &str,
+    version_id: &str,
+    layout_json: Option<&str>,
+) -> Result<(), StoreError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| StoreError::convert(path, e))?;
+    save_domain(&tx, path, store, next_id)?;
+    if let Some(layout) = layout_json {
+        tx.execute(
+            "INSERT INTO design_layouts(artifact_id, version_id, layout_json)
+             VALUES (?, ?, ?)
+             ON CONFLICT(artifact_id, version_id) DO UPDATE SET layout_json = excluded.layout_json",
+            rusqlite::params![artifact_id, version_id, layout],
+        )
+        .map_err(|e| StoreError::convert(path, e))?;
+    }
+    tx.commit().map_err(|e| StoreError::convert(path, e))?;
+    Ok(())
+}
+
+/// Guarda solo una disposición, sin tocar el dominio. Sin disposición
+/// (`None`), no escribe nada: equivale a "nada que guardar".
+pub(crate) fn upsert_design_layout(
+    conn: &mut Connection,
+    path: &Path,
+    artifact_id: &str,
+    version_id: &str,
+    layout_json: Option<&str>,
+) -> Result<(), StoreError> {
+    let Some(layout) = layout_json else {
+        return Ok(());
+    };
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| StoreError::convert(path, e))?;
+    tx.execute(
+        "INSERT INTO design_layouts(artifact_id, version_id, layout_json)
+         VALUES (?, ?, ?)
+         ON CONFLICT(artifact_id, version_id) DO UPDATE SET layout_json = excluded.layout_json",
+        rusqlite::params![artifact_id, version_id, layout],
+    )
+    .map_err(|e| StoreError::convert(path, e))?;
+    tx.commit().map_err(|e| StoreError::convert(path, e))?;
+    Ok(())
+}
+
 /// Descarta una propuesta de diseño pendiente, en una transacción.
 /// Idempotente si ya estaba descartada; rechaza si ya se aceptó o no existe.
 pub(crate) fn discard_design_proposal(
@@ -486,55 +608,109 @@ pub(crate) fn discard_design_proposal(
 pub(crate) fn load(
     conn: &Connection,
     path: &Path,
-) -> Result<(Store, u64, ProposalLog, DesignLog), StoreError> {
+) -> Result<
+    (
+        Store,
+        u64,
+        ProposalLog,
+        DesignLog,
+        BaselineMetaLog,
+        LayoutLog,
+    ),
+    StoreError,
+> {
     let convert = |e| StoreError::convert(path, e);
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(&convert)?;
     verify_tables(conn, path, version)?;
+    // Nombres (v8): en esquemas anteriores la columna no existe y el nombre
+    // es el ID (valor por defecto del constructor); la migración la añade y
+    // la rellena después. Los literales NULL/0 evitan triplicar ramas.
     let mut projects = Vec::new();
-    let mut rows = conn.prepare("SELECT id FROM projects").map_err(&convert)?;
-    let ids: Vec<String> = rows
-        .query_map([], |row| row.get(0))
-        .map_err(&convert)?
-        .collect::<Result<_, _>>()
-        .map_err(&convert)?;
-    for id in ids {
-        projects.push(Project::new(ProjectId::new(id).map_err(core)?));
-    }
-    let mut modules = Vec::new();
-    let mut rows = conn
-        .prepare("SELECT id, project_id FROM modules")
-        .map_err(&convert)?;
-    let rows: Vec<(String, String)> = rows
+    let project_select = if version >= 8 {
+        "SELECT id, name FROM projects"
+    } else {
+        "SELECT id, NULL AS name FROM projects"
+    };
+    let mut rows = conn.prepare(project_select).map_err(&convert)?;
+    let ids: Vec<(String, Option<String>)> = rows
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .map_err(&convert)?
         .collect::<Result<_, _>>()
         .map_err(&convert)?;
-    for (id, project) in rows {
-        modules.push(Module::new(
-            ModuleId::new(id).map_err(core)?,
-            ProjectId::new(project).map_err(core)?,
-        ));
+    for (id, name) in ids {
+        let mut project = Project::new(ProjectId::new(id).map_err(core)?);
+        if let Some(name) = name {
+            project.set_name(Name::new(name).map_err(core)?);
+        }
+        projects.push(project);
     }
-    let mut artifacts = Vec::new();
-    let mut rows = conn
-        .prepare("SELECT id, project_id, module_id, kind FROM artifacts")
-        .map_err(&convert)?;
-    let rows: Vec<(String, String, String, String)> = rows
+    // Archivado (v7): en esquemas anteriores la columna no existe y todo se
+    // considera activo; la migración la añade con defecto 0 después.
+    let mut modules = Vec::new();
+    let module_select = if version >= 8 {
+        "SELECT id, project_id, name, archived FROM modules"
+    } else if version >= 7 {
+        "SELECT id, project_id, NULL AS name, archived FROM modules"
+    } else {
+        "SELECT id, project_id, NULL AS name, 0 AS archived FROM modules"
+    };
+    let mut rows = conn.prepare(module_select).map_err(&convert)?;
+    let rows: Vec<(String, String, Option<String>, i64)> = rows
         .query_map([], |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
         })
         .map_err(&convert)?
         .collect::<Result<_, _>>()
         .map_err(&convert)?;
-    for (id, project, module, kind) in rows {
-        artifacts.push(Artifact::new(
+    for (id, project, name, archived) in rows {
+        let module = Module::new(
+            ModuleId::new(id).map_err(core)?,
+            ProjectId::new(project).map_err(core)?,
+        );
+        let mut module = with_archived_module(module, archived)?;
+        if let Some(name) = name {
+            module.set_name(Name::new(name).map_err(core)?);
+        }
+        modules.push(module);
+    }
+    let mut artifacts = Vec::new();
+    let artifact_select = if version >= 8 {
+        "SELECT id, project_id, module_id, kind, title, archived FROM artifacts"
+    } else if version >= 7 {
+        "SELECT id, project_id, module_id, kind, NULL AS title, archived FROM artifacts"
+    } else {
+        "SELECT id, project_id, module_id, kind, NULL AS title, 0 AS archived FROM artifacts"
+    };
+    let mut rows = conn.prepare(artifact_select).map_err(&convert)?;
+    let rows: Vec<(String, String, String, String, Option<String>, i64)> = rows
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
+        .map_err(&convert)?
+        .collect::<Result<_, _>>()
+        .map_err(&convert)?;
+    for (id, project, module, kind, title, archived) in rows {
+        let artifact = Artifact::new(
             ArtifactId::new(id).map_err(core)?,
             ProjectId::new(project).map_err(core)?,
             ModuleId::new(module).map_err(core)?,
             parse_kind(&kind)?,
-        ));
+        );
+        let mut artifact = with_archived_artifact(artifact, archived)?;
+        // NULL = sin título propio (registros anteriores o sin titular).
+        if let Some(title) = title {
+            artifact.set_title(Some(Name::new(title).map_err(core)?));
+        }
+        artifacts.push(artifact);
     }
     let mut sources_by_version: HashMap<String, Vec<String>> = HashMap::new();
     let mut rows = conn
@@ -615,35 +791,148 @@ pub(crate) fn load(
         .map_err(&convert)?
         .collect::<Result<_, _>>()
         .map_err(&convert)?;
-    let mut entries_by_baseline: HashMap<String, Vec<(String, String)>> = HashMap::new();
-    let mut stmt = conn
-        .prepare("SELECT baseline_id, artifact_id, version_id FROM baseline_entries")
-        .map_err(&convert)?;
-    let entry_rows: Vec<(String, String, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+    let mut entries_by_baseline: HashMap<String, Vec<(String, String, Option<String>)>> =
+        HashMap::new();
+    let entry_select = if version >= 8 {
+        "SELECT baseline_id, artifact_id, version_id, title FROM baseline_entries"
+    } else {
+        "SELECT baseline_id, artifact_id, version_id, NULL AS title FROM baseline_entries"
+    };
+    let mut stmt = conn.prepare(entry_select).map_err(&convert)?;
+    let entry_rows: Vec<(String, String, String, Option<String>)> = stmt
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
         .map_err(&convert)?
         .collect::<Result<_, _>>()
         .map_err(&convert)?;
-    for (baseline, artifact, version) in entry_rows {
+    for (baseline, artifact, version, title) in entry_rows {
         entries_by_baseline
             .entry(baseline)
             .or_default()
-            .push((artifact, version));
+            .push((artifact, version, title));
     }
     for (id, project, at) in baseline_rows {
         let mut entries = Vec::new();
-        for (artifact, version) in entries_by_baseline.remove(&id).unwrap_or_default() {
-            entries.push((
-                ArtifactId::new(artifact).map_err(core)?,
-                VersionId::new(version).map_err(core)?,
-            ));
+        let mut titles = HashMap::new();
+        for (artifact, version, title) in entries_by_baseline.remove(&id).unwrap_or_default() {
+            let artifact_id = ArtifactId::new(artifact).map_err(core)?;
+            // Título fijado al crear la baseline; se valida como nombre.
+            let title = title
+                .map(Name::new)
+                .transpose()
+                .map_err(core)?
+                .map(|n| n.as_str().to_string());
+            titles.insert(artifact_id.clone(), title);
+            entries.push((artifact_id, VersionId::new(version).map_err(core)?));
         }
         baselines.push(Baseline::new(
             BaselineId::new(id).map_err(core)?,
             ProjectId::new(project).map_err(core)?,
             entries,
+            titles,
             Date::new(at).map_err(core)?,
         ));
+    }
+    // Historial de títulos (v8): en esquemas anteriores la tabla no existe.
+    let mut title_history = Vec::new();
+    if version >= 8 {
+        let mut stmt = conn
+            .prepare("SELECT artifact_id, title, changed_by, at FROM title_history ORDER BY pos")
+            .map_err(&convert)?;
+        let rows: Vec<(String, String, String, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .map_err(&convert)?
+            .collect::<Result<_, _>>()
+            .map_err(&convert)?;
+        for (artifact, title, by, at) in rows {
+            title_history.push(TitleChange::new(
+                ArtifactId::new(artifact).map_err(core)?,
+                Name::new(title).map_err(core)?,
+                HumanId::new(by).map_err(core)?,
+                Date::new(at).map_err(core)?,
+            ));
+        }
+    }
+    // Entregas de trabajo (v9): las tablas no existen en esquemas
+    // anteriores (sin entregas que conservar).
+    // Fila de `work_deliveries`: id, proyecto, nombre, descripción, alcance, fecha.
+    type DeliveryRow = (
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+    );
+    let mut deliveries = Vec::new();
+    if version >= 9 {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, project_id, name, description, scope_module, at FROM work_deliveries",
+            )
+            .map_err(&convert)?;
+        let delivery_rows: Vec<DeliveryRow> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            })
+            .map_err(&convert)?
+            .collect::<Result<_, _>>()
+            .map_err(&convert)?;
+        let mut entries_by_delivery: HashMap<String, Vec<(String, String, Option<String>)>> =
+            HashMap::new();
+        let mut stmt = conn
+            .prepare(
+                "SELECT delivery_id, artifact_id, version_id, title FROM work_delivery_entries",
+            )
+            .map_err(&convert)?;
+        let entry_rows: Vec<(String, String, String, Option<String>)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .map_err(&convert)?
+            .collect::<Result<_, _>>()
+            .map_err(&convert)?;
+        for (delivery, artifact, version, title) in entry_rows {
+            entries_by_delivery
+                .entry(delivery)
+                .or_default()
+                .push((artifact, version, title));
+        }
+        for (id, project, name, description, scope, at) in delivery_rows {
+            let mut entries = Vec::new();
+            let mut titles = HashMap::new();
+            for (artifact, version, title) in entries_by_delivery.remove(&id).unwrap_or_default() {
+                let artifact_id = ArtifactId::new(artifact).map_err(core)?;
+                let title = title
+                    .map(Name::new)
+                    .transpose()
+                    .map_err(core)?
+                    .map(|n| n.as_str().to_string());
+                titles.insert(artifact_id.clone(), title);
+                entries.push((artifact_id, VersionId::new(version).map_err(core)?));
+            }
+            let scope = scope.map(ModuleId::new).transpose().map_err(core)?;
+            deliveries.push(WorkDelivery::new(
+                DeliveryId::new(id).map_err(core)?,
+                ProjectId::new(project).map_err(core)?,
+                name,
+                description,
+                scope,
+                entries,
+                titles,
+                Date::new(at).map_err(core)?,
+            ));
+        }
     }
     let next_id: String = conn
         .query_row("SELECT value FROM meta WHERE key = 'next_id'", [], |row| {
@@ -660,6 +949,8 @@ pub(crate) fn load(
         versions,
         approvals,
         baselines,
+        title_history,
+        deliveries,
     })
     .map_err(core)?;
     let proposals = if version >= 2 {
@@ -668,16 +959,26 @@ pub(crate) fn load(
         ProposalLog::new()
     };
     let designs = if version >= 3 {
-        load_designs(conn, path, &store)?
+        load_designs(conn, path, &store, version)?
     } else {
         DesignLog::new()
     };
-    Ok((store, next_id, proposals, designs))
+    let baseline_meta = if version >= 5 {
+        load_baseline_meta(conn, path, &store)?
+    } else {
+        BaselineMetaLog::new()
+    };
+    let layouts = if version >= 6 {
+        load_layouts(conn, path)?
+    } else {
+        LayoutLog::new()
+    };
+    Ok((store, next_id, proposals, designs, baseline_meta, layouts))
 }
 
 /// Todas las tablas esperadas existen; si no, la base está manipulada. Las
-/// tablas de generaciones solo se exigen desde la v2, y las de diseño desde
-/// la v3.
+/// tablas de generaciones solo se exigen desde la v2, las de diseño desde
+/// la v3 y los metadatos de baselines desde la v5.
 fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), StoreError> {
     const EXPECTED_V1: [&str; 9] = [
         "projects",
@@ -730,6 +1031,86 @@ fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), Sto
     }
     if version >= 3 {
         for table in EXPECTED_V3 {
+            if !found.iter().any(|name| name == table) {
+                return Err(StoreError::Corrupt {
+                    message: format!("falta la tabla {table}"),
+                });
+            }
+        }
+    }
+    if version >= 4 {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(design_generations)")
+            .map_err(|e| StoreError::convert(path, e))?;
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get(1))
+            .map_err(|e| StoreError::convert(path, e))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| StoreError::convert(path, e))?;
+        for column in ["target_artifact_id", "target_version_id"] {
+            if !columns.iter().any(|name| name == column) {
+                return Err(StoreError::Corrupt {
+                    message: format!("falta la columna {column}"),
+                });
+            }
+        }
+    }
+    if version >= 5 && !found.iter().any(|name| name == "baseline_meta") {
+        return Err(StoreError::Corrupt {
+            message: "falta la tabla baseline_meta".to_string(),
+        });
+    }
+    if version >= 6 && !found.iter().any(|name| name == "design_layouts") {
+        return Err(StoreError::Corrupt {
+            message: "falta la tabla design_layouts".to_string(),
+        });
+    }
+    if version >= 7 {
+        for table in ["modules", "artifacts"] {
+            let mut stmt = conn
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .map_err(|e| StoreError::convert(path, e))?;
+            let columns: Vec<String> = stmt
+                .query_map([], |row| row.get(1))
+                .map_err(|e| StoreError::convert(path, e))?
+                .collect::<Result<_, _>>()
+                .map_err(|e| StoreError::convert(path, e))?;
+            if !columns.iter().any(|name| name == "archived") {
+                return Err(StoreError::Corrupt {
+                    message: format!("falta la columna archived en {table}"),
+                });
+            }
+        }
+    }
+    if version >= 8 {
+        for (table, column) in [
+            ("projects", "name"),
+            ("modules", "name"),
+            ("artifacts", "title"),
+            ("baseline_entries", "title"),
+        ] {
+            let mut stmt = conn
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .map_err(|e| StoreError::convert(path, e))?;
+            let columns: Vec<String> = stmt
+                .query_map([], |row| row.get(1))
+                .map_err(|e| StoreError::convert(path, e))?
+                .collect::<Result<_, _>>()
+                .map_err(|e| StoreError::convert(path, e))?;
+            if !columns.iter().any(|name| name == column) {
+                return Err(StoreError::Corrupt {
+                    message: format!("falta la columna {column} en {table}"),
+                });
+            }
+        }
+        if !found.iter().any(|name| name == "title_history") {
+            return Err(StoreError::Corrupt {
+                message: "falta la tabla title_history".to_string(),
+            });
+        }
+    }
+    if version >= 9 {
+        for table in ["work_deliveries", "work_delivery_entries"] {
             if !found.iter().any(|name| name == table) {
                 return Err(StoreError::Corrupt {
                     message: format!("falta la tabla {table}"),
@@ -958,8 +1339,31 @@ type DesignProposalRow = (
 
 /// Carga las generaciones de diseño y verifica su integridad contra el
 /// dominio. Como en propuestas, el contexto no se exige versión a versión.
-fn load_designs(conn: &Connection, path: &Path, store: &Store) -> Result<DesignLog, StoreError> {
+/// Las columnas de objetivo (v4) se leen aparte: en v3 no existen y quedan
+/// a nulo (la migración las añade después de cargar).
+fn load_designs(
+    conn: &Connection,
+    path: &Path,
+    store: &Store,
+    version: i64,
+) -> Result<DesignLog, StoreError> {
     let convert = |e| StoreError::convert(path, e);
+    let mut targets: HashMap<String, (Option<String>, Option<String>)> = HashMap::new();
+    if version >= 4 {
+        let mut stmt = conn
+            .prepare("SELECT id, target_artifact_id, target_version_id FROM design_generations")
+            .map_err(&convert)?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(&convert)?
+            .collect::<Result<Vec<(String, Option<String>, Option<String>)>, _>>()
+            .map_err(&convert)?;
+        for (id, artifact, target_version) in rows {
+            targets.insert(id, (artifact, target_version));
+        }
+    }
     let mut stmt = conn
         .prepare(
             "SELECT id, project_id, module_id, kind, model, template_version,
@@ -1061,6 +1465,7 @@ fn load_designs(conn: &Connection, path: &Path, store: &Store) -> Result<DesignL
         let proposal = by_generation
             .remove(&id)
             .ok_or_else(|| invalid(format!("generación de diseño {id} sin propuesta")))?;
+        let (target_artifact_id, target_version_id) = targets.remove(&id).unwrap_or((None, None));
         let generation = StoredDesignGeneration {
             id: id.clone(),
             project_id,
@@ -1075,6 +1480,8 @@ fn load_designs(conn: &Connection, path: &Path, store: &Store) -> Result<DesignL
             created_at,
             questions: questions.get(&id).cloned().unwrap_or_default(),
             proposal,
+            target_artifact_id,
+            target_version_id,
         };
         verify_design_refs(store, &generation)?;
         log.record(generation)?;
@@ -1116,6 +1523,130 @@ fn verify_design_refs(
             )));
         }
     }
+    match (
+        generation.target_artifact_id.as_deref(),
+        generation.target_version_id.as_deref(),
+    ) {
+        (None, None) => {}
+        (Some(artifact), Some(target_version)) => {
+            let artifact = ArtifactId::new(artifact).map_err(core)?;
+            let target_version = VersionId::new(target_version).map_err(core)?;
+            if store.artifact(&artifact).is_none() || store.version(&target_version).is_none() {
+                return Err(invalid(format!(
+                    "la propuesta de diseño {} apunta a un objetivo inexistente",
+                    generation.id
+                )));
+            }
+        }
+        _ => {
+            return Err(invalid(format!(
+                "la propuesta de diseño {} fija medio objetivo",
+                generation.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Carga los metadatos de baselines y verifica que cada uno apunta a una
+/// baseline existente del dominio. Solo se llama desde la v5.
+fn load_baseline_meta(
+    conn: &Connection,
+    path: &Path,
+    store: &Store,
+) -> Result<BaselineMetaLog, StoreError> {
+    let convert = |e| StoreError::convert(path, e);
+    let mut stmt = conn
+        .prepare(
+            "SELECT baseline_id, name, description, scope_module, created_at
+             FROM baseline_meta ORDER BY rowid",
+        )
+        .map_err(&convert)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(BaselineMeta {
+                baseline_id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                scope_module: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })
+        .map_err(&convert)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(&convert)?;
+    let mut log = BaselineMetaLog::new();
+    for meta in rows {
+        let id = ruth_core::domain::BaselineId::new(meta.baseline_id.clone()).map_err(core)?;
+        if store.baseline(&id).is_none() {
+            return Err(invalid(format!(
+                "los metadatos {} apuntan a una baseline inexistente",
+                meta.baseline_id
+            )));
+        }
+        if let Some(scope) = &meta.scope_module {
+            let module = ModuleId::new(scope.clone()).map_err(core)?;
+            if store.module(&module).is_none() {
+                return Err(invalid(format!(
+                    "los metadatos {} apuntan a un módulo inexistente",
+                    meta.baseline_id
+                )));
+            }
+        }
+        log.record(meta).map_err(|e| match e {
+            StoreError::InvalidData { message } => invalid(message),
+            other => other,
+        })?;
+    }
+    Ok(log)
+}
+
+/// Carga las disposiciones visuales guardadas. No se verifican contra el
+/// dominio (es presentación): se rehidratan verbatim y se interpretan al
+/// leer; una fila ilegible equivale a "sin disposición" sin romper la carga.
+fn load_layouts(conn: &Connection, path: &Path) -> Result<LayoutLog, StoreError> {
+    let convert = |e| StoreError::convert(path, e);
+    let mut stmt = conn
+        .prepare("SELECT artifact_id, version_id, layout_json FROM design_layouts ORDER BY rowid")
+        .map_err(&convert)?;
+    let rows: Vec<(String, String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .map_err(&convert)?
+        .collect::<Result<_, _>>()
+        .map_err(&convert)?;
+    let mut log = LayoutLog::new();
+    for (artifact_id, version_id, layout_json) in rows {
+        log.rehydrate(artifact_id, version_id, layout_json);
+    }
+    Ok(log)
+}
+
+/// Creación atómica: dominio (con la baseline) y sus metadatos en una sola
+/// transacción. O se guarda todo o no se guarda nada.
+pub(crate) fn create_baseline(
+    conn: &mut Connection,
+    path: &Path,
+    store: &Store,
+    next_id: u64,
+    meta: &BaselineMeta,
+) -> Result<(), StoreError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| StoreError::convert(path, e))?;
+    save_domain(&tx, path, store, next_id)?;
+    tx.execute(
+        "INSERT INTO baseline_meta(baseline_id, name, description, scope_module, created_at)
+         VALUES (?, ?, ?, ?, ?)",
+        rusqlite::params![
+            meta.baseline_id,
+            meta.name,
+            meta.description,
+            meta.scope_module,
+            meta.created_at,
+        ],
+    )
+    .map_err(|e| StoreError::convert(path, e))?;
+    tx.commit().map_err(|e| StoreError::convert(path, e))?;
     Ok(())
 }
 
@@ -1171,11 +1702,41 @@ fn load_proposal_items(
     Ok(map)
 }
 
+/// Aplica el flag leído (0/1); otro valor es manipulación.
+fn with_archived_module(mut module: Module, archived: i64) -> Result<Module, StoreError> {
+    match archived {
+        0 => Ok(module),
+        1 => {
+            module.set_archived(true);
+            Ok(module)
+        }
+        other => Err(invalid(format!(
+            "flag de archivado inválido en {}: {other}",
+            module.id().as_str()
+        ))),
+    }
+}
+
+fn with_archived_artifact(mut artifact: Artifact, archived: i64) -> Result<Artifact, StoreError> {
+    match archived {
+        0 => Ok(artifact),
+        1 => {
+            artifact.set_archived(true);
+            Ok(artifact)
+        }
+        other => Err(invalid(format!(
+            "flag de archivado inválido en {}: {other}",
+            artifact.id().as_str()
+        ))),
+    }
+}
+
 fn artifact_kind(kind: ArtifactType) -> &'static str {
     match kind {
         ArtifactType::Requirement => "requirement",
         ArtifactType::Flow => "flow",
         ArtifactType::DataModel => "data_model",
+        ArtifactType::Mockup => "mockup",
     }
 }
 
@@ -1184,6 +1745,7 @@ fn parse_kind(kind: &str) -> Result<ArtifactType, StoreError> {
         "requirement" => Ok(ArtifactType::Requirement),
         "flow" => Ok(ArtifactType::Flow),
         "data_model" => Ok(ArtifactType::DataModel),
+        "mockup" => Ok(ArtifactType::Mockup),
         other => Err(invalid(format!("tipo de artefacto desconocido: {other}"))),
     }
 }
@@ -1205,5 +1767,117 @@ fn parse_provenance(kind: &str, by: &str) -> Result<ruth_core::domain::Provenanc
             agent: AgentId::new(by.to_string()).map_err(core)?,
         }),
         other => Err(invalid(format!("procedencia desconocida: {other}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tiny_store() -> Store {
+        let mut store = Store::new();
+        let project = ProjectId::new("proj-1").expect("id");
+        let module = ModuleId::new("mod-1").expect("id");
+        let artifact = ArtifactId::new("req-1").expect("id");
+        let version = VersionId::new("req-1-v1").expect("id");
+        let ana = HumanId::new("ana").expect("id");
+        store.create_project(project.clone()).expect("proyecto");
+        store
+            .create_module(&project, module.clone())
+            .expect("módulo");
+        store
+            .create_artifact(
+                &project,
+                &module,
+                artifact.clone(),
+                ArtifactType::Requirement,
+            )
+            .expect("requisito");
+        store
+            .create_version(
+                &project,
+                &artifact,
+                None,
+                version.clone(),
+                Content::new("Texto.").expect("contenido"),
+                &ruth_core::domain::Author::Human(ana.clone()),
+                &[],
+            )
+            .expect("v1");
+        store
+            .approve(
+                &project,
+                &artifact,
+                &version,
+                &ruth_core::domain::Author::Human(ana),
+                Date::new("2026-10-28T12:00:00Z").expect("fecha"),
+            )
+            .expect("aprobar");
+        store
+            .create_baseline(
+                &project,
+                BaselineId::new("base-1").expect("id"),
+                &[(artifact, version)],
+                Date::new("2026-10-28T12:00:00Z").expect("fecha"),
+            )
+            .expect("baseline");
+        store
+    }
+
+    fn counts(conn: &Connection) -> Vec<(String, i64)> {
+        [
+            "projects",
+            "modules",
+            "artifacts",
+            "baselines",
+            "baseline_entries",
+            "approvals",
+        ]
+        .iter()
+        .map(|table| {
+            let n: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("contar");
+            (table.to_string(), n)
+        })
+        .collect()
+    }
+
+    #[test]
+    fn save_domain_rolls_back_on_mid_save_error() {
+        // Un fallo SQL a mitad del guardado (tras varios DELETE e INSERT ya
+        // ejecutados) revierte la transacción: la instantánea anterior queda
+        // intacta. Es la garantía que `save` promete en su contrato.
+        let path = std::env::temp_dir().join(format!("ruth-rollback-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut conn = crate::schema::open(&path).expect("abrir");
+        crate::schema::migrate(&mut conn, &path, true).expect("migrar");
+        let store = tiny_store();
+        save(&mut conn, &path, &store, 7).expect("guardar");
+        let before = counts(&conn);
+        assert_eq!(before.iter().map(|(_, n)| n).sum::<i64>(), 6);
+        // Sabotaje confirmado con la misma conexión: quitar una tabla que el
+        // guardado toca después de varios borrados ya ejecutados. Las FK se
+        // desactivan solo para el sabotaje y se reactivan después.
+        conn.execute_batch(
+            "PRAGMA foreign_keys = OFF; DROP TABLE versions; PRAGMA foreign_keys = ON;",
+        )
+        .expect("sabotaje");
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("tx");
+        let err = save_domain(&tx, &path, &store, 8).expect_err("el guardado falla");
+        assert!(matches!(err, StoreError::Sqlite { .. }), "era {err:?}");
+        drop(tx);
+        assert_eq!(counts(&conn), before, "nada a medias en disco");
+        let next: String = conn
+            .query_row("SELECT value FROM meta WHERE key = 'next_id'", [], |row| {
+                row.get(0)
+            })
+            .expect("contador");
+        assert_eq!(next, "7");
+        let _ = std::fs::remove_file(&path);
     }
 }

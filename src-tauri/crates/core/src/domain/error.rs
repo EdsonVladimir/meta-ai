@@ -2,7 +2,9 @@
 
 use std::fmt;
 
-use crate::domain::{AgentId, ArtifactId, BaselineId, HumanId, ModuleId, ProjectId, VersionId};
+use crate::domain::{
+    AgentId, ArtifactId, BaselineId, DeliveryId, HumanId, ModuleId, Name, ProjectId, VersionId,
+};
 
 /// Fallo de una operación del núcleo. Las operaciones que devuelven error no
 /// modifican el estado: primero validan todo y solo después mutan.
@@ -28,6 +30,9 @@ pub enum CoreError {
     BaselineNotFound {
         baseline: BaselineId,
     },
+    DeliveryNotFound {
+        delivery: DeliveryId,
+    },
     DuplicateProject {
         project: ProjectId,
     },
@@ -42,6 +47,9 @@ pub enum CoreError {
     },
     DuplicateBaseline {
         baseline: BaselineId,
+    },
+    DuplicateDelivery {
+        delivery: DeliveryId,
     },
     /// El módulo no pertenece al proyecto indicado.
     ModuleNotInProject {
@@ -114,6 +122,67 @@ pub enum CoreError {
         version: VersionId,
         source: VersionId,
     },
+    /// Una entrega de trabajo vacía no exporta nada.
+    EmptyDelivery,
+    /// El mismo artefacto aparece dos veces en una entrega de trabajo.
+    DeliveryDuplicateArtifact {
+        artifact: ArtifactId,
+    },
+    /// La versión indicada no pertenece al artefacto indicado.
+    DeliveryMismatch {
+        artifact: ArtifactId,
+        version: VersionId,
+    },
+    /// Operación de escritura sobre un módulo archivado.
+    ArchivedModule {
+        module: ModuleId,
+    },
+    /// Operación de escritura sobre un artefacto archivado (propio o por
+    /// contexto de su módulo).
+    ArchivedArtifact {
+        artifact: ArtifactId,
+    },
+    /// La versión depende de una fuente archivada: no puede aprobarse ni
+    /// entrar en una baseline hasta restaurar la fuente o revisar la versión.
+    ArchivedSource {
+        version: VersionId,
+        source: VersionId,
+    },
+    /// El artefacto tiene versiones aprobadas: no puede eliminarse.
+    DeleteHasApprovals {
+        artifact: ArtifactId,
+    },
+    /// Otros artefactos dependen de sus versiones: no puede eliminarse.
+    DeleteHasDependents {
+        artifact: ArtifactId,
+        dependents: Vec<ArtifactId>,
+    },
+    /// Alguna baseline lo incluye: no puede eliminarse.
+    DeleteInBaseline {
+        artifact: ArtifactId,
+        baseline: BaselineId,
+    },
+    /// Alguna entrega de trabajo lo incluye: no puede eliminarse.
+    DeleteInDelivery {
+        artifact: ArtifactId,
+        delivery: DeliveryId,
+    },
+    /// El módulo aún contiene artefactos: no puede eliminarse.
+    DeleteModuleNotEmpty {
+        module: ModuleId,
+        artifacts: Vec<ArtifactId>,
+    },
+    /// El nombre o título está vacío (o solo espacios).
+    EmptyName,
+    /// El nombre o título supera el máximo documentado.
+    NameTooLong {
+        chars: usize,
+    },
+    /// El nombre cambió desde que se leyó: hay que revisar y reintentar.
+    StaleName {
+        expected: Option<String>,
+        actual: Option<String>,
+    },
 }
 
 impl fmt::Display for CoreError {
@@ -127,11 +196,13 @@ impl fmt::Display for CoreError {
             Self::ArtifactNotFound { artifact } => write!(f, "artefacto inexistente: {artifact}"),
             Self::VersionNotFound { version } => write!(f, "versión inexistente: {version}"),
             Self::BaselineNotFound { baseline } => write!(f, "baseline inexistente: {baseline}"),
+            Self::DeliveryNotFound { delivery } => write!(f, "entrega inexistente: {delivery}"),
             Self::DuplicateProject { project } => write!(f, "proyecto duplicado: {project}"),
             Self::DuplicateModule { module } => write!(f, "módulo duplicado: {module}"),
             Self::DuplicateArtifact { artifact } => write!(f, "artefacto duplicado: {artifact}"),
             Self::DuplicateVersion { version } => write!(f, "versión duplicada: {version}"),
             Self::DuplicateBaseline { baseline } => write!(f, "baseline duplicada: {baseline}"),
+            Self::DuplicateDelivery { delivery } => write!(f, "entrega duplicada: {delivery}"),
             Self::ModuleNotInProject { module, project } => {
                 write!(f, "el módulo {module} no pertenece al proyecto {project}")
             }
@@ -211,7 +282,106 @@ impl fmt::Display for CoreError {
                     "la baseline no incluye la fuente {source} necesaria para {version}"
                 )
             }
+            Self::EmptyDelivery => write!(f, "una entrega necesita al menos un artefacto"),
+            Self::DeliveryDuplicateArtifact { artifact } => {
+                write!(f, "artefacto duplicado en la entrega: {artifact}")
+            }
+            Self::DeliveryMismatch { artifact, version } => {
+                write!(
+                    f,
+                    "la versión {version} no pertenece al artefacto {artifact}"
+                )
+            }
+            Self::ArchivedModule { module } => {
+                write!(
+                    f,
+                    "el módulo {module} está archivado: restaúralo para operar con él"
+                )
+            }
+            Self::ArchivedArtifact { artifact } => {
+                write!(
+                    f,
+                    "el artefacto {artifact} está archivado: restaúralo para operar con él"
+                )
+            }
+            Self::ArchivedSource { version, source } => {
+                write!(
+                    f,
+                    "la versión {version} depende de {source}, que está archivada: \
+                     restaura la fuente o crea una versión revisada sin ella"
+                )
+            }
+            Self::DeleteHasApprovals { artifact } => {
+                write!(
+                    f,
+                    "{artifact} tiene aprobaciones y no puede eliminarse: archívalo"
+                )
+            }
+            Self::DeleteHasDependents {
+                artifact,
+                dependents,
+            } => {
+                let who = dependents
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(
+                    f,
+                    "{artifact} no puede eliminarse: dependen de él {who}. Archívalo"
+                )
+            }
+            Self::DeleteInBaseline { artifact, baseline } => {
+                write!(
+                    f,
+                    "{artifact} no puede eliminarse: la baseline {baseline} lo incluye. Archívalo"
+                )
+            }
+            Self::DeleteInDelivery { artifact, delivery } => {
+                write!(
+                    f,
+                    "{artifact} no puede eliminarse: la entrega {delivery} lo incluye. Archívalo"
+                )
+            }
+            Self::DeleteModuleNotEmpty { module, artifacts } => {
+                write!(
+                    f,
+                    "el módulo {module} no está vacío ({}): vacíalo primero",
+                    artifacts
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            Self::EmptyName => {
+                write!(f, "el nombre no puede estar vacío")
+            }
+            Self::NameTooLong { chars } => {
+                write!(
+                    f,
+                    "el nombre tiene {chars} caracteres; el máximo es {}",
+                    Name::MAX_CHARS
+                )
+            }
+            Self::StaleName { expected, actual } => {
+                write!(
+                    f,
+                    "el nombre cambió mientras lo editabas (esperabas {}, ahora es {}): \
+                     revísalo y guarda de nuevo",
+                    display_name(expected.as_deref()),
+                    display_name(actual.as_deref())
+                )
+            }
         }
+    }
+}
+
+/// Cómo mostrar un nombre esperado/actual en mensajes (`None` = sin título).
+fn display_name(name: Option<&str>) -> String {
+    match name {
+        Some(text) => format!("«{text}»"),
+        None => "«sin título»".to_string(),
     }
 }
 

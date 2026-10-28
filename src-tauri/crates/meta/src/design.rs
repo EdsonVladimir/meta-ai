@@ -3,7 +3,7 @@
 //! Misma modalidad que `generation`: Responses API con `text.format`
 //! (`type: "json_schema"`) y validación autoritativa en Rust. Cada llamada
 //! genera UNA propuesta de flujo de operación o de modelo entidad-relación
-//! a partir de requisitos aprobados seleccionados.
+//! a partir de requisitos seleccionados (versiones guardadas).
 //!
 //! ## Subconjunto inicial (documentado, no es un modelador UML universal)
 //!
@@ -33,9 +33,11 @@ use serde::{Deserialize, Serialize};
 use crate::error::{redact, MetaError, MetaErrorKind};
 use crate::protocol::{classify_transport, parse_error, parse_success_capped, TokenUsage};
 
-/// Versión de la plantilla de instrucciones de diseño.
-pub const DESIGN_TEMPLATE_VERSION: u32 = 1;
-/// Límites de entrada (el contexto lo filtra `ruth-api` a aprobados).
+/// Versión de la plantilla de instrucciones de diseño. La v2 (diseño vivo)
+/// deja de hablar de requisitos «aprobados»: genera desde versiones
+/// guardadas y pide señalar ambigüedades sin inventar decisiones.
+pub const DESIGN_TEMPLATE_VERSION: u32 = 2;
+/// Límites de entrada (el contexto lo filtra `ruth-api` al módulo activo).
 pub const MAX_DESIGN_CONTEXT_ITEMS: usize = 20;
 pub const MAX_DESIGN_CONTEXT_CONTENT_CHARS: usize = 2000;
 pub const MAX_DESIGN_INPUT_CHARS: usize = 50_000;
@@ -184,13 +186,13 @@ pub struct DesignResult {
     pub usage: Option<TokenUsage>,
 }
 
-const FLOW_INSTRUCTION: &str = "Eres un diseñador que propone un flujo de operación a partir de requisitos aprobados. \
+const FLOW_INSTRUCTION: &str = "Eres un diseñador que propone un flujo de operación a partir de requisitos (versiones guardadas). \
 Responde SOLO con el objeto JSON pedido, sin texto adicional. \
 Propón UN flujo: title, nodes (al menos uno; cada uno con id único de letras, dígitos y subrayado, kind entre start, step, decision y end, label y requirements con identificadores de los requisitos enviados), \
 edges (origen y destino existentes, label opcional), explanation breve y questions (como mucho 5, vacía si no hay). \
 Señala ambigüedades en questions y no inventes decisiones como aprobadas.";
 
-const ER_INSTRUCTION: &str = "Eres un diseñador que propone un modelo entidad-relación a partir de requisitos aprobados. \
+const ER_INSTRUCTION: &str = "Eres un diseñador que propone un modelo entidad-relación a partir de requisitos (versiones guardadas). \
 Responde SOLO con el objeto JSON pedido, sin texto adicional. \
 Propón UN modelo: title, entities (al menos una; cada una con name único de letras, dígitos y subrayado, attributes con al menos un atributo de name y key, y requirements con identificadores de los requisitos enviados), \
 relations (extremos existentes, label opcional, from_card y to_card entre 1, 0..1, N y 0..N), explanation breve y questions (como mucho 5, vacía si no hay). \
@@ -198,7 +200,7 @@ No propongas tipos de atributos: están fuera del subconjunto. \
 Señala ambigüedades en questions y no inventes decisiones como aprobadas.";
 
 /// Monta el texto enviado al modelo. El contexto ya llega filtrado a
-/// requisitos aprobados seleccionados; aquí solo se aplican topes.
+/// requisitos seleccionados del módulo; aquí solo se aplican topes.
 pub fn build_design_input(
     kind: DesignKind,
     context: &[crate::generation::GenerationContextItem],
@@ -223,8 +225,77 @@ pub fn build_design_input(
         .collect();
     loop {
         let input = format!(
-            "{instruction}\n\nRequisitos aprobados seleccionados (contexto; {}):\n{}",
+            "{instruction}\n\nRequisitos seleccionados — versiones guardadas (contexto; {}):\n{}",
             rendered.len(),
+            rendered.join("\n\n")
+        );
+        if input.chars().count() <= MAX_DESIGN_INPUT_CHARS || rendered.is_empty() {
+            return input;
+        }
+        rendered.pop();
+    }
+}
+
+/// Versión de la plantilla de diseño desde mockups (etapa B): el mismo
+/// esquema de salida, con instrucciones que leen pantallas y componentes.
+pub const DESIGN_MOCKUP_TEMPLATE_VERSION: u32 = 1;
+
+const FLOW_FROM_MOCKUP_INSTRUCTION: &str = "Eres un diseñador que propone un flujo de operación a partir de mockups y requisitos (versiones guardadas). \
+Responde SOLO con el objeto JSON pedido, sin texto adicional. \
+Lee las pantallas y sus componentes (textos, campos con su origen declarado, selectores, botones con acción o destino, tablas) y deduce los pasos y decisiones del flujo; relaciona cada elemento con los requisitos enviados cuando corresponda. \
+Propón UN flujo: title, nodes (al menos uno; cada uno con id único de letras, dígitos y subrayado, kind entre start, step, decision y end, label y requirements con identificadores del contexto enviado), \
+edges (origen y destino existentes, label opcional), explanation breve (incluye qué campos o acciones del mockup motivan cada parte) y questions (como mucho 5, vacía si no hay). \
+Si algún dato falta (por ejemplo, generas solo desde mockups sin requisitos), dilo en questions: no inventes reglas, aprobaciones ni certezas. \
+Conserva en explanation los elementos que la persona deba revisar a mano.";
+
+const ER_FROM_MOCKUP_INSTRUCTION: &str = "Eres un diseñador que propone un modelo entidad-relación a partir de mockups y requisitos (versiones guardadas). \
+Responde SOLO con el objeto JSON pedido, sin texto adicional. \
+Lee las pantallas y sus componentes; los campos y tablas con origen persisted sugieren datos guardados, mientras que calculated, temporary, external o undefined NO implican columnas: si los reflejas, explícalo como supuesto. \
+Propón UN modelo: title, entities (al menos una; cada una con name único de letras, dígitos y subrayado, attributes con al menos un atributo de name y key, y requirements con identificadores del contexto enviado), \
+relations (extremos existentes, label opcional, from_card y to_card entre 1, 0..1, N y 0..N), explanation breve (incluye qué campos o tablas del mockup motivan cada entidad) y questions (como mucho 5, vacía si no hay). \
+No propongas tipos de atributos: están fuera del subconjunto. \
+Si algún dato falta (por ejemplo, generas solo desde mockups sin requisitos), dilo en questions: no inventes reglas, aprobaciones ni certezas.";
+
+/// Monta el texto para proponer un diseño desde mockups y requisitos
+/// guardados. Los mockups viajan como resumen legible (sin posiciones);
+/// al menos un elemento de contexto es obligatorio y se aplican los
+/// mismos topes que en la creación desde requisitos.
+pub fn build_mockup_design_input(
+    kind: DesignKind,
+    requirements: &[crate::generation::GenerationContextItem],
+    mockups: &[crate::generation::GenerationContextItem],
+) -> String {
+    let instruction = match kind {
+        DesignKind::Flow => FLOW_FROM_MOCKUP_INSTRUCTION,
+        DesignKind::DataModel => ER_FROM_MOCKUP_INSTRUCTION,
+    };
+    let mut reqs = requirements.to_vec();
+    reqs.sort_by(|a, b| a.artifact_id.cmp(&b.artifact_id));
+    let mut mocks = mockups.to_vec();
+    mocks.sort_by(|a, b| a.artifact_id.cmp(&b.artifact_id));
+    let mut rendered: Vec<String> = Vec::new();
+    for item in reqs.iter().take(MAX_DESIGN_CONTEXT_ITEMS) {
+        rendered.push(format!(
+            "[{} @ {}]\n{}",
+            item.artifact_id,
+            item.version_id,
+            truncate_chars(item.content.trim(), MAX_DESIGN_CONTEXT_CONTENT_CHARS)
+        ));
+    }
+    for item in mocks.iter().take(MAX_DESIGN_CONTEXT_ITEMS) {
+        rendered.push(format!(
+            "[{} @ {}]\n{}",
+            item.artifact_id,
+            item.version_id,
+            crate::mockup::render_mockup_excerpt(&item.content, MAX_DESIGN_CONTEXT_CONTENT_CHARS)
+        ));
+    }
+    rendered.truncate(MAX_DESIGN_CONTEXT_ITEMS);
+    loop {
+        let input = format!(
+            "{instruction}\n\nContexto guardado — {} requisitos, {} mockups:\n{}",
+            reqs.len().min(MAX_DESIGN_CONTEXT_ITEMS),
+            mocks.len().min(MAX_DESIGN_CONTEXT_ITEMS),
             rendered.join("\n\n")
         );
         if input.chars().count() <= MAX_DESIGN_INPUT_CHARS || rendered.is_empty() {
@@ -372,7 +443,7 @@ pub fn build_design_body(kind: DesignKind, model: &str, input: &str) -> serde_js
     })
 }
 
-fn invalid(message: impl Into<String>) -> MetaError {
+pub(crate) fn invalid(message: impl Into<String>) -> MetaError {
     MetaError::new(MetaErrorKind::InvalidResponse, message.into(), false)
 }
 
@@ -514,10 +585,18 @@ fn er_mermaid(er: &ErSpec) -> String {
             card_symbol(relation.to_card),
             relation.to,
         ));
-        match &relation.label {
-            Some(label) => out.push_str(&format!(" : {}\n", escape_label(label))),
-            None => out.push('\n'),
-        }
+        // erDiagram exige `: etiqueta` en cada relación: sin ella Mermaid
+        // no compila (`Expecting COLON`). Se entrecomilla (puede tener
+        // espacios) y `rel` cubre la ausencia; el escape ya eliminó
+        // comillas, directivas e inyecciones.
+        let raw = relation.label.as_deref().unwrap_or("rel");
+        let clean = escape_label(raw);
+        let label = if clean.is_empty() {
+            "rel"
+        } else {
+            clean.as_str()
+        };
+        out.push_str(&format!(" : \"{label}\"\n"));
     }
     out
 }
@@ -749,11 +828,11 @@ fn parse_er(json: &serde_json::Value, allowed: &[String]) -> Result<ErSpec, Meta
     })
 }
 
-fn string_field(value: &serde_json::Value, name: &str) -> Option<String> {
+pub(crate) fn string_field(value: &serde_json::Value, name: &str) -> Option<String> {
     value.get(name)?.as_str().map(str::to_string)
 }
 
-fn non_empty(text: &str, max_chars: usize) -> Option<String> {
+pub(crate) fn non_empty(text: &str, max_chars: usize) -> Option<String> {
     let trimmed = text.trim();
     if trimmed.is_empty() || trimmed.chars().count() > max_chars {
         return None;
@@ -761,7 +840,7 @@ fn non_empty(text: &str, max_chars: usize) -> Option<String> {
     Some(trimmed.to_string())
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     let id = id.trim();
     !id.is_empty()
         && id.chars().count() <= MAX_DESIGN_ID_CHARS
@@ -833,7 +912,7 @@ fn string_items(
     Ok(out)
 }
 
-fn truncate_chars(text: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
     }
@@ -908,6 +987,474 @@ pub async fn generate_design(
     })
 }
 
+/// Versión de la plantilla de actualización (hito 8): el mismo esquema de
+/// salida del hito 6, con instrucciones de ajuste en vez de creación.
+pub const DESIGN_UPDATE_TEMPLATE_VERSION: u32 = 1;
+
+const FLOW_UPDATE_INSTRUCTION: &str = "Eres un diseñador que PROPONE AJUSTES a un flujo de operación existente porque cambiaron sus requisitos fuente. \
+Responde SOLO con el objeto JSON pedido, sin texto adicional. \
+Conserva todo lo que no necesite cambiar y mantén los identificadores de los elementos existentes cuando sea posible; ajusta solo lo justificado por los requisitos actuales. \
+Propón el flujo COMPLETO actualizado: title, nodes (id único de letras, dígitos y subrayado, kind entre start, step, decision y end, label y requirements con identificadores de los requisitos enviados), \
+edges (origen y destino existentes, label opcional), explanation breve de QUÉ cambió y POR QUÉ, y questions (como mucho 5, vacía si no hay). \
+Señala incertidumbres en questions y no presentes supuestos como decisiones aprobadas.";
+
+const ER_UPDATE_INSTRUCTION: &str = "Eres un diseñador que PROPONE AJUSTES a un modelo entidad-relación existente porque cambiaron sus requisitos fuente. \
+Responde SOLO con el objeto JSON pedido, sin texto adicional. \
+Conserva todo lo que no necesite cambiar y mantén los nombres de entidades, atributos y relaciones existentes cuando sea posible; ajusta solo lo justificado por los requisitos actuales. \
+Propón el modelo COMPLETO actualizado: title, entities (name único de letras, dígitos y subrayado, attributes con name y key, requirements con identificadores de los requisitos enviados), \
+relations (extremos existentes, label opcional, from_card y to_card entre 1, 0..1, N y 0..N), explanation breve de QUÉ cambió y POR QUÉ, y questions (como mucho 5, vacía si no hay). \
+No propongas tipos de atributos: están fuera del subconjunto. \
+Señala incertidumbres en questions y no presentes supuestos como decisiones aprobadas.";
+
+/// Fuente del diseño con su versión utilizada y su versión actual.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateSource {
+    pub artifact_id: String,
+    pub used_version_id: String,
+    pub used_content: String,
+    pub current_version_id: String,
+    pub current_content: String,
+}
+
+/// Cambio del requisito que originó el informe de impacto, si se conoce.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OriginChange {
+    pub artifact_id: String,
+    pub from_version_id: String,
+    pub from_content: String,
+    pub current_version_id: String,
+    pub current_content: String,
+}
+
+/// Monta la entrada para proponer la actualización de un diseño: el diseño
+/// actual (JSON canónico), cada fuente con su versión utilizada y actual,
+/// el cambio origen y los caminos relevantes. Mismos topes que la creación.
+pub fn build_update_input(
+    kind: DesignKind,
+    current_spec: &str,
+    sources: &[UpdateSource],
+    origin: Option<&OriginChange>,
+    paths: &[Vec<String>],
+) -> String {
+    let instruction = match kind {
+        DesignKind::Flow => FLOW_UPDATE_INSTRUCTION,
+        DesignKind::DataModel => ER_UPDATE_INSTRUCTION,
+    };
+    let mut items: Vec<UpdateSource> = sources.to_vec();
+    items.sort_by(|a, b| a.artifact_id.cmp(&b.artifact_id));
+    items.truncate(MAX_DESIGN_CONTEXT_ITEMS);
+    let mut rendered: Vec<String> = items
+        .iter()
+        .map(|item| {
+            if item.used_version_id == item.current_version_id {
+                format!(
+                    "[{} @ {} (sin cambios)]\n{}",
+                    item.artifact_id,
+                    item.current_version_id,
+                    truncate_chars(
+                        item.current_content.trim(),
+                        MAX_DESIGN_CONTEXT_CONTENT_CHARS
+                    )
+                )
+            } else {
+                format!(
+                    "[{}]\nutilizada {}:\n{}\nactual {}:\n{}",
+                    item.artifact_id,
+                    item.used_version_id,
+                    truncate_chars(item.used_content.trim(), MAX_DESIGN_CONTEXT_CONTENT_CHARS),
+                    item.current_version_id,
+                    truncate_chars(
+                        item.current_content.trim(),
+                        MAX_DESIGN_CONTEXT_CONTENT_CHARS
+                    )
+                )
+            }
+        })
+        .collect();
+    let spec = truncate_chars(current_spec.trim(), MAX_DESIGN_INPUT_CHARS / 2);
+    let origin_text = match origin {
+        Some(change) => format!(
+            "\n\nCambio que originó el impacto [{} {} → {}]:\nantes:\n{}\nahora:\n{}",
+            change.artifact_id,
+            change.from_version_id,
+            change.current_version_id,
+            truncate_chars(change.from_content.trim(), MAX_DESIGN_CONTEXT_CONTENT_CHARS),
+            truncate_chars(
+                change.current_content.trim(),
+                MAX_DESIGN_CONTEXT_CONTENT_CHARS
+            )
+        ),
+        None => String::new(),
+    };
+    let mut path_lines: Vec<String> = paths
+        .iter()
+        .take(MAX_DESIGN_CONTEXT_ITEMS)
+        .map(|path| path.join(" → "))
+        .collect();
+    loop {
+        let paths_text = if path_lines.is_empty() {
+            String::new()
+        } else {
+            format!("\n\nCaminos de dependencia:\n{}", path_lines.join("\n"))
+        };
+        let input = format!(
+            "{instruction}\n\nDiseño actual (JSON a actualizar):\n{spec}\n\nFuentes utilizadas frente a actuales ({}):\n{}{origin_text}{paths_text}",
+            rendered.len(),
+            rendered.join("\n\n")
+        );
+        if input.chars().count() <= MAX_DESIGN_INPUT_CHARS
+            || (rendered.is_empty() && path_lines.is_empty())
+        {
+            return input;
+        }
+        if !rendered.is_empty() {
+            rendered.pop();
+        } else {
+            path_lines.pop();
+        }
+    }
+}
+
+/// Elemento del diff estructural: `kind` es `title`, `node`, `edge`,
+/// `entity`, `attribute` o `relation`; `detail` describe el cambio.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiffItem {
+    pub kind: String,
+    pub id: String,
+    pub detail: String,
+}
+
+/// Diferencias estructurales deterministas entre dos diseños validados del
+/// mismo tipo. Si cambian los identificadores se reflejan como
+/// adición+eliminación: nunca se inventan equivalencias.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesignDiff {
+    pub added: Vec<DiffItem>,
+    pub removed: Vec<DiffItem>,
+    pub modified: Vec<DiffItem>,
+}
+
+fn kind_order(kind: &str) -> usize {
+    match kind {
+        "title" => 0,
+        "node" => 1,
+        "edge" => 2,
+        "entity" => 3,
+        "attribute" => 4,
+        "relation" => 5,
+        _ => 6,
+    }
+}
+
+fn sort_items(items: &mut [DiffItem]) {
+    items.sort_by(|a, b| {
+        kind_order(&a.kind)
+            .cmp(&kind_order(&b.kind))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+fn joined(items: &[String]) -> String {
+    let mut sorted = items.to_vec();
+    sorted.sort();
+    sorted.join(", ")
+}
+
+/// Diff entre el diseño actual y el propuesto. Exige el mismo tipo en
+/// ambos; el tipo distinto es un error de programación del llamante.
+#[derive(Default)]
+struct DiffAcc {
+    added: Vec<DiffItem>,
+    removed: Vec<DiffItem>,
+    modified: Vec<DiffItem>,
+}
+
+pub fn diff_designs(old: &ValidatedDesign, new: &ValidatedDesign) -> Result<DesignDiff, MetaError> {
+    if old.kind != new.kind {
+        return Err(invalid("no se comparan diseños de distinto tipo"));
+    }
+    let mut acc = DiffAcc::default();
+    if old.title != new.title {
+        acc.modified.push(DiffItem {
+            kind: "title".to_string(),
+            id: "title".to_string(),
+            detail: format!("\"{}\" → \"{}\"", old.title, new.title),
+        });
+    }
+    match (&old.flow, &new.flow) {
+        (Some(before), Some(after)) => diff_flow(before, after, &mut acc),
+        (None, None) => {}
+        _ => return Err(invalid("no se comparan diseños de distinto tipo")),
+    }
+    match (&old.er, &new.er) {
+        (Some(before), Some(after)) => diff_er(before, after, &mut acc),
+        (None, None) => {}
+        _ => return Err(invalid("no se comparan diseños de distinto tipo")),
+    }
+    sort_items(&mut acc.added);
+    sort_items(&mut acc.removed);
+    sort_items(&mut acc.modified);
+    Ok(DesignDiff {
+        added: acc.added,
+        removed: acc.removed,
+        modified: acc.modified,
+    })
+}
+
+fn diff_flow(before: &FlowSpec, after: &FlowSpec, acc: &mut DiffAcc) {
+    let mut old_nodes = std::collections::HashMap::new();
+    for node in &before.nodes {
+        old_nodes.insert(node.id.clone(), node);
+    }
+    let mut new_nodes = std::collections::HashMap::new();
+    for node in &after.nodes {
+        new_nodes.insert(node.id.clone(), node);
+    }
+    for (id, node) in &new_nodes {
+        if !old_nodes.contains_key(id) {
+            acc.added.push(DiffItem {
+                kind: "node".to_string(),
+                id: id.clone(),
+                detail: format!("{:?} \"{}\"", node.kind, node.label),
+            });
+        }
+    }
+    for (id, node) in &old_nodes {
+        if !new_nodes.contains_key(id) {
+            acc.removed.push(DiffItem {
+                kind: "node".to_string(),
+                id: id.clone(),
+                detail: format!("{:?} \"{}\"", node.kind, node.label),
+            });
+        }
+    }
+    for (id, node) in &new_nodes {
+        let Some(prev) = old_nodes.get(id) else {
+            continue;
+        };
+        let mut changes = Vec::new();
+        if prev.kind != node.kind {
+            changes.push(format!("kind {:?} → {:?}", prev.kind, node.kind));
+        }
+        if prev.label != node.label {
+            changes.push(format!("label \"{}\" → \"{}\"", prev.label, node.label));
+        }
+        if joined(&prev.requirements) != joined(&node.requirements) {
+            changes.push(format!(
+                "requirements [{}] → [{}]",
+                joined(&prev.requirements),
+                joined(&node.requirements)
+            ));
+        }
+        if !changes.is_empty() {
+            acc.modified.push(DiffItem {
+                kind: "node".to_string(),
+                id: id.clone(),
+                detail: changes.join("; "),
+            });
+        }
+    }
+    diff_edges(&before.edges, &after.edges, acc);
+}
+
+fn edge_key(from: &str, to: &str) -> String {
+    format!("{from} → {to}")
+}
+
+fn diff_edges(before: &[FlowEdge], after: &[FlowEdge], acc: &mut DiffAcc) {
+    let mut old_edges = std::collections::HashMap::new();
+    for edge in before {
+        old_edges.insert(edge_key(&edge.from, &edge.to), edge);
+    }
+    let mut new_edges = std::collections::HashMap::new();
+    for edge in after {
+        new_edges.insert(edge_key(&edge.from, &edge.to), edge);
+    }
+    for (key, edge) in &new_edges {
+        if !old_edges.contains_key(key) {
+            acc.added.push(DiffItem {
+                kind: "edge".to_string(),
+                id: key.clone(),
+                detail: edge.label.clone().unwrap_or_default(),
+            });
+        }
+    }
+    for (key, edge) in &old_edges {
+        if !new_edges.contains_key(key) {
+            acc.removed.push(DiffItem {
+                kind: "edge".to_string(),
+                id: key.clone(),
+                detail: edge.label.clone().unwrap_or_default(),
+            });
+        }
+    }
+    for (key, edge) in &new_edges {
+        let Some(prev) = old_edges.get(key) else {
+            continue;
+        };
+        if prev.label != edge.label {
+            acc.modified.push(DiffItem {
+                kind: "edge".to_string(),
+                id: key.clone(),
+                detail: format!(
+                    "label \"{}\" → \"{}\"",
+                    prev.label.as_deref().unwrap_or(""),
+                    edge.label.as_deref().unwrap_or("")
+                ),
+            });
+        }
+    }
+}
+
+fn diff_er(before: &ErSpec, after: &ErSpec, acc: &mut DiffAcc) {
+    let mut old_entities = std::collections::HashMap::new();
+    for entity in &before.entities {
+        old_entities.insert(entity.name.clone(), entity);
+    }
+    let mut new_entities = std::collections::HashMap::new();
+    for entity in &after.entities {
+        new_entities.insert(entity.name.clone(), entity);
+    }
+    for name in new_entities.keys() {
+        if !old_entities.contains_key(name) {
+            acc.added.push(DiffItem {
+                kind: "entity".to_string(),
+                id: name.clone(),
+                detail: String::new(),
+            });
+        }
+    }
+    for name in old_entities.keys() {
+        if !new_entities.contains_key(name) {
+            acc.removed.push(DiffItem {
+                kind: "entity".to_string(),
+                id: name.clone(),
+                detail: String::new(),
+            });
+        }
+    }
+    for (name, entity) in &new_entities {
+        let Some(prev) = old_entities.get(name) else {
+            continue;
+        };
+        if joined(&prev.requirements) != joined(&entity.requirements) {
+            acc.modified.push(DiffItem {
+                kind: "entity".to_string(),
+                id: name.clone(),
+                detail: format!(
+                    "requirements [{}] → [{}]",
+                    joined(&prev.requirements),
+                    joined(&entity.requirements)
+                ),
+            });
+        }
+        diff_attributes(name, &prev.attributes, &entity.attributes, acc);
+    }
+    diff_relations(&before.relations, &after.relations, acc);
+}
+
+fn diff_attributes(entity: &str, before: &[ErAttribute], after: &[ErAttribute], acc: &mut DiffAcc) {
+    let mut old_attrs = std::collections::HashMap::new();
+    for attr in before {
+        old_attrs.insert(attr.name.clone(), attr);
+    }
+    let mut new_attrs = std::collections::HashMap::new();
+    for attr in after {
+        new_attrs.insert(attr.name.clone(), attr);
+    }
+    for name in new_attrs.keys() {
+        if !old_attrs.contains_key(name) {
+            acc.added.push(DiffItem {
+                kind: "attribute".to_string(),
+                id: format!("{entity}.{name}"),
+                detail: String::new(),
+            });
+        }
+    }
+    for name in old_attrs.keys() {
+        if !new_attrs.contains_key(name) {
+            acc.removed.push(DiffItem {
+                kind: "attribute".to_string(),
+                id: format!("{entity}.{name}"),
+                detail: String::new(),
+            });
+        }
+    }
+    for (name, attr) in &new_attrs {
+        let Some(prev) = old_attrs.get(name) else {
+            continue;
+        };
+        if prev.key != attr.key {
+            acc.modified.push(DiffItem {
+                kind: "attribute".to_string(),
+                id: format!("{entity}.{name}"),
+                detail: format!("key {} → {}", prev.key, attr.key),
+            });
+        }
+    }
+}
+
+fn diff_relations(before: &[ErRelation], after: &[ErRelation], acc: &mut DiffAcc) {
+    let mut old_relations = std::collections::HashMap::new();
+    for relation in before {
+        old_relations.insert(edge_key(&relation.from, &relation.to), relation);
+    }
+    let mut new_relations = std::collections::HashMap::new();
+    for relation in after {
+        new_relations.insert(edge_key(&relation.from, &relation.to), relation);
+    }
+    for (key, relation) in &new_relations {
+        if !old_relations.contains_key(key) {
+            acc.added.push(DiffItem {
+                kind: "relation".to_string(),
+                id: key.clone(),
+                detail: relation.label.clone().unwrap_or_default(),
+            });
+        }
+    }
+    for (key, relation) in &old_relations {
+        if !new_relations.contains_key(key) {
+            acc.removed.push(DiffItem {
+                kind: "relation".to_string(),
+                id: key.clone(),
+                detail: relation.label.clone().unwrap_or_default(),
+            });
+        }
+    }
+    for (key, relation) in &new_relations {
+        let Some(prev) = old_relations.get(key) else {
+            continue;
+        };
+        let mut changes = Vec::new();
+        if prev.label != relation.label {
+            changes.push(format!(
+                "label \"{}\" → \"{}\"",
+                prev.label.as_deref().unwrap_or(""),
+                relation.label.as_deref().unwrap_or("")
+            ));
+        }
+        if prev.from_card != relation.from_card {
+            changes.push(format!(
+                "from_card {:?} → {:?}",
+                prev.from_card, relation.from_card
+            ));
+        }
+        if prev.to_card != relation.to_card {
+            changes.push(format!(
+                "to_card {:?} → {:?}",
+                prev.to_card, relation.to_card
+            ));
+        }
+        if !changes.is_empty() {
+            acc.modified.push(DiffItem {
+                kind: "relation".to_string(),
+                id: key.clone(),
+                detail: changes.join("; "),
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -974,8 +1521,44 @@ mod tests {
              \x20       string id PK\n\
              \x20       string cantidad\n\
              \x20   }\n\
-             \x20   VENTA ||--}| LINEA : contiene\n";
+             \x20   VENTA ||--}| LINEA : \"contiene\"\n";
         assert_eq!(mermaid, expected);
+    }
+
+    #[test]
+    fn er_relations_always_carry_a_quoted_label() {
+        // Regresión: erDiagram exige `: etiqueta` y Mermaid 12 falla con
+        // `Expecting COLON` si falta; multi-palabra exige comillas.
+        let text = serde_json::json!({
+            "title": "Ventas",
+            "entities": [
+                {"name": "A", "attributes": [{"name": "id", "key": true}], "requirements": []},
+                {"name": "B", "attributes": [{"name": "id", "key": true}], "requirements": []},
+                {"name": "C", "attributes": [{"name": "id", "key": true}], "requirements": []}
+            ],
+            "relations": [
+                {"from": "A", "to": "B", "from_card": "1", "to_card": "N"},
+                {"from": "B", "to": "C", "label": "se compone de varias", "from_card": "1", "to_card": "0..N"},
+                {"from": "A", "to": "C", "label": "%%{init}x</script>", "from_card": "1", "to_card": "1"}
+            ],
+            "explanation": "E.",
+            "questions": []
+        })
+        .to_string();
+        let design = parse_design_output(&text, DesignKind::DataModel, &[]).expect("válido");
+        let mermaid = to_mermaid(&design);
+        let relations: Vec<&str> = mermaid.lines().filter(|line| line.contains("--")).collect();
+        assert_eq!(relations.len(), 3);
+        for line in &relations {
+            assert!(
+                line.contains(" : \"") && line.ends_with('"'),
+                "relación sin etiqueta entrecomillada: {line}"
+            );
+        }
+        assert!(mermaid.contains("A ||--}| B : \"rel\""));
+        assert!(mermaid.contains("B ||--}o C : \"se compone de varias\""));
+        // Hostil neutralizada pero etiqueta presente.
+        assert!(!mermaid.contains('%') && !mermaid.contains('<'));
     }
 
     #[test]
@@ -1119,5 +1702,199 @@ mod tests {
         assert!(input.contains("[req-00 @ req-00-v1]"));
         assert!(!input.contains("[req-20 @ req-20-v1]"));
         assert!(input.chars().count() <= MAX_DESIGN_INPUT_CHARS);
+    }
+
+    fn flow_spec(text: &str) -> ValidatedDesign {
+        parse_design_output(text, DesignKind::Flow, &allowed()).expect("flujo válido")
+    }
+
+    fn er_spec(text: &str) -> ValidatedDesign {
+        parse_design_output(text, DesignKind::DataModel, &allowed()).expect("ER válido")
+    }
+
+    #[test]
+    fn update_input_carries_current_spec_sources_origin_and_paths() {
+        let sources = vec![UpdateSource {
+            artifact_id: "req-3".to_string(),
+            used_version_id: "req-3-v1".to_string(),
+            used_content: "Descuenta stock al confirmar.".to_string(),
+            current_version_id: "req-3-v2".to_string(),
+            current_content: "Reserva antes de confirmar.".to_string(),
+        }];
+        let origin = OriginChange {
+            artifact_id: "req-3".to_string(),
+            from_version_id: "req-3-v1".to_string(),
+            from_content: "Descuenta stock al confirmar.".to_string(),
+            current_version_id: "req-3-v2".to_string(),
+            current_content: "Reserva antes de confirmar.".to_string(),
+        };
+        let input = build_update_input(
+            DesignKind::Flow,
+            "{\"title\":\"Flujo\"}",
+            &sources,
+            Some(&origin),
+            &[vec!["req-3".to_string(), "flujo-4".to_string()]],
+        );
+        assert!(input.contains("PROPONE AJUSTES"));
+        assert!(input.contains("{\"title\":\"Flujo\"}"));
+        assert!(input.contains("utilizada req-3-v1"));
+        assert!(input.contains("actual req-3-v2"));
+        assert!(input.contains("Reserva antes de confirmar."));
+        assert!(input.contains("req-3 → flujo-4"));
+        assert!(input.chars().count() <= MAX_DESIGN_INPUT_CHARS);
+    }
+
+    #[test]
+    fn update_input_marks_unchanged_sources_and_caps_size() {
+        let sources: Vec<UpdateSource> = (0..25)
+            .map(|i| UpdateSource {
+                artifact_id: format!("req-{i:02}"),
+                used_version_id: format!("req-{i:02}-v1"),
+                used_content: "Mismo.".to_string(),
+                current_version_id: format!("req-{i:02}-v1"),
+                current_content: "Mismo.".to_string(),
+            })
+            .collect();
+        let big_spec = format!("{{\"title\":\"{}\"}}", "x".repeat(MAX_DESIGN_INPUT_CHARS));
+        let input = build_update_input(DesignKind::DataModel, &big_spec, &sources, None, &[]);
+        assert!(input.contains("(sin cambios)"));
+        assert!(!input.contains("[req-20 @"));
+        assert!(input.chars().count() <= MAX_DESIGN_INPUT_CHARS);
+    }
+
+    #[test]
+    fn diff_flow_reports_added_removed_and_modified() {
+        let old = flow_spec(
+            &serde_json::json!({
+                "title": "Venta",
+                "nodes": [
+                    {"id": "inicio", "kind": "start", "label": "Venta creada", "requirements": ["req-3"]},
+                    {"id": "fin", "kind": "end", "label": "Venta confirmada", "requirements": []}
+                ],
+                "edges": [{"from": "inicio", "to": "fin"}],
+                "explanation": "Antes.",
+                "questions": []
+            })
+            .to_string(),
+        );
+        let new = flow_spec(
+            &serde_json::json!({
+                "title": "Venta con reserva",
+                "nodes": [
+                    {"id": "inicio", "kind": "start", "label": "Venta creada", "requirements": ["req-3"]},
+                    {"id": "reserva", "kind": "step", "label": "Reservar stock", "requirements": ["req-3"]},
+                    {"id": "fin", "kind": "end", "label": "Venta cerrada", "requirements": []}
+                ],
+                "edges": [
+                    {"from": "inicio", "to": "reserva"},
+                    {"from": "reserva", "to": "fin"}
+                ],
+                "explanation": "Después.",
+                "questions": []
+            })
+            .to_string(),
+        );
+        let diff = diff_designs(&old, &new).expect("diff");
+        let kinds: Vec<(&str, &str)> = diff
+            .added
+            .iter()
+            .map(|i| ("added", i.id.as_str()))
+            .chain(diff.removed.iter().map(|i| ("removed", i.id.as_str())))
+            .chain(diff.modified.iter().map(|i| ("modified", i.id.as_str())))
+            .collect();
+        assert!(kinds.contains(&("added", "reserva")));
+        assert!(kinds.contains(&("added", "inicio → reserva")));
+        assert!(kinds.contains(&("removed", "inicio → fin")));
+        assert!(kinds.contains(&("modified", "title")));
+        assert!(kinds.contains(&("modified", "fin")));
+        let fin = diff.modified.iter().find(|i| i.id == "fin").expect("fin");
+        assert!(fin.detail.contains("Venta confirmada"));
+        assert!(fin.detail.contains("Venta cerrada"));
+        // Determinista: mismo orden en cada cálculo.
+        assert_eq!(diff, diff_designs(&old, &new).expect("diff"));
+    }
+
+    #[test]
+    fn diff_er_covers_entities_attributes_and_relations() {
+        let old = er_spec(
+            &serde_json::json!({
+                "title": "Ventas",
+                "entities": [
+                    {"name": "venta", "attributes": [{"name": "id", "key": true}], "requirements": ["req-3"]}
+                ],
+                "relations": [],
+                "explanation": "Antes.",
+                "questions": []
+            })
+            .to_string(),
+        );
+        let new = er_spec(
+            &serde_json::json!({
+                "title": "Ventas",
+                "entities": [
+                    {"name": "venta", "attributes": [{"name": "id", "key": true}, {"name": "estado", "key": false}], "requirements": ["req-3"]},
+                    {"name": "reserva", "attributes": [{"name": "id", "key": true}], "requirements": ["req-3"]}
+                ],
+                "relations": [{"from": "venta", "to": "reserva", "from_card": "1", "to_card": "0..N"}],
+                "explanation": "Después.",
+                "questions": []
+            })
+            .to_string(),
+        );
+        let diff = diff_designs(&old, &new).expect("diff");
+        let added: Vec<&str> = diff.added.iter().map(|i| i.id.as_str()).collect();
+        assert!(added.contains(&"reserva"));
+        assert!(added.contains(&"venta.estado"));
+        assert!(added.contains(&"venta → reserva"));
+        assert!(diff.removed.is_empty());
+        assert!(diff.modified.is_empty());
+    }
+
+    #[test]
+    fn diff_rejects_mixed_kinds_and_flags_renames_as_add_remove() {
+        let flow = flow_spec(
+            &serde_json::json!({
+                "title": "Venta",
+                "nodes": [{"id": "a", "kind": "start", "label": "A", "requirements": []}],
+                "edges": [],
+                "explanation": "E.",
+                "questions": []
+            })
+            .to_string(),
+        );
+        let renamed = flow_spec(
+            &serde_json::json!({
+                "title": "Venta",
+                "nodes": [{"id": "b", "kind": "start", "label": "A", "requirements": []}],
+                "edges": [],
+                "explanation": "E.",
+                "questions": []
+            })
+            .to_string(),
+        );
+        let diff = diff_designs(&flow, &renamed).expect("diff");
+        assert_eq!(
+            diff.added.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+            vec!["b"]
+        );
+        assert_eq!(
+            diff.removed
+                .iter()
+                .map(|i| i.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a"]
+        );
+        assert!(diff.modified.is_empty());
+        let er = er_spec(
+            &serde_json::json!({
+                "title": "Ventas",
+                "entities": [{"name": "venta", "attributes": [{"name": "id", "key": true}], "requirements": []}],
+                "relations": [],
+                "explanation": "E.",
+                "questions": []
+            })
+            .to_string(),
+        );
+        assert!(diff_designs(&flow, &er).is_err());
     }
 }

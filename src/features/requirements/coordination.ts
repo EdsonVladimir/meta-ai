@@ -32,33 +32,71 @@ export function needsConfirm(
 export interface DraftState {
   requirementId: string | null;
   content: string;
+  /** Contenido guardado contra el que se compara: re-escribirlo limpia. */
+  base: string;
+  /** Generación de edición: un `saved` tardío solo vale para su `rev`. */
+  rev: number;
   dirty: boolean;
 }
 
-export const EMPTY_DRAFT: DraftState = { requirementId: null, content: "", dirty: false };
+export const EMPTY_DRAFT: DraftState = {
+  requirementId: null,
+  content: "",
+  base: "",
+  rev: 0,
+  dirty: false,
+};
 
 export type DraftAction =
   | { type: "edit"; content: string }
   | { type: "snapshot"; requirementId: string; content: string }
-  | { type: "saved"; requirementId: string; content: string }
+  | { type: "saved"; requirementId: string; content: string; rev: number }
   | { type: "saveFailed" }
+  | { type: "discard"; requirementId: string; content: string }
   | { type: "select"; requirementId: string | null };
 
 export function draftReducer(state: DraftState, action: DraftAction): DraftState {
   switch (action.type) {
     case "edit":
-      return { ...state, content: action.content, dirty: true };
+      return { ...state, content: action.content, rev: state.rev + 1, dirty: action.content !== state.base };
     case "snapshot":
       // Un refresco nunca sobrescribe un borrador con cambios sin guardar.
       if (state.dirty) return state;
-      return { requirementId: action.requirementId, content: action.content, dirty: false };
+      return {
+        requirementId: action.requirementId,
+        content: action.content,
+        base: action.content,
+        rev: state.rev,
+        dirty: false,
+      };
     case "saved":
-      return { requirementId: action.requirementId, content: action.content, dirty: false };
+      // Solo el resultado de ESTA petición limpia: si se editó durante el
+      // guardado (rev distinto) o el borrador es de otro requisito, el
+      // contenido nuevo se conserva sucio y guardará como otra versión.
+      if (action.rev !== state.rev || action.requirementId !== state.requirementId) {
+        return state;
+      }
+      return {
+        requirementId: action.requirementId,
+        content: action.content,
+        base: action.content,
+        rev: state.rev,
+        dirty: false,
+      };
     case "saveFailed":
       // Un error (p. ej. concurrencia) conserva el borrador intacto.
       return state;
+    case "discard":
+      // Descarte explícito de la persona: resincroniza sin condiciones.
+      return {
+        requirementId: action.requirementId,
+        content: action.content,
+        base: action.content,
+        rev: state.rev,
+        dirty: false,
+      };
     case "select":
-      return { requirementId: action.requirementId, content: "", dirty: false };
+      return { requirementId: action.requirementId, content: "", base: "", rev: 0, dirty: false };
   }
 }
 
@@ -116,4 +154,38 @@ export function canApprove(gate: ApprovalGate): boolean {
   if (gate.busy || gate.dirty) return false;
   if (gate.approver.trim() === "") return false;
   return gate.reviewedVersionId === gate.currentVersionId;
+}
+
+/** Documento al que Ctrl+S debe dirigirse, o ninguno. */
+export type SaveTarget = "requirement" | "design" | "mockup";
+
+/**
+ * Resuelve el objetivo de Guardar (Ctrl+S o botón) desde la vista activa,
+ * la selección y qué borradores tienen cambios semánticos. Puro y
+ * probado: sin cambios no hay guardado (nunca versiones idénticas).
+ */
+export function resolveSaveTarget(input: {
+  centerView: "requirements" | "design" | "impact" | "mockups";
+  requirementId: string | null;
+  designId: string | null;
+  mockupId: string | null;
+  requirementDirty: boolean;
+  designDirty: boolean;
+  designKeyOk: boolean;
+  mockupDirty: boolean;
+  mockupKeyOk: boolean;
+}): SaveTarget | null {
+  if (input.centerView === "requirements") {
+    if (input.requirementId !== null && input.requirementDirty) return "requirement";
+    return null;
+  }
+  if (input.centerView === "design") {
+    if (input.designId !== null && input.designDirty && input.designKeyOk) return "design";
+    return null;
+  }
+  if (input.centerView === "mockups") {
+    if (input.mockupId !== null && input.mockupDirty && input.mockupKeyOk) return "mockup";
+    return null;
+  }
+  return null;
 }

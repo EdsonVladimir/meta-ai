@@ -400,6 +400,8 @@ fn snapshot_of(store: &Store) -> Snapshot {
         versions,
         approvals: store.approvals().iter().map(|a| (*a).clone()).collect(),
         baselines: store.baselines().iter().map(|b| (*b).clone()).collect(),
+        title_history: store.title_changes().to_vec(),
+        deliveries: store.deliveries().iter().map(|d| (*d).clone()).collect(),
     }
 }
 
@@ -513,6 +515,8 @@ fn reconstitute_rejects_cycle() -> Result<(), CoreError> {
         ],
         approvals: vec![],
         baselines: vec![],
+        title_history: vec![],
+        deliveries: vec![],
     };
     let err = Store::reconstitute(snapshot).expect_err("debe fallar");
     assert!(
@@ -598,6 +602,7 @@ fn reconstitute_rejects_baseline_without_closure() -> Result<(), CoreError> {
         BaselineId::new("base-rota")?,
         project.clone(),
         vec![(flow.clone(), flow_v1.clone())],
+        std::collections::HashMap::new(),
         Date::new("2026-10-22")?,
     ));
     let err = Store::reconstitute(snapshot).expect_err("debe fallar");
@@ -620,6 +625,7 @@ fn reconstitute_allows_historical_baseline() -> Result<(), CoreError> {
         BaselineId::new("base-vieja")?,
         project.clone(),
         vec![(req.clone(), v1)],
+        std::collections::HashMap::new(),
         Date::new("2026-10-21")?,
     ));
     let restored = Store::reconstitute(snapshot)?;

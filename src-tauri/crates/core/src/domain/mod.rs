@@ -13,8 +13,10 @@ pub use analysis::{
     version_is_valid, ImpactReport, ImpactedArtifact, Validity, VersionView,
 };
 pub use error::CoreError;
-pub use ids::{AgentId, ArtifactId, BaselineId, HumanId, ModuleId, ProjectId, VersionId};
+pub use ids::{
+    AgentId, ArtifactId, BaselineId, DeliveryId, HumanId, ModuleId, ProjectId, VersionId,
+};
 pub use model::{
-    Approval, Artifact, ArtifactType, Author, Baseline, Content, Date, Module, Project, Provenance,
-    Version,
+    Approval, Artifact, ArtifactType, Author, Baseline, Content, Date, Module, Name, Project,
+    Provenance, TitleChange, Version, WorkDelivery,
 };

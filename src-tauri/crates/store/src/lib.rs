@@ -38,14 +38,20 @@
 //!   y un mensaje claro. No se soportan dos instancias a la vez.
 
 mod actor;
+pub mod baseline_meta;
 pub mod design;
 mod error;
+pub mod layout;
 mod persist;
 pub mod proposals;
 mod schema;
 
 pub use actor::{DbActor, Loaded};
+pub use baseline_meta::{
+    BaselineMeta, BaselineMetaLog, MAX_BASELINE_DESCRIPTION_CHARS, MAX_BASELINE_NAME_CHARS,
+};
 pub use design::{DesignLog, StoredDesignGeneration, StoredDesignProposal};
 pub use error::StoreError;
+pub use layout::LayoutLog;
 pub use proposals::{ProposalLog, ProposalState, StoredGeneration, StoredProposal};
 pub use schema::SCHEMA_VERSION;

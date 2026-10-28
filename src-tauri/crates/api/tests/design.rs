@@ -126,7 +126,7 @@ fn fake_flow(req: &str) -> ValidatedDesign {
 }
 
 fn record_input(baby: &Baby, validated: ValidatedDesign) -> RecordDesignInput {
-    let context = ruth_api::snapshot_approved_context(
+    let context = ruth_api::snapshot_design_context(
         &baby.store,
         &baby.project,
         &baby.module,
@@ -144,6 +144,7 @@ fn record_input(baby: &Baby, validated: ValidatedDesign) -> RecordDesignInput {
         output_tokens: Some(200),
         total_tokens: Some(300),
         created_at: "2026-10-28T12:00:00Z".to_string(),
+        target: None,
     }
 }
 
@@ -700,23 +701,24 @@ fn persistence_failure_accepts_nothing_partially() {
 }
 
 #[test]
-fn selection_requires_approved_requirements_of_module() {
+fn selection_accepts_saved_requirements_without_review() {
     let baby = baby();
-    // Vacía.
-    let err = ruth_api::snapshot_approved_context(&baby.store, &baby.project, &baby.module, &[])
+    // Vacía: error antes de consumir red.
+    let err = ruth_api::snapshot_design_context(&baby.store, &baby.project, &baby.module, &[])
         .expect_err("vacía");
     assert_eq!(err.kind, "empty_selection");
-    // Sin aprobar.
-    let err = ruth_api::snapshot_approved_context(
+    // Sin revisar: permitido desde el diseño vivo (versión guardada basta).
+    let context = ruth_api::snapshot_design_context(
         &baby.store,
         &baby.project,
         &baby.module,
         std::slice::from_ref(&baby.req),
     )
-    .expect_err("sin aprobar");
-    assert_eq!(err.kind, "not_approved");
-    // Inexistente.
-    let err = ruth_api::snapshot_approved_context(
+    .expect("sin revisar");
+    assert_eq!(context.len(), 1);
+    assert_eq!(context[0].artifact_id, baby.req);
+    // Inexistente: sigue bloqueando (estructural).
+    let err = ruth_api::snapshot_design_context(
         &baby.store,
         &baby.project,
         &baby.module,
@@ -724,6 +726,7 @@ fn selection_requires_approved_requirements_of_module() {
     )
     .expect_err("inexistente");
     assert_eq!(err.kind, "artifact_not_found");
+    // La vista previa informa la revisión como dato, no como veto.
     let preview = ruth_api::design_context_preview(
         &baby.store,
         DesignContextInput {
@@ -734,4 +737,629 @@ fn selection_requires_approved_requirements_of_module() {
     .expect("vista previa");
     assert_eq!(preview.len(), 1);
     assert!(!preview[0].approved);
+}
+
+// ---------------------------------------------------------------------------
+// Revisión manual desde el editor visual (hito 10): procedencia humana, sin
+// heredar aprobación, con disposición en la misma transacción. Sin red.
+// ---------------------------------------------------------------------------
+
+use ruth_api::{GetDesignLayoutInput, SaveDesignVersionInput};
+use ruth_store::LayoutLog;
+
+fn fake_er(req: &str) -> ValidatedDesign {
+    let text = serde_json::json!({
+        "title": "Modelo de venta",
+        "entities": [
+            {"name": "Venta", "attributes": [{"name": "id", "key": true}], "requirements": [req]},
+            {"name": "DetalleVenta", "attributes": [{"name": "id", "key": true}], "requirements": []}
+        ],
+        "relations": [{"from": "Venta", "to": "DetalleVenta", "from_card": "1", "to_card": "0..N"}],
+        "explanation": "Modelo mínimo.",
+        "questions": []
+    })
+    .to_string();
+    parse_design_output(&text, DesignKind::DataModel, &[req.to_string()]).expect("válido")
+}
+
+/// Base con un flujo aceptado (v1, IA, sin aprobar) y su requisito aprobado.
+fn flow_baby(name: &str) -> (TempDb, Baby, DbActor, String) {
+    let tmp = TempDb::new(name);
+    let mut baby = baby();
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&baby.store, baby.ids.checkpoint())
+        .expect("dominio");
+    let approved_req = baby.req.clone();
+    approve_current(&mut baby, &db, &approved_req);
+    let req = baby.req.clone();
+    let validated = fake_flow(&req);
+    let input = record_input(&baby, validated);
+    let dto =
+        ruth_api::record_design_generation(&baby.store, &mut baby.ids, &mut baby.log, &db, input)
+            .expect("registrar");
+    let spec = dto.proposal.spec.clone();
+    let detail = ruth_api::accept_design(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut baby.log,
+        &db,
+        accept_input(&dto.id, spec),
+    )
+    .expect("aceptar");
+    let design = detail.artifact.id.clone();
+    (tmp, baby, db, design)
+}
+
+fn save_input(
+    project: &str,
+    design: &str,
+    expected: &str,
+    spec: serde_json::Value,
+    sources: Vec<String>,
+    layout: Option<serde_json::Value>,
+) -> SaveDesignVersionInput {
+    SaveDesignVersionInput {
+        project_id: project.to_string(),
+        artifact_id: design.to_string(),
+        expected_version_id: expected.to_string(),
+        author: "bruno".to_string(),
+        spec,
+        source_version_ids: sources,
+        layout,
+    }
+}
+
+fn current_of(detail: &ruth_api::RequirementDetail) -> (String, Vec<String>, serde_json::Value) {
+    let current = detail
+        .versions
+        .iter()
+        .find(|v| v.id == detail.current_version_id)
+        .expect("actual");
+    (
+        current.id.clone(),
+        current.sources.clone(),
+        serde_json::from_str(&current.content).expect("json"),
+    )
+}
+
+#[test]
+fn manual_save_creates_human_version_with_layout() {
+    let (_tmp, mut baby, db, design) = flow_baby("manual");
+    let mut layouts = LayoutLog::new();
+    let detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: design.clone(),
+        },
+    )
+    .expect("detalle");
+    let (expected, sources, mut spec) = current_of(&detail);
+    spec["title"] = serde_json::json!("Flujo de venta (revisado)");
+    let layout =
+        serde_json::json!({ "inicio": { "x": 40.0, "y": 80.0 }, "fin": { "x": 40.0, "y": 320.0 } });
+    let saved = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(
+            &baby.project,
+            &design,
+            &expected,
+            spec,
+            sources,
+            Some(layout),
+        ),
+    )
+    .expect("guardar");
+    assert_eq!(saved.versions.len(), 2);
+    let v2 = saved
+        .versions
+        .iter()
+        .find(|v| v.id == saved.current_version_id)
+        .expect("v2");
+    assert_eq!(v2.provenance.kind, "human");
+    assert_eq!(v2.provenance.by, "bruno");
+    assert!(v2.content.contains("Flujo de venta (revisado)"));
+    // Sin aprobación heredada y v1 intacta.
+    assert!(saved.approvals.is_empty());
+    assert_eq!(saved.versions[0].provenance.kind, "ai");
+    assert_eq!(v2.sources, vec![format!("{}-v1", baby.req)]);
+    // Disposición guardada con la versión nueva.
+    let dto = ruth_api::design_layout(
+        &layouts,
+        GetDesignLayoutInput {
+            artifact_id: design.clone(),
+            version_id: v2.id.clone(),
+        },
+    );
+    assert_eq!(
+        dto.layout,
+        serde_json::from_str(r#"{"fin":{"x":40.0,"y":320.0},"inicio":{"x":40.0,"y":80.0}}"#).ok()
+    );
+    db.close();
+}
+
+#[test]
+fn manual_save_blocks_stale_sources_by_name_then_accepts_current() {
+    let (_tmp, mut baby, db, design) = flow_baby("manual-stale");
+    let mut layouts = LayoutLog::new();
+    // El requisito avanza: la fijación v1 del diseño queda obsoleta.
+    let req_detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: baby.req.clone(),
+        },
+    )
+    .expect("requisito");
+    ruth_api::transact(&mut baby.store, &mut baby.ids, &db, |s, _| {
+        ruth_api::save_version(
+            s,
+            ruth_api::SaveVersionInput {
+                project_id: baby.project.clone(),
+                artifact_id: baby.req.clone(),
+                expected_version_id: req_detail.current_version_id.clone(),
+                content: "Confirmar una venta descuenta stock; reservas antes.".to_string(),
+                author: "ana".to_string(),
+            },
+        )
+    })
+    .expect("req v2");
+    let detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: design.clone(),
+        },
+    )
+    .expect("detalle");
+    let (expected, sources, spec) = current_of(&detail);
+    assert_eq!(sources, vec![format!("{}-v1", baby.req)]);
+    let err = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(
+            &baby.project,
+            &design,
+            &expected,
+            spec.clone(),
+            sources,
+            None,
+        ),
+    )
+    .expect_err("obsoleta");
+    assert_eq!(err.kind, "design_stale_sources");
+    assert!(err.message.contains(&baby.req), "nombra la fuente");
+    // Nada a medias: sigue en v1.
+    let detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: design.clone(),
+        },
+    )
+    .expect("detalle");
+    assert_eq!(detail.versions.len(), 1);
+    // Adoptar explícitamente la actual desbloquea.
+    let saved = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(
+            &baby.project,
+            &design,
+            &expected,
+            spec,
+            vec![format!("{}-v2", baby.req)],
+            None,
+        ),
+    )
+    .expect("guardar con actual");
+    let v2 = saved
+        .versions
+        .iter()
+        .find(|v| v.id == saved.current_version_id)
+        .expect("v2");
+    assert_eq!(v2.sources, vec![format!("{}-v2", baby.req)]);
+    db.close();
+}
+
+#[test]
+fn manual_save_rejects_conflict_spec_and_targets_without_partials() {
+    let (_tmp, mut baby, db, design) = flow_baby("manual-conflicto");
+    let mut layouts = LayoutLog::new();
+    let detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: design.clone(),
+        },
+    )
+    .expect("detalle");
+    let (expected, sources, spec) = current_of(&detail);
+    // Versión esperada obsoleta.
+    let err = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(
+            &baby.project,
+            &design,
+            "flujo-1-v999",
+            spec.clone(),
+            sources.clone(),
+            None,
+        ),
+    )
+    .expect_err("conflicto");
+    assert_eq!(err.kind, "stale_version");
+    // Especificación inválida (nodo duplicado).
+    let mut bad = spec.clone();
+    bad["nodes"]
+        .as_array_mut()
+        .expect("nodos")
+        .push(serde_json::json!({"id": "inicio", "kind": "step", "label": "Duplicado", "requirements": []}));
+    let err = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(
+            &baby.project,
+            &design,
+            &expected,
+            bad,
+            sources.clone(),
+            None,
+        ),
+    )
+    .expect_err("duplicado");
+    assert!(err.message.contains("duplicado"));
+    // Requisito como objetivo.
+    let err = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(
+            &baby.project,
+            &baby.req.clone(),
+            &expected,
+            spec.clone(),
+            sources.clone(),
+            None,
+        ),
+    )
+    .expect_err("requisito");
+    assert_eq!(err.kind, "not_a_design");
+    // Sin fuentes.
+    let err = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(&baby.project, &design, &expected, spec, vec![], None),
+    )
+    .expect_err("sin fuentes");
+    assert_eq!(err.kind, "design_no_sources");
+    // Fuente inexistente.
+    let detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: design.clone(),
+        },
+    )
+    .expect("detalle");
+    let (expected, _, spec) = current_of(&detail);
+    let err = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(
+            &baby.project,
+            &design,
+            &expected,
+            spec,
+            vec!["req-999-v1".to_string()],
+            None,
+        ),
+    )
+    .expect_err("inexistente");
+    assert_eq!(err.kind, "design_source_missing");
+    // Todo rechazado sin mutar: v1 intacta y sin disposición.
+    assert_eq!(detail.versions.len(), 1);
+    let dto = ruth_api::design_layout(
+        &layouts,
+        GetDesignLayoutInput {
+            artifact_id: design.clone(),
+            version_id: detail.current_version_id.clone(),
+        },
+    );
+    assert_eq!(dto.layout, None);
+    db.close();
+}
+
+#[test]
+fn manual_save_data_model_and_approvals_stack() {
+    let tmp = TempDb::new("manual-er");
+    let mut baby = baby();
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&baby.store, baby.ids.checkpoint())
+        .expect("dominio");
+    let approved_req = baby.req.clone();
+    approve_current(&mut baby, &db, &approved_req);
+    let req = baby.req.clone();
+    let validated = fake_er(&req);
+    let context = ruth_api::snapshot_design_context(
+        &baby.store,
+        &baby.project,
+        &baby.module,
+        std::slice::from_ref(&baby.req),
+    )
+    .expect("contexto");
+    let dto = ruth_api::record_design_generation(
+        &baby.store,
+        &mut baby.ids,
+        &mut baby.log,
+        &db,
+        RecordDesignInput {
+            project_id: baby.project.clone(),
+            module_id: baby.module.clone(),
+            kind: DesignKind::DataModel,
+            model: "muse-spark-1.3".to_string(),
+            context,
+            validated,
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            created_at: "2026-10-28T12:00:00Z".to_string(),
+            target: None,
+        },
+    )
+    .expect("registrar");
+    let spec = dto.proposal.spec.clone();
+    let detail = ruth_api::accept_design(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut baby.log,
+        &db,
+        accept_input(&dto.id, spec),
+    )
+    .expect("aceptar");
+    let design = detail.artifact.id.clone();
+    assert_eq!(detail.artifact.kind, "data_model");
+    // Aprobar v1 y revisar a mano: v2 nace sin aprobación y v1 la conserva.
+    approve_current(&mut baby, &db, &design);
+    let mut layouts = LayoutLog::new();
+    let detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: design.clone(),
+        },
+    )
+    .expect("detalle");
+    assert_eq!(detail.approvals.len(), 1);
+    let (expected, sources, mut spec) = current_of(&detail);
+    spec["entities"]
+        .as_array_mut()
+        .expect("entidades")
+        .push(serde_json::json!({
+            "name": "Reserva",
+            "attributes": [{"name": "id", "key": true}],
+            "requirements": []
+        }));
+    let saved = ruth_api::save_design_version(
+        &mut baby.store,
+        &mut baby.ids,
+        &mut layouts,
+        &db,
+        save_input(&baby.project, &design, &expected, spec, sources, None),
+    )
+    .expect("guardar");
+    assert_eq!(saved.versions.len(), 2);
+    assert_eq!(saved.approvals.len(), 1);
+    assert_eq!(saved.approvals[0].version_id, detail.current_version_id);
+    let v2 = saved
+        .versions
+        .iter()
+        .find(|v| v.id == saved.current_version_id)
+        .expect("v2");
+    assert_eq!(v2.provenance.kind, "human");
+    assert!(v2.content.contains("Reserva"));
+    db.close();
+}
+
+#[test]
+fn manual_save_persists_layout_across_reopen() {
+    let tmp = TempDb::new("manual-reabrir");
+    let design: String;
+    let v2_id: String;
+    {
+        let mut baby = baby();
+        let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+        db.save(&baby.store, baby.ids.checkpoint())
+            .expect("dominio");
+        let approved_req = baby.req.clone();
+        approve_current(&mut baby, &db, &approved_req);
+        let req = baby.req.clone();
+        let validated = fake_flow(&req);
+        let input = record_input(&baby, validated);
+        let dto = ruth_api::record_design_generation(
+            &baby.store,
+            &mut baby.ids,
+            &mut baby.log,
+            &db,
+            input,
+        )
+        .expect("registrar");
+        let spec = dto.proposal.spec.clone();
+        let detail = ruth_api::accept_design(
+            &mut baby.store,
+            &mut baby.ids,
+            &mut baby.log,
+            &db,
+            accept_input(&dto.id, spec),
+        )
+        .expect("aceptar");
+        design = detail.artifact.id.clone();
+        let (expected, sources, spec) = current_of(&detail);
+        let mut layouts = LayoutLog::new();
+        let saved = ruth_api::save_design_version(
+            &mut baby.store,
+            &mut baby.ids,
+            &mut layouts,
+            &db,
+            save_input(
+                &baby.project,
+                &design,
+                &expected,
+                spec,
+                sources,
+                Some(serde_json::json!({ "inicio": { "x": 1.0, "y": 2.0 } })),
+            ),
+        )
+        .expect("guardar");
+        v2_id = saved.current_version_id.clone();
+        db.close();
+    }
+    let (db, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    let dto = ruth_api::design_layout(
+        &loaded.layouts,
+        GetDesignLayoutInput {
+            artifact_id: design.clone(),
+            version_id: v2_id.clone(),
+        },
+    );
+    assert_eq!(
+        dto.layout,
+        serde_json::from_str(r#"{"inicio":{"x":1.0,"y":2.0}}"#).ok()
+    );
+    // La v1 no tiene disposición: trazado automático.
+    let dto = ruth_api::design_layout(
+        &loaded.layouts,
+        GetDesignLayoutInput {
+            artifact_id: design,
+            version_id: "v1-inexistente".to_string(),
+        },
+    );
+    assert_eq!(dto.layout, None);
+    db.close();
+}
+
+#[test]
+fn sanitize_layout_keeps_valid_sorted_and_rejects_non_objects() {
+    let clean = ruth_api::sanitize_layout(&serde_json::json!({
+        "b": { "x": 10.0, "y": 20.0 },
+        "a": { "x": 0.0, "y": 0.0 },
+        "mala": { "x": "no", "y": 1.0 },
+        "": { "x": 1.0, "y": 1.0 },
+    }))
+    .expect("higieniza");
+    assert_eq!(
+        clean.as_deref(),
+        Some(r#"{"a":{"x":0.0,"y":0.0},"b":{"x":10.0,"y":20.0}}"#)
+    );
+    assert_eq!(
+        ruth_api::sanitize_layout(&serde_json::json!({})).expect("vacía"),
+        None
+    );
+    let err = ruth_api::sanitize_layout(&serde_json::json!([1])).expect_err("no objeto");
+    assert_eq!(err.kind, "design_layout_invalid");
+}
+
+#[test]
+fn sanitize_layout_keeps_optional_size_and_drops_invalid() {
+    let clean = ruth_api::sanitize_layout(&serde_json::json!({
+        "b": { "x": 10.0, "y": 20.0 },
+        "a": { "x": 0.0, "y": 0.0, "w": 120.0, "h": 40.0 },
+    }))
+    .expect("higieniza");
+    assert_eq!(
+        clean.as_deref(),
+        Some(r#"{"a":{"h":40.0,"w":120.0,"x":0.0,"y":0.0},"b":{"x":10.0,"y":20.0}}"#)
+    );
+    // Tamaño inválido (negativo, cero): se conserva la posición sin tamaño.
+    let clean = ruth_api::sanitize_layout(&serde_json::json!({
+        "a": { "x": 0.0, "y": 0.0, "w": -5.0, "h": 0.0 },
+    }))
+    .expect("higieniza");
+    assert_eq!(clean.as_deref(), Some(r#"{"a":{"x":0.0,"y":0.0}}"#));
+}
+
+#[test]
+fn design_layout_tolerates_unreadable_rows() {
+    let mut layouts = LayoutLog::new();
+    layouts.rehydrate(
+        "flujo-1".to_string(),
+        "flujo-1-v1".to_string(),
+        "rota{".to_string(),
+    );
+    let dto = ruth_api::design_layout(
+        &layouts,
+        GetDesignLayoutInput {
+            artifact_id: "flujo-1".to_string(),
+            version_id: "flujo-1-v1".to_string(),
+        },
+    );
+    assert_eq!(dto.layout, None);
+}
+
+#[test]
+fn layout_only_save_roundtrips_without_new_version() {
+    let (_tmp, mut baby, db, design) = flow_baby("solo-disposicion");
+    let mut layouts = LayoutLog::new();
+    let detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: design.clone(),
+        },
+    )
+    .expect("detalle");
+    ruth_api::save_design_layout_only(
+        &baby.store,
+        &mut layouts,
+        &db,
+        ruth_api::SaveDesignLayoutInput {
+            artifact_id: design.clone(),
+            version_id: detail.current_version_id.clone(),
+            layout: serde_json::json!({ "inicio": { "x": 9.0, "y": 9.0 } }),
+        },
+    )
+    .expect("guardar disposición");
+    // Sin versión nueva y disposición legible.
+    let detail = ruth_api::get_requirement(
+        &baby.store,
+        ruth_api::GetRequirementInput {
+            artifact_id: design.clone(),
+        },
+    )
+    .expect("detalle");
+    assert_eq!(detail.versions.len(), 1);
+    let dto = ruth_api::design_layout(
+        &layouts,
+        GetDesignLayoutInput {
+            artifact_id: design.clone(),
+            version_id: detail.current_version_id.clone(),
+        },
+    );
+    assert_eq!(
+        dto.layout,
+        serde_json::from_str(r#"{"inicio":{"x":9.0,"y":9.0}}"#).ok()
+    );
+    // Versión ajena: error sin escribir.
+    let err = ruth_api::save_design_layout_only(
+        &baby.store,
+        &mut layouts,
+        &db,
+        ruth_api::SaveDesignLayoutInput {
+            artifact_id: design.clone(),
+            version_id: "req-999-v1".to_string(),
+            layout: serde_json::json!({ "a": { "x": 1.0, "y": 1.0 } }),
+        },
+    )
+    .expect_err("ajena");
+    assert_eq!(err.kind, "version_not_found");
+    db.close();
 }

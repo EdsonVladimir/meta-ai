@@ -39,6 +39,7 @@ export interface GenerationContextPreview {
   versionId: string;
   chars: number;
   excerpt: string;
+  title: string | null;
 }
 
 /** La generación caducó: cambió el contexto; hay que generar de nuevo. */

@@ -24,7 +24,9 @@ pub struct StoredDesignProposal {
 }
 
 /// Generación de diseño registrada, vinculada a su contexto original exacto.
-/// `kind` es `"flow"` o `"data_model"`.
+/// `kind` es `"flow"` o `"data_model"`. Las propuestas de actualización
+/// (hito 8) fijan además el artefacto objetivo y su versión en el momento
+/// del snapshot; las de creación dejan ambos a nulo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredDesignGeneration {
     pub id: String,
@@ -40,6 +42,8 @@ pub struct StoredDesignGeneration {
     pub created_at: String,
     pub questions: Vec<String>,
     pub proposal: StoredDesignProposal,
+    pub target_artifact_id: Option<String>,
+    pub target_version_id: Option<String>,
 }
 
 /// Registro en memoria, espejo del último commit confirmado.
@@ -82,8 +86,26 @@ impl DesignLog {
         {
             return Err(invalid("la propuesta de diseño no trae contenido"));
         }
+        match (
+            generation.target_artifact_id.as_deref(),
+            generation.target_version_id.as_deref(),
+        ) {
+            (None, None) => {}
+            (Some(artifact), Some(version))
+                if !artifact.trim().is_empty() && !version.trim().is_empty() => {}
+            _ => {
+                return Err(invalid(
+                    "la propuesta de actualización no fija objetivo y versión",
+                ));
+            }
+        }
         self.generations.push(generation);
         Ok(())
+    }
+
+    /// Todas las generaciones, en orden de registro. Solo lectura.
+    pub fn all(&self) -> &[StoredDesignGeneration] {
+        &self.generations
     }
 
     pub fn design(&self, id: &str) -> Option<&StoredDesignGeneration> {
@@ -182,6 +204,8 @@ mod tests {
                 explanation: "E".to_string(),
                 state: ProposalState::Pending,
             },
+            target_artifact_id: None,
+            target_version_id: None,
         }
     }
 
@@ -205,6 +229,25 @@ mod tests {
         let mut empty = generation("gen-3");
         empty.proposal.spec_json = "  ".to_string();
         assert!(log.record(empty).is_err());
+    }
+
+    #[test]
+    fn update_target_needs_both_artifact_and_version() {
+        let mut log = DesignLog::new();
+        let mut half = generation("gen-9");
+        half.target_artifact_id = Some("flujo-4".to_string());
+        assert!(log.record(half).is_err());
+        let mut full = generation("gen-9");
+        full.target_artifact_id = Some("flujo-4".to_string());
+        full.target_version_id = Some("flujo-4-v1".to_string());
+        log.record(full).expect("objetivo completo");
+        assert_eq!(
+            log.design("gen-9")
+                .expect("id")
+                .target_version_id
+                .as_deref(),
+            Some("flujo-4-v1")
+        );
     }
 
     #[test]

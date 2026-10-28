@@ -4,4 +4,4 @@
 
 mod store;
 
-pub use store::{Snapshot, Store};
+pub use store::{ArtifactReferences, Snapshot, Store};

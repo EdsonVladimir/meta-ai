@@ -16,13 +16,17 @@ export function upsertGeneration(
   return generations.map((g, i) => (i === index ? incoming : g));
 }
 
-/** ¿Acepta acciones esta propuesta? Solo pendiente, fresca y sin trabajo. */
+/**
+ * ¿Acepta acciones esta propuesta? Solo pendiente, fresca, sin trabajo y con
+ * el módulo activo: lo archivado se consulta, no se opera.
+ */
 export function isActionable(
   proposal: ProposalDto,
   stale: boolean,
   busy: boolean,
+  moduleArchived = false,
 ): boolean {
-  return proposal.state === "pending" && !stale && !busy;
+  return proposal.state === "pending" && !stale && !busy && !moduleArchived;
 }
 
 /** Borrador editable de una tarjeta: los criterios van uno por línea. */

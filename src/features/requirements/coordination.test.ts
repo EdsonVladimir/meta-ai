@@ -5,6 +5,7 @@ import {
   EMPTY_DRAFT,
   EMPTY_REVIEW,
   needsConfirm,
+  resolveSaveTarget,
   reviewReducer,
   saveState,
   shouldApplyResponse,
@@ -49,14 +50,25 @@ describe("needsConfirm", () => {
 describe("draftReducer", () => {
   it("editar marca el borrador como sucio", () => {
     const next = draftReducer(
-      { requirementId: "req-1", content: "a", dirty: false },
+      { requirementId: "req-1", content: "a", base: "a", rev: 0, dirty: false },
       { type: "edit", content: "b" },
     );
-    expect(next).toEqual({ requirementId: "req-1", content: "b", dirty: true });
+    expect(next).toEqual({ requirementId: "req-1", content: "b", base: "a", rev: 1, dirty: true });
+  });
+
+  it("reescribir el contenido guardado elimina lo pendiente", () => {
+    const dirty = { requirementId: "req-1", content: "b", base: "a", rev: 1, dirty: true };
+    expect(draftReducer(dirty, { type: "edit", content: "a" })).toEqual({
+      requirementId: "req-1",
+      content: "a",
+      base: "a",
+      rev: 2,
+      dirty: false,
+    });
   });
 
   it("un refresco no sobrescribe el borrador sucio", () => {
-    const dirty = { requirementId: "req-1", content: "mío", dirty: true };
+    const dirty = { requirementId: "req-1", content: "mío", base: "v1", rev: 1, dirty: true };
     expect(
       draftReducer(dirty, { type: "snapshot", requirementId: "req-1", content: "otro" }),
     ).toBe(dirty);
@@ -69,19 +81,47 @@ describe("draftReducer", () => {
         requirementId: "req-1",
         content: "v3",
       }),
-    ).toEqual({ requirementId: "req-1", content: "v3", dirty: false });
+    ).toEqual({ requirementId: "req-1", content: "v3", base: "v3", rev: 0, dirty: false });
   });
 
   it("un guardado fallido conserva el borrador", () => {
-    const dirty = { requirementId: "req-1", content: "mío", dirty: true };
+    const dirty = { requirementId: "req-1", content: "mío", base: "v1", rev: 1, dirty: true };
     expect(draftReducer(dirty, { type: "saveFailed" })).toBe(dirty);
   });
 
+  it("el resultado solo limpia su propia petición", () => {
+    const dirty = { requirementId: "req-1", content: "b", base: "a", rev: 1, dirty: true };
+    expect(
+      draftReducer(dirty, { type: "saved", requirementId: "req-1", content: "b", rev: 1 }),
+    ).toEqual({ requirementId: "req-1", content: "b", base: "b", rev: 1, dirty: false });
+  });
+
+  it("lo editado durante el guardado sobrevive al resultado anterior", () => {
+    const edited = { requirementId: "req-1", content: "c", base: "a", rev: 2, dirty: true };
+    // El `saved` era del rev 1: no toca el contenido nuevo.
+    expect(
+      draftReducer(edited, { type: "saved", requirementId: "req-1", content: "b", rev: 1 }),
+    ).toBe(edited);
+    // Ni el de otro requisito.
+    expect(
+      draftReducer(edited, { type: "saved", requirementId: "req-9", content: "c", rev: 2 }),
+    ).toBe(edited);
+  });
+
+  it("el descarte explícito resincroniza sin condiciones", () => {
+    const dirty = { requirementId: "req-1", content: "mío", base: "v1", rev: 4, dirty: true };
+    expect(
+      draftReducer(dirty, { type: "discard", requirementId: "req-1", content: "v1" }),
+    ).toEqual({ requirementId: "req-1", content: "v1", base: "v1", rev: 4, dirty: false });
+  });
+
   it("cambiar de selección limpia el borrador", () => {
-    const dirty = { requirementId: "req-1", content: "mío", dirty: true };
+    const dirty = { requirementId: "req-1", content: "mío", base: "v1", rev: 3, dirty: true };
     expect(draftReducer(dirty, { type: "select", requirementId: "req-2" })).toEqual({
       requirementId: "req-2",
       content: "",
+      base: "",
+      rev: 0,
       dirty: false,
     });
   });
@@ -155,7 +195,7 @@ describe("normalizeCoreError", () => {
 
 describe("selectores de detalle", () => {
   const detail = {
-    artifact: { id: "req-1", projectId: "proy-1", moduleId: "mod-1", kind: "requirement" },
+    artifact: { id: "req-1", projectId: "proy-1", moduleId: "mod-1", kind: "requirement", title: null, archived: false },
     versions: [
       { id: "req-1-v1", number: 1, content: "a", provenance: { kind: "human", by: "ana" }, sources: [] },
       { id: "req-1-v2", number: 2, content: "b", provenance: { kind: "human", by: "ana" }, sources: [] },
@@ -200,5 +240,55 @@ describe("saveState", () => {
     expect(
       saveState({ hasSelection: true, saving: false, error: "fallo", dirty: true }),
     ).toBe("error");
+  });
+});
+
+describe("resolveSaveTarget", () => {
+  const base = {
+    requirementId: "req-1",
+    designId: "flujo-1",
+    mockupId: "mock-1",
+    requirementDirty: false,
+    designDirty: false,
+    designKeyOk: true,
+    mockupDirty: false,
+    mockupKeyOk: true,
+  };
+
+  it("dirige a cada editor con cambios y a ninguno sin cambios", () => {
+    expect(
+      resolveSaveTarget({ ...base, centerView: "requirements", requirementDirty: true }),
+    ).toBe("requirement");
+    expect(
+      resolveSaveTarget({ ...base, centerView: "design", designDirty: true }),
+    ).toBe("design");
+    expect(
+      resolveSaveTarget({ ...base, centerView: "mockups", mockupDirty: true }),
+    ).toBe("mockup");
+    expect(resolveSaveTarget({ ...base, centerView: "requirements" })).toBeNull();
+    expect(resolveSaveTarget({ ...base, centerView: "design" })).toBeNull();
+    expect(resolveSaveTarget({ ...base, centerView: "impact" })).toBeNull();
+  });
+
+  it("no guarda diseños separados ni sin selección", () => {
+    expect(
+      resolveSaveTarget({ ...base, centerView: "design", designDirty: true, designKeyOk: false }),
+    ).toBeNull();
+    expect(
+      resolveSaveTarget({
+        ...base,
+        centerView: "design",
+        designDirty: true,
+        designId: null,
+      }),
+    ).toBeNull();
+    expect(
+      resolveSaveTarget({
+        ...base,
+        centerView: "mockups",
+        mockupDirty: true,
+        mockupKeyOk: false,
+      }),
+    ).toBeNull();
   });
 });

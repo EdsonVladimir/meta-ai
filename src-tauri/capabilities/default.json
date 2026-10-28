@@ -1,7 +1,15 @@
 {
   "$schema": "https://schema.tauri.app/config/2/capability",
   "identifier": "default",
-  "description": "Capacidades del hito 1: solo comandos propios (sin plugins).",
+  "description": "Comandos propios más diálogo nativo para guardar el ZIP (sin acceso general a disco desde el frontend).",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "dialog:default"
+  ]
 }

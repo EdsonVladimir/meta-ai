@@ -9,6 +9,7 @@
 pub mod design;
 pub mod error;
 pub mod generation;
+pub mod mockup;
 pub mod protocol;
 
 use std::fmt;

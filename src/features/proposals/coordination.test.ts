@@ -66,6 +66,7 @@ describe("isActionable", () => {
     expect(isActionable(proposal(), false, true)).toBe(false);
     expect(isActionable(proposal({ state: "accepted" }), false, false)).toBe(false);
     expect(isActionable(proposal({ state: "discarded" }), false, false)).toBe(false);
+    expect(isActionable(proposal(), false, false, true)).toBe(false);
   });
 });
 

@@ -14,7 +14,10 @@
       {
         "title": "Ruth IDE",
         "width": 1100,
-        "height": 750
+        "height": 750,
+        "minWidth": 880,
+        "minHeight": 600,
+        "decorations": false
       }
     ],
     "security": {

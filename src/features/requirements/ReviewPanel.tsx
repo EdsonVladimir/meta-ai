@@ -13,6 +13,8 @@ interface ReviewPanelProps {
   viewingVersionId: string | null;
   /** Versiones fuente de la versión actual (diseños): se muestran, no se editan. */
   sources?: string[] | null;
+  /** Archivado efectivo: historial consultable, sin aprobar. */
+  archived: boolean;
   onToggleReview: (versionId: string, checked: boolean) => void;
   onApproverChange: (approver: string) => void;
   onApprove: () => void;
@@ -29,6 +31,7 @@ export function ReviewPanel({
   approveError,
   viewingVersionId,
   sources,
+  archived,
   onToggleReview,
   onApproverChange,
   onApprove,
@@ -41,7 +44,17 @@ export function ReviewPanel({
   return (
     <aside className="review" aria-label="Revisión e historial">
       <section>
-        <h3>Revisión</h3>
+        <h3>Revisión (opcional)</h3>
+        <p className="hint">
+          Informativa: nada exige revisar para seguir trabajando. Las
+          revisiones históricas se conservan.
+        </p>
+        {archived && (
+          <p className="notice" role="note">
+            Archivado: el historial sigue consultable, pero no se puede revisar
+            hasta restaurarlo.
+          </p>
+        )}
         {current === undefined ? (
           <p className="hint">Sin versiones.</p>
         ) : (
@@ -54,10 +67,10 @@ export function ReviewPanel({
                 </dd>
               </div>
               <div>
-                <dt>Aprobación</dt>
+                <dt>Revisión</dt>
                 <dd>
                   {currentApprovals.length === 0
-                    ? "Sin aprobar"
+                    ? "Sin revisar"
                     : currentApprovals.map((a) => `${a.approvedBy} · ${a.at}`).join("; ")}
                 </dd>
               </div>
@@ -82,19 +95,19 @@ export function ReviewPanel({
                 type="checkbox"
                 checked={reviewedVersionId === current.id}
                 onChange={(e) => onToggleReview(current.id, e.target.checked)}
-                disabled={busy}
+                disabled={busy || archived}
               />
               <span>
                 He revisado la versión <code>{current.id}</code>
               </span>
             </label>
             <label className="field">
-              <span>Persona que aprueba</span>
+              <span>Persona que revisa</span>
               <input
                 type="text"
                 value={approver}
                 onChange={(e) => onApproverChange(e.target.value)}
-                disabled={busy}
+                disabled={busy || archived}
                 placeholder="Tu nombre"
                 autoComplete="off"
               />
@@ -105,14 +118,16 @@ export function ReviewPanel({
               onClick={onApprove}
               disabled={!approveAllowed}
               title={
-                dirty
-                  ? "Guarda o descarta el borrador antes de aprobar"
+                archived
+                  ? "Archivado: restaúralo para revisar"
+                  : dirty
+                  ? "Guarda o descarta el borrador antes de revisar"
                   : reviewedVersionId !== current.id
                     ? "Confirma la revisión de esta versión concreta"
                     : undefined
               }
             >
-              {busy ? "Aprobando…" : "Aprobar versión actual"}
+              {busy ? "Revisando…" : "Registrar revisión"}
             </button>
             {approveError && (
               <p className="error" role="alert">
@@ -120,7 +135,7 @@ export function ReviewPanel({
               </p>
             )}
             <p className="hint">
-              Solo se puede aprobar la versión actual y vigente. La confirmación
+              Solo se puede revisar la versión actual y vigente. La confirmación
               corresponde a esa versión concreta.
             </p>
           </>

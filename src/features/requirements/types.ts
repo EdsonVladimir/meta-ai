@@ -3,11 +3,14 @@
 
 export interface ProjectDto {
   id: string;
+  name: string;
 }
 
 export interface ModuleDto {
   id: string;
   projectId: string;
+  name: string;
+  archived: boolean;
 }
 
 export interface ArtifactDto {
@@ -15,6 +18,8 @@ export interface ArtifactDto {
   projectId: string;
   moduleId: string;
   kind: string;
+  title: string | null;
+  archived: boolean;
 }
 
 export interface ProvenanceDto {
@@ -54,6 +59,67 @@ export const STALE_VERSION = "stale_version";
 
 /** Fallo de la persistencia local (SQLite): recuperable, sin borrar nada. */
 export const STORAGE_ERROR = "storage_error";
+
+/** Operación sobre un módulo archivado: restaurar para continuar. */
+export const ARCHIVED_MODULE = "archived_module";
+
+/** Operación sobre un artefacto archivado: restaurar para continuar. */
+export const ARCHIVED_ARTIFACT = "archived_artifact";
+
+/** La versión depende de una fuente archivada. */
+export const ARCHIVED_SOURCE = "archived_source";
+
+/** Nombre o título vacío. */
+export const EMPTY_NAME = "empty_name";
+
+/** Nombre o título más largo del máximo. */
+export const NAME_TOO_LONG = "name_too_long";
+
+/** El nombre cambió desde que se leyó: revisar y reintentar. */
+export const STALE_NAME = "stale_name";
+
+/** Dependiente del objetivo de archivo, con su módulo. */
+export interface ArchiveDependentDto {
+  artifact: ArtifactDto;
+  sameModule: boolean;
+}
+
+/** Baseline que incluye al objetivo. */
+export interface ArchiveBaselineDto {
+  id: string;
+  name: string;
+}
+
+/** Generación que menciona al objetivo. */
+export interface ArchiveGenerationDto {
+  id: string;
+  log: string;
+  role: string;
+}
+
+/** Bloqueo del borrado definitivo. */
+export interface ArchiveBlockerDto {
+  code: string;
+  message: string;
+}
+
+/** Resumen consultivo antes de archivar o eliminar. */
+export interface ArchivePreviewDto {
+  projectId: string;
+  kind: string;
+  id: string;
+  archived: boolean;
+  contents: ArtifactDto[];
+  dependents: ArchiveDependentDto[];
+  baselines: ArchiveBaselineDto[];
+  /** Entregas de trabajo que lo incluyen (forma `{id, name}`). */
+  deliveries: ArchiveBaselineDto[];
+  generations: ArchiveGenerationDto[];
+  approvals: number;
+  versions: number;
+  canDelete: boolean;
+  deleteBlockers: ArchiveBlockerDto[];
+}
 
 /** Estado del almacenamiento local, servido por `core_status`. */
 export interface CoreStatus {

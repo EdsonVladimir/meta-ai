@@ -5,10 +5,11 @@
 //! desde los casos de uso. Los campos son privados: nadie puede mutar una
 //! entidad saltándose sus constructores.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use crate::domain::{
-    AgentId, ArtifactId, BaselineId, CoreError, HumanId, ModuleId, ProjectId, VersionId,
+    AgentId, ArtifactId, BaselineId, CoreError, DeliveryId, HumanId, ModuleId, ProjectId, VersionId,
 };
 
 /// Contenido textual no vacío de una versión. En este hito no hay parsers de
@@ -61,6 +62,7 @@ pub enum ArtifactType {
     Requirement,
     Flow,
     DataModel,
+    Mockup,
 }
 
 impl fmt::Display for ArtifactType {
@@ -69,6 +71,7 @@ impl fmt::Display for ArtifactType {
             Self::Requirement => f.write_str("requisito"),
             Self::Flow => f.write_str("flujo"),
             Self::DataModel => f.write_str("modelo de datos"),
+            Self::Mockup => f.write_str("mockup"),
         }
     }
 }
@@ -101,18 +104,62 @@ impl Provenance {
     }
 }
 
+/// Nombre organizativo o título: texto libre no vacío de hasta 120
+/// caracteres. Se guarda sin espacios extremos. Los duplicados se permiten:
+/// la identidad es el ID, nunca el nombre.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Name {
+    value: String,
+}
+
+impl Name {
+    pub const MAX_CHARS: usize = 120;
+
+    pub fn new(value: String) -> Result<Self, CoreError> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(CoreError::EmptyName);
+        }
+        let chars = trimmed.chars().count();
+        if chars > Self::MAX_CHARS {
+            return Err(CoreError::NameTooLong { chars });
+        }
+        Ok(Self {
+            value: trimmed.to_string(),
+        })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     id: ProjectId,
+    /// Nombre organizativo editable. Al crear, el ID; renombrar no toca
+    /// la identidad ni nada que cuelgue de ella.
+    name: String,
 }
 
 impl Project {
     pub fn new(id: ProjectId) -> Self {
-        Self { id }
+        let name = id.as_str().to_string();
+        Self { id, name }
     }
 
     pub fn id(&self) -> &ProjectId {
         &self.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Solo lo llaman los casos de uso (`rename_*` del `Store`, que validan
+    /// pertenencia, archivado y concurrencia) y la reconstitución.
+    pub fn set_name(&mut self, name: Name) {
+        self.name = name.value;
     }
 }
 
@@ -120,11 +167,22 @@ impl Project {
 pub struct Module {
     id: ModuleId,
     project: ProjectId,
+    /// Nombre organizativo editable. Al crear, el ID.
+    name: String,
+    /// Archivado reversible: oculta el contenido por contexto sin tocar el
+    /// estado individual de sus artefactos. Solo lo cambian los casos de uso.
+    archived: bool,
 }
 
 impl Module {
     pub fn new(id: ModuleId, project: ProjectId) -> Self {
-        Self { id, project }
+        let name = id.as_str().to_string();
+        Self {
+            id,
+            project,
+            name,
+            archived: false,
+        }
     }
 
     pub fn id(&self) -> &ModuleId {
@@ -134,6 +192,27 @@ impl Module {
     pub fn project(&self) -> &ProjectId {
         &self.project
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Solo lo llaman los casos de uso (`rename_*` del `Store`, que validan
+    /// pertenencia, archivado y concurrencia) y la reconstitución.
+    pub fn set_name(&mut self, name: Name) {
+        self.name = name.value;
+    }
+
+    pub fn archived(&self) -> bool {
+        self.archived
+    }
+
+    /// Reconstitución desde persistencia (cualquier valor es válido: el
+    /// archivado no tiene invariantes propias). Las operaciones normales
+    /// usan los casos de uso (`set_*_archived` del `Store`).
+    pub fn set_archived(&mut self, archived: bool) {
+        self.archived = archived;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,6 +221,13 @@ pub struct Artifact {
     project: ProjectId,
     module: ModuleId,
     artifact_type: ArtifactType,
+    /// Título editable como metadato, separado del contenido semántico.
+    /// `None` = sin título propio (la presentación deriva uno legible sin
+    /// tocar el dominio). Renombrar no crea versiones ni toca aprobaciones.
+    title: Option<String>,
+    /// Archivado individual reversible. El archivado efectivo de un artefacto
+    /// es este flag o el de su módulo (se calcula, no se almacena).
+    archived: bool,
 }
 
 impl Artifact {
@@ -156,6 +242,8 @@ impl Artifact {
             project,
             module,
             artifact_type,
+            title: None,
+            archived: false,
         }
     }
 
@@ -173,6 +261,27 @@ impl Artifact {
 
     pub fn artifact_type(&self) -> ArtifactType {
         self.artifact_type
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    /// Solo lo llaman los casos de uso (`rename_artifact` del `Store`, que
+    /// valida pertenencia, archivado y concurrencia) y la reconstitución.
+    pub fn set_title(&mut self, title: Option<Name>) {
+        self.title = title.map(|name| name.value);
+    }
+
+    pub fn archived(&self) -> bool {
+        self.archived
+    }
+
+    /// Reconstitución desde persistencia (cualquier valor es válido: el
+    /// archivado no tiene invariantes propias). Las operaciones normales
+    /// usan los casos de uso (`set_*_archived` del `Store`).
+    pub fn set_archived(&mut self, archived: bool) {
+        self.archived = archived;
     }
 }
 
@@ -265,14 +374,57 @@ impl Approval {
     }
 }
 
+/// Cambio de título registrado: metadato versionado del artefacto, separado
+/// del contenido semántico. No crea versiones ni toca aprobaciones.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TitleChange {
+    artifact: ArtifactId,
+    title: String,
+    by: HumanId,
+    at: Date,
+}
+
+impl TitleChange {
+    pub fn new(artifact: ArtifactId, title: Name, by: HumanId, at: Date) -> Self {
+        Self {
+            artifact,
+            title: title.value,
+            by,
+            at,
+        }
+    }
+
+    pub fn artifact(&self) -> &ArtifactId {
+        &self.artifact
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn by(&self) -> &HumanId {
+        &self.by
+    }
+
+    pub fn at(&self) -> &Date {
+        &self.at
+    }
+}
+
 /// Conjunto coherente de versiones aprobadas para exportación futura.
 /// Inmutable y reproducible: guarda versiones exactas ordenadas de forma
 /// determinista, así que no le afectan cambios posteriores del proyecto.
+/// También fija el título vigente de cada entrada: exportar la baseline
+/// histórica jamás consulta títulos actuales.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Baseline {
     id: BaselineId,
     project: ProjectId,
     entries: Vec<(ArtifactId, VersionId)>,
+    /// Título vigente de cada entrada al crear la baseline (`None` = sin
+    /// título propio entonces). Fijo para siempre: la baseline histórica
+    /// conserva sus nombres originales.
+    titles: HashMap<ArtifactId, Option<String>>,
     at: Date,
 }
 
@@ -281,6 +433,7 @@ impl Baseline {
         id: BaselineId,
         project: ProjectId,
         mut entries: Vec<(ArtifactId, VersionId)>,
+        titles: HashMap<ArtifactId, Option<String>>,
         at: Date,
     ) -> Self {
         entries.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
@@ -288,6 +441,7 @@ impl Baseline {
             id,
             project,
             entries,
+            titles,
             at,
         }
     }
@@ -302,6 +456,92 @@ impl Baseline {
 
     pub fn entries(&self) -> &[(ArtifactId, VersionId)] {
         &self.entries
+    }
+
+    /// Título fijado de una entrada (`None` externo = la entrada no existe;
+    /// `None` interno = existía pero sin título propio).
+    pub fn title_of(&self, artifact: &ArtifactId) -> Option<Option<&str>> {
+        self.titles.get(artifact).map(|t| t.as_deref())
+    }
+
+    pub fn at(&self) -> &Date {
+        &self.at
+    }
+}
+
+/// Entrega de trabajo/borrador: foto de versiones guardadas para compartir
+/// o exportar trabajo en curso, SIN exigir aprobación. Separada de
+/// [`Baseline`]: sus invariantes no relajan las de la baseline aprobada.
+/// Las entradas deben ser actuales, del proyecto, no archivadas y cerradas
+/// bajo fuentes; las revisiones y desactualizaciones se identifican al
+/// leer, no se prohíben al crear. Inmutable una vez creada.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkDelivery {
+    id: DeliveryId,
+    project: ProjectId,
+    name: String,
+    description: Option<String>,
+    scope_module: Option<ModuleId>,
+    entries: Vec<(ArtifactId, VersionId)>,
+    /// Título vigente de cada entrada al crear la entrega, fijo para
+    /// siempre (igual que en la baseline).
+    titles: HashMap<ArtifactId, Option<String>>,
+    at: Date,
+}
+
+impl WorkDelivery {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: DeliveryId,
+        project: ProjectId,
+        name: String,
+        description: Option<String>,
+        scope_module: Option<ModuleId>,
+        mut entries: Vec<(ArtifactId, VersionId)>,
+        titles: HashMap<ArtifactId, Option<String>>,
+        at: Date,
+    ) -> Self {
+        entries.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+        Self {
+            id,
+            project,
+            name,
+            description,
+            scope_module,
+            entries,
+            titles,
+            at,
+        }
+    }
+
+    pub fn id(&self) -> &DeliveryId {
+        &self.id
+    }
+
+    pub fn project(&self) -> &ProjectId {
+        &self.project
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    pub fn scope_module(&self) -> Option<&ModuleId> {
+        self.scope_module.as_ref()
+    }
+
+    pub fn entries(&self) -> &[(ArtifactId, VersionId)] {
+        &self.entries
+    }
+
+    /// Título fijado de una entrada (`None` externo = la entrada no existe;
+    /// `None` interno = existía pero sin título propio).
+    pub fn title_of(&self, artifact: &ArtifactId) -> Option<Option<&str>> {
+        self.titles.get(artifact).map(|t| t.as_deref())
     }
 
     pub fn at(&self) -> &Date {
@@ -352,6 +592,7 @@ mod tests {
                     VersionId::new("a1").expect("id"),
                 ),
             ],
+            std::collections::HashMap::new(),
             Date::new("2026-10-27").expect("date"),
         );
         let order: Vec<&str> = baseline.entries().iter().map(|(a, _)| a.as_str()).collect();

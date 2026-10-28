@@ -1,7 +1,8 @@
-// Panel de diseño del módulo: seleccionar requisitos aprobados, generar
+// Panel de diseño del módulo: seleccionar requisitos guardados, generar
 // una propuesta de flujo o ER con Meta, revisarla (diagrama, fuente,
 // explicación, preguntas), editar su JSON con validación y aceptarla como
-// borrador (artefacto nuevo o nueva versión). Aceptar no aprueba.
+// borrador (artefacto nuevo o nueva versión). Aceptar no aprueba; la
+// revisión es opcional y se muestra como información (diseño vivo).
 //
 // Borradores (selección, JSON, objetivo) en estado local: un fallo conserva
 // todo. Las generaciones son instantáneas de Rust. Se monta con `key` por
@@ -16,14 +17,15 @@ import {
 import {
   acceptDesign,
   discardDesign,
-  designContext,
   generateDesign,
   listDesigns,
   validateDesign,
 } from "./client";
+import { generateDesignFromMockups, mockupContext } from "../mockup/client";
 import {
   designTargets,
   isDesignActionable,
+  isUpdateGeneration,
   parseSpecText,
   prettySpec,
   upsertDesignGeneration,
@@ -43,6 +45,16 @@ interface DesignPanelProps {
   projectId: string;
   moduleId: string;
   artifacts: ArtifactDto[];
+  /**
+   * Requisitos premarcados como fuentes (p. ej. el requisito en contexto).
+   * Solo preselecciona: nunca genera automáticamente.
+   */
+  preselectedRequirementIds?: string[] | null;
+  /**
+   * Mockups premarcados como fuentes (p. ej. el mockup en contexto).
+   * `null`/`undefined` = ninguno premarcado (se eligen a mano).
+   */
+  preselectedMockupIds?: string[] | null;
   onAccepted: (detail: RequirementDetail) => void;
   onOpenDesign: (artifactId: string) => void;
 }
@@ -50,13 +62,17 @@ interface DesignPanelProps {
 export function DesignPanel({
   projectId,
   moduleId,
+  preselectedMockupIds = null,
   artifacts,
+  preselectedRequirementIds = null,
   onAccepted,
   onOpenDesign,
 }: DesignPanelProps) {
   const [context, setContext] = useState<DesignContextPreview[] | null>(null);
+  const [mockups, setMockups] = useState<DesignContextPreview[] | null>(null);
   const [contextError, setContextError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [selectedMockups, setSelectedMockups] = useState<Record<string, boolean>>({});
   const [generations, setGenerations] = useState<DesignGenerationDto[]>([]);
   const [jsonEdits, setJsonEdits] = useState<Record<string, string>>({});
   const [validated, setValidated] = useState<Record<string, ValidatedDesignDto>>({});
@@ -72,16 +88,32 @@ export function DesignPanel({
     cancelledRef.current = false;
     void (async () => {
       try {
-        const [ctx, gens] = await Promise.all([
-          designContext(projectId, moduleId),
+        const [preview, gens] = await Promise.all([
+          mockupContext(projectId, moduleId),
           listDesigns(projectId, moduleId),
         ]);
         if (cancelledRef.current) return;
-        setContext(ctx);
-        // Preselección: todos los aprobados; la persona ajusta.
+        setContext(preview.requirements);
+        setMockups(preview.mockups);
+        // Preselección: requisitos indicados (o todos los guardados) y
+        // mockups indicados (o ninguno: se añaden a mano). La persona
+        // ajusta. Sin veto por revisión (diseño vivo).
         const initial: Record<string, boolean> = {};
-        for (const item of ctx) initial[item.artifactId] = item.approved;
+        for (const item of preview.requirements) {
+          initial[item.artifactId] =
+            preselectedRequirementIds === null
+              ? true
+              : preselectedRequirementIds.includes(item.artifactId);
+        }
         setSelected(initial);
+        const initialMockups: Record<string, boolean> = {};
+        for (const item of preview.mockups) {
+          initialMockups[item.artifactId] =
+            preselectedMockupIds !== null &&
+            preselectedMockupIds !== undefined &&
+            preselectedMockupIds.includes(item.artifactId);
+        }
+        setSelectedMockups(initialMockups);
         setGenerations(gens);
       } catch (raw) {
         if (cancelledRef.current) return;
@@ -91,7 +123,7 @@ export function DesignPanel({
     return () => {
       cancelledRef.current = true;
     };
-  }, [projectId, moduleId]);
+  }, [projectId, moduleId, preselectedRequirementIds]);
 
   function jsonFor(generation: DesignGenerationDto): string {
     return jsonEdits[generation.id] ?? prettySpec(generation.proposal.spec);
@@ -103,7 +135,13 @@ export function DesignPanel({
 
   function selectedIds(): string[] {
     return (context ?? [])
-      .filter((item) => item.approved && selected[item.artifactId])
+      .filter((item) => selected[item.artifactId])
+      .map((item) => item.artifactId);
+  }
+
+  function selectedMockupIds(): string[] {
+    return (mockups ?? [])
+      .filter((item) => selectedMockups[item.artifactId])
       .map((item) => item.artifactId);
   }
 
@@ -111,12 +149,22 @@ export function DesignPanel({
     setGenerating(kind);
     setGenerateError(null);
     try {
-      const created = await generateDesign({
-        projectId,
-        moduleId,
-        kind,
-        requirementIds: selectedIds(),
-      });
+      const mockupIds = selectedMockupIds();
+      const created =
+        mockupIds.length > 0
+          ? await generateDesignFromMockups({
+              projectId,
+              moduleId,
+              kind,
+              requirementIds: selectedIds(),
+              mockupIds,
+            })
+          : await generateDesign({
+              projectId,
+              moduleId,
+              kind,
+              requirementIds: selectedIds(),
+            });
       if (cancelledRef.current) return;
       setGenerations((prev) => upsertDesignGeneration(prev, created));
     } catch (raw) {
@@ -173,12 +221,20 @@ export function DesignPanel({
     setActing(generation.id);
     setActionError(null);
     try {
-      // La versión esperada se lee en fresco: si cambió, Rust lo rechaza.
-      const target = targets[generation.id] ?? "";
+      // Las actualizaciones aceptan sobre el objetivo y la versión del
+      // snapshot (fijados); las creaciones leen la esperada en fresco.
+      const updating = isUpdateGeneration(generation);
+      const target = updating
+        ? (generation.targetArtifactId ?? "")
+        : (targets[generation.id] ?? "");
       let expectedVersionId: string | null = null;
       if (target !== "") {
-        const current = await getRequirement(target);
-        expectedVersionId = current.currentVersionId;
+        if (updating) {
+          expectedVersionId = generation.targetVersionId ?? null;
+        } else {
+          const current = await getRequirement(target);
+          expectedVersionId = current.currentVersionId;
+        }
       }
       const detail = await acceptDesign({
         generationId: generation.id,
@@ -212,8 +268,9 @@ export function DesignPanel({
     }
   }
 
-  const approvedCount = (context ?? []).filter((i) => i.approved).length;
   const chosenCount = selectedIds().length;
+  const chosenMockups = selectedMockupIds();
+  const totalChosen = chosenCount + chosenMockups.length;
   const busy = generating !== null || acting !== null;
 
   return (
@@ -223,7 +280,7 @@ export function DesignPanel({
       </div>
 
       <div className="context-preview">
-        <h4>Fuentes: requisitos aprobados</h4>
+        <h4>Fuentes: requisitos guardados</h4>
         {contextError !== null ? (
           <p className="error" role="alert">
             {contextError}
@@ -240,14 +297,72 @@ export function DesignPanel({
                   <input
                     type="checkbox"
                     checked={selected[item.artifactId] ?? false}
-                    disabled={!item.approved || busy}
+                    disabled={busy}
                     onChange={(e) =>
                       setSelected((prev) => ({ ...prev, [item.artifactId]: e.target.checked }))
                     }
                   />
                   <span>
-                    <code>{item.artifactId}</code> <code>{item.versionId}</code>{" "}
-                    {item.approved ? "" : "(sin aprobar: no genera) "}
+                    {item.title !== null && item.title !== "" ? (
+                      <>
+                        {item.title} <code>{item.artifactId}</code>
+                      </>
+                    ) : (
+                      <code>{item.artifactId}</code>
+                    )}{" "}
+                    <code>{item.versionId}</code>{" "}
+                    {item.approved ? (
+                      ""
+                    ) : (
+                      <span
+                        className="pill"
+                        title="Se generará desde su versión guardada; la revisión es opcional"
+                      >
+                        sin revisar{" "}
+                      </span>
+                    )}
+                    <span className="hint">{item.excerpt}</span>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        <h4>Fuentes: mockups guardados (opcional)</h4>
+        {mockups === null ? (
+          <p className="hint">Cargando mockups…</p>
+        ) : mockups.length === 0 ? (
+          <p className="hint">El módulo aún no tiene mockups: dibújalos en la vista Mockups.</p>
+        ) : (
+          <ul className="pick-list">
+            {mockups.map((item) => (
+              <li key={item.artifactId}>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={selectedMockups[item.artifactId] ?? false}
+                    disabled={busy}
+                    onChange={(e) =>
+                      setSelectedMockups((prev) => ({ ...prev, [item.artifactId]: e.target.checked }))
+                    }
+                  />
+                  <span>
+                    {item.title !== null && item.title !== "" ? (
+                      <>
+                        {item.title} <code>{item.artifactId}</code>
+                      </>
+                    ) : (
+                      <code>{item.artifactId}</code>
+                    )}{" "}
+                    <code>{item.versionId}</code>{" "}
+                    {!item.approved && (
+                      <span
+                        className="pill"
+                        title="Se generará desde su versión guardada; la revisión es opcional"
+                      >
+                        sin revisar{" "}
+                      </span>
+                    )}
                     <span className="hint">{item.excerpt}</span>
                   </span>
                 </label>
@@ -256,8 +371,11 @@ export function DesignPanel({
           </ul>
         )}
         <p className="notice">
-          Solo viajan a Meta los requisitos aprobados seleccionados (
-          {chosenCount} de {approvedCount} aprobados). No se envían archivos,
+          Solo viajan a Meta las fuentes guardadas seleccionadas ({chosenCount}{" "}
+          {chosenCount === 1 ? "requisito" : "requisitos"}
+          {chosenMockups.length > 0 &&
+            ` y ${chosenMockups.length} ${chosenMockups.length === 1 ? "mockup" : "mockups"}`}
+          ). Los mockups viajan como resumen legible, sin posiciones. No se envían archivos,
           secretos ni otros proyectos. La clave vive solo en Rust y no se llama
           sin pulsar un botón de generación.
         </p>
@@ -270,8 +388,8 @@ export function DesignPanel({
             type="button"
             className="primary"
             onClick={() => void handleGenerate(kind)}
-            disabled={busy || chosenCount === 0}
-            title={chosenCount === 0 ? "Selecciona al menos una fuente aprobada" : undefined}
+            disabled={busy || totalChosen === 0}
+            title={totalChosen === 0 ? "Selecciona al menos una fuente guardada" : undefined}
           >
             {generating === kind ? "Generando…" : `Generar ${DESIGN_KIND_LABELS[kind]}`}
           </button>
@@ -299,11 +417,24 @@ export function DesignPanel({
             );
             const busyThis = acting === generation.id;
             const options = designTargets(artifacts, generation.kind);
+            // ¿El contexto incluye mockups? El tipo se deriva del artefacto
+            // (versión `{artefacto}-vN`): sin inventar, solo para mostrar.
+            const kindsByArtifact = new Map(artifacts.map((a) => [a.id, a.kind]));
+            const mockupsInContext = generation.contextVersionIds.filter(
+              (versionId) =>
+                kindsByArtifact.get(versionId.replace(/-v\d+$/, "")) === "mockup",
+            ).length;
             return (
               <article key={generation.id} className="generation-card">
                 <header>
                   <code>{generation.id}</code> · {DESIGN_KIND_LABELS[generation.kind]} ·{" "}
                   {generation.model} · plantilla v{generation.templateVersion}
+                  {mockupsInContext > 0 && (
+                    <span>
+                      {" "}· desde {mockupsInContext}{" "}
+                      {mockupsInContext === 1 ? "mockup" : "mockups"}
+                    </span>
+                  )}
                   {generation.usage.totalTokens !== null &&
                     generation.usage.totalTokens !== undefined && (
                       <span>
@@ -316,16 +447,23 @@ export function DesignPanel({
                 </header>
                 {generation.stale ? (
                   <p className="notice stale" role="note">
-                    Desactualizada: cambió un requisito usado como contexto. La
+                    Desactualizada: cambió una fuente usada como contexto. La
                     propuesta sigue vinculada a su contexto original y no puede
                     aceptarse. Genera de nuevo con el contexto actual.
                   </p>
                 ) : (
                   <p className="hint">
-                    Contexto: {generation.contextVersionIds.join(", ") || "sin requisitos"}.
+                    Contexto: {generation.contextVersionIds.join(", ") || "sin fuentes"}.
                   </p>
                 )}
                 <h5>{generation.proposal.title}</h5>
+                {isUpdateGeneration(generation) && (
+                  <p className="hint">
+                    Propuesta de actualización de <code>{generation.targetArtifactId}</code>{" "}
+                    (sobre <code>{generation.targetVersionId}</code>): el objetivo está fijado
+                    y no puede cambiarse aquí.
+                  </p>
+                )}
                 <MermaidDiagram
                   source={mermaidFor(generation)}
                   diagramId={`gen-${generation.id}`}
@@ -369,23 +507,30 @@ export function DesignPanel({
                         {validateError[generation.id]} Se conserva el último resultado válido.
                       </p>
                     )}
-                    <label className="field">
-                      <span>Aceptar como</span>
-                      <select
-                        value={targets[generation.id] ?? ""}
-                        onChange={(e) =>
-                          setTargets((prev) => ({ ...prev, [generation.id]: e.target.value }))
-                        }
-                        disabled={!actionable}
-                      >
-                        <option value="">Artefacto nuevo</option>
-                        {options.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            Nueva versión de {a.id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {isUpdateGeneration(generation) ? (
+                      <p className="hint">
+                        Al aceptar crea una versión de <code>{generation.targetArtifactId}</code>{" "}
+                        con las fuentes del snapshot. La aprobación sigue siendo un paso posterior.
+                      </p>
+                    ) : (
+                      <label className="field">
+                        <span>Aceptar como</span>
+                        <select
+                          value={targets[generation.id] ?? ""}
+                          onChange={(e) =>
+                            setTargets((prev) => ({ ...prev, [generation.id]: e.target.value }))
+                          }
+                          disabled={!actionable}
+                        >
+                          <option value="">Artefacto nuevo</option>
+                          {options.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              Nueva versión de {a.id}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <div className="button-row">
                       <button
                         type="button"

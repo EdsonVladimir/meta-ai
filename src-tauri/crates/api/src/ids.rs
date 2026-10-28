@@ -4,7 +4,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ruth_core::domain::{ArtifactId, ModuleId, ProjectId, VersionId};
+use ruth_core::domain::{ArtifactId, BaselineId, DeliveryId, ModuleId, ProjectId, VersionId};
 
 /// Generador secuencial de identificadores legibles (`proy-1`, `mod-2`…).
 /// Vive junto al `Store` en el estado gestionado por Tauri.
@@ -59,6 +59,20 @@ impl IdGen {
     /// Identidad definitiva de un modelo entidad-relación (`mer-N`).
     pub fn data_model(&mut self) -> ArtifactId {
         ArtifactId::new(format!("mer-{}", self.take())).expect("id generado nunca vacío")
+    }
+
+    /// Identidad definitiva de un mockup (`mockup-N`).
+    pub fn mockup(&mut self) -> ArtifactId {
+        ArtifactId::new(format!("mockup-{}", self.take())).expect("id generado nunca vacío")
+    }
+
+    pub fn baseline(&mut self) -> BaselineId {
+        BaselineId::new(format!("base-{}", self.take())).expect("id generado nunca vacío")
+    }
+
+    /// Identidad definitiva de una entrega de trabajo (`entrega-N`).
+    pub fn delivery(&mut self) -> DeliveryId {
+        DeliveryId::new(format!("entrega-{}", self.take())).expect("id generado nunca vacío")
     }
 
     /// Identificador estable de versión a partir de su artefacto y número.

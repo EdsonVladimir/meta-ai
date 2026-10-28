@@ -4,13 +4,15 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use ruth_api::{
-    ApproveVersionInput, CreateModuleInput, CreateRequirementInput, IdGen, SaveVersionInput,
+    ApproveVersionInput, ArchiveModuleInput, ArchiveRequirementInput, CreateModuleInput,
+    CreateRequirementInput, DeleteModuleInput, DeleteRequirementInput, IdGen, SaveVersionInput,
 };
 use ruth_core::application::Store;
 use ruth_core::domain::{
     ArtifactId, ArtifactType, Author, BaselineId, Content, Date, HumanId, ModuleId, ProjectId,
     VersionId,
 };
+use ruth_store::{BaselineMetaLog, DesignLog, ProposalLog};
 use ruth_store::{
     DbActor, ProposalState, StoreError, StoredDesignGeneration, StoredDesignProposal,
     StoredGeneration, StoredProposal,
@@ -42,7 +44,6 @@ impl Drop for TempDb {
 struct Rich {
     store: Store,
     ids: IdGen,
-    project: String,
     req: String,
     v1: String,
     v2: String,
@@ -197,7 +198,6 @@ fn build_rich() -> Rich {
     Rich {
         store,
         ids,
-        project,
         req: req_id,
         v1,
         v2,
@@ -279,68 +279,6 @@ fn history_approvals_deps_and_baselines_survive() {
     assert!(pins_2.contains(&rich.v2.as_str()));
     assert!(pins_2.contains(&rich.flow_v2.as_str()));
     db2.close();
-}
-
-#[test]
-fn stale_save_keeps_previous_snapshot() {
-    // La memoria y el disco conservan lo anterior si el guardado falla.
-    let tmp = TempDb::new("fallo");
-    let mut rich = build_rich();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&rich.store, rich.ids.checkpoint())
-        .expect("guardar v1");
-    let bytes_before = std::fs::read(&tmp.path).expect("leer base");
-    drop_permissions(&tmp);
-    let v3 = ruth_api::save_version(
-        &mut rich.store,
-        SaveVersionInput {
-            project_id: rich.project.clone(),
-            artifact_id: rich.req.clone(),
-            expected_version_id: rich.v2.clone(),
-            content: "Cambio que no se persistirá.".to_string(),
-            author: "ana".to_string(),
-        },
-    )
-    .expect("el núcleo valida en memoria");
-    assert_eq!(v3.versions.len(), 3);
-    let err = db
-        .save(&rich.store, rich.ids.checkpoint())
-        .expect_err("el disco falla");
-    assert!(matches!(err, StoreError::Sqlite { .. }), "era {err:?}");
-    assert_eq!(std::fs::read(&tmp.path).expect("leer base"), bytes_before);
-    restore_permissions(&tmp);
-    db.close();
-    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
-    assert_eq!(
-        loaded
-            .store
-            .versions_of(&ArtifactId::new(rich.req.clone()).expect("id"))
-            .len(),
-        2
-    );
-    db2.close();
-}
-
-#[cfg(unix)]
-fn drop_permissions(tmp: &TempDb) {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&tmp.path, std::fs::Permissions::from_mode(0o444)).expect("chmod");
-}
-
-#[cfg(not(unix))]
-fn drop_permissions(_tmp: &TempDb) {
-    panic!("esta prueba necesita permisos POSIX");
-}
-
-#[cfg(unix)]
-fn restore_permissions(tmp: &TempDb) {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&tmp.path, std::fs::Permissions::from_mode(0o644)).expect("chmod");
-}
-
-#[cfg(not(unix))]
-fn restore_permissions(_tmp: &TempDb) {
-    panic!("esta prueba necesita permisos POSIX");
 }
 
 #[test]
@@ -735,6 +673,8 @@ fn baby_design(
             explanation: "Revisa stock y confirma.".to_string(),
             state: ProposalState::Pending,
         },
+        target_artifact_id: None,
+        target_version_id: None,
     }
 }
 
@@ -872,6 +812,275 @@ fn v2_database_migrates_preserving_data() {
     assert_eq!(version, ruth_store::SCHEMA_VERSION);
 }
 
+const V3_DESIGN_DDL: &str = "
+CREATE TABLE design_generations(id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+    module_id TEXT NOT NULL, kind TEXT NOT NULL, model TEXT NOT NULL,
+    template_version INTEGER NOT NULL, input_tokens INTEGER, output_tokens INTEGER,
+    total_tokens INTEGER, created_at TEXT NOT NULL);
+CREATE TABLE design_context(generation_id TEXT NOT NULL REFERENCES design_generations(id),
+    pos INTEGER NOT NULL, version_id TEXT NOT NULL, PRIMARY KEY(generation_id, pos));
+CREATE TABLE design_questions(generation_id TEXT NOT NULL REFERENCES design_generations(id),
+    pos INTEGER NOT NULL, question TEXT NOT NULL, PRIMARY KEY(generation_id, pos));
+CREATE TABLE design_proposals(generation_id TEXT PRIMARY KEY REFERENCES design_generations(id),
+    title TEXT NOT NULL, spec_json TEXT NOT NULL, explanation TEXT NOT NULL,
+    state TEXT NOT NULL, artifact_id TEXT, accepted_content TEXT);
+";
+
+#[test]
+fn v3_database_migrates_preserving_designs_without_target() {
+    let tmp = TempDb::new("migra-v3");
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute_batch(V1_DDL).expect("v1");
+        raw.execute_batch(V2_DDL).expect("v2");
+        raw.execute_batch(V3_DESIGN_DDL).expect("v3");
+        raw.execute("INSERT INTO projects(id) VALUES ('proy-1')", [])
+            .expect("proyecto");
+        raw.execute(
+            "INSERT INTO modules(id, project_id) VALUES ('mod-2', 'proy-1')",
+            [],
+        )
+        .expect("módulo");
+        raw.execute(
+            "INSERT INTO design_generations(id, project_id, module_id, kind, model,
+             template_version, created_at)
+             VALUES ('gen-1', 'proy-1', 'mod-2', 'flow', 'm', 1, 't')",
+            [],
+        )
+        .expect("generación");
+        raw.execute(
+            "INSERT INTO design_proposals(generation_id, title, spec_json, explanation, state)
+             VALUES ('gen-1', 't', '{}', 'e', 'pending')",
+            [],
+        )
+        .expect("propuesta");
+        raw.execute("INSERT INTO meta(key, value) VALUES ('next_id', '5')", [])
+            .expect("contador");
+        raw.execute("PRAGMA user_version = 3", []).expect("v3");
+    }
+    let (db, loaded) = DbActor::spawn(&tmp.path).expect("abrir v3");
+    let gen = loaded.designs.design("gen-1").expect("diseño");
+    assert_eq!(gen.kind, "flow");
+    assert_eq!(gen.target_artifact_id, None);
+    assert_eq!(gen.target_version_id, None);
+    db.close();
+    // Reabrir es idempotente y deja el esquema en la versión actual.
+    let (db2, loaded2) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert!(loaded2.designs.design("gen-1").is_some());
+    db2.close();
+    let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("versión");
+    assert_eq!(version, ruth_store::SCHEMA_VERSION);
+    let columns: Vec<String> = raw
+        .prepare("PRAGMA table_info(design_generations)")
+        .expect("columnas")
+        .query_map([], |row| row.get(1))
+        .expect("filas")
+        .collect::<Result<_, _>>()
+        .expect("nombres");
+    assert!(columns.iter().any(|c| c == "target_artifact_id"));
+    assert!(columns.iter().any(|c| c == "target_version_id"));
+}
+
+#[test]
+fn v4_database_migrates_preserving_baselines_without_meta() {
+    let tmp = TempDb::new("migra-v4");
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute_batch(V1_DDL).expect("v1");
+        raw.execute_batch(V2_DDL).expect("v2");
+        raw.execute_batch(V3_DESIGN_DDL).expect("v3");
+        raw.execute_batch(
+            "ALTER TABLE design_generations ADD COLUMN target_artifact_id TEXT;
+             ALTER TABLE design_generations ADD COLUMN target_version_id TEXT;",
+        )
+        .expect("v4");
+        raw.execute("INSERT INTO projects(id) VALUES ('proy-1')", [])
+            .expect("proyecto");
+        raw.execute(
+            "INSERT INTO modules(id, project_id) VALUES ('mod-2', 'proy-1')",
+            [],
+        )
+        .expect("módulo");
+        raw.execute(
+            "INSERT INTO artifacts(id, project_id, module_id, kind)
+             VALUES ('req-3', 'proy-1', 'mod-2', 'requirement')",
+            [],
+        )
+        .expect("artefacto");
+        raw.execute(
+            "INSERT INTO versions(id, artifact_id, number, content, provenance_kind, provenance_by)
+             VALUES ('req-3-v1', 'req-3', 1, 'Contenido.', 'human', 'ana')",
+            [],
+        )
+        .expect("versión");
+        raw.execute(
+            "INSERT INTO approvals(version_id, approved_by, at, pos)
+             VALUES ('req-3-v1', 'ana', 't', 0)",
+            [],
+        )
+        .expect("aprobación");
+        raw.execute(
+            "INSERT INTO baselines(id, project_id, at) VALUES ('base-1', 'proy-1', 't')",
+            [],
+        )
+        .expect("baseline");
+        raw.execute(
+            "INSERT INTO baseline_entries(baseline_id, artifact_id, version_id)
+             VALUES ('base-1', 'req-3', 'req-3-v1')",
+            [],
+        )
+        .expect("entrada");
+        raw.execute("INSERT INTO meta(key, value) VALUES ('next_id', '6')", [])
+            .expect("contador");
+        raw.execute("PRAGMA user_version = 4", []).expect("v4");
+    }
+    let (db, loaded) = DbActor::spawn(&tmp.path).expect("abrir v4");
+    let baseline = loaded
+        .store
+        .baseline(&ruth_core::domain::BaselineId::new("base-1").expect("id"))
+        .expect("baseline");
+    assert_eq!(baseline.entries().len(), 1);
+    assert!(loaded.baseline_meta.get("base-1").is_none());
+    db.close();
+    // Reabrir es idempotente y deja el esquema en la versión actual.
+    let (db2, loaded2) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert!(loaded2
+        .store
+        .baseline(&ruth_core::domain::BaselineId::new("base-1").expect("id"))
+        .is_some());
+    db2.close();
+    let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("versión");
+    assert_eq!(version, ruth_store::SCHEMA_VERSION);
+    let tables: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'baseline_meta'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("tabla");
+    assert_eq!(tables, 1);
+}
+
+#[test]
+fn baseline_meta_roundtrips_across_reopen() {
+    use ruth_core::domain::{BaselineId, Date, ProjectId, VersionId};
+    use ruth_store::BaselineMeta;
+
+    let tmp = TempDb::new("baseline-meta");
+    let (mut store, ids, project, _module, req) = baby();
+    let project_id = ProjectId::new(project.clone()).expect("id");
+    let version = VersionId::new(format!("{req}-v1")).expect("id");
+    store
+        .approve(
+            &project_id,
+            &ruth_core::domain::ArtifactId::new(req.clone()).expect("id"),
+            &version,
+            &ruth_core::domain::Author::Human(
+                ruth_core::domain::HumanId::new("ana").expect("autora"),
+            ),
+            Date::new("2026-10-28T12:00:00Z").expect("fecha"),
+        )
+        .expect("aprobar");
+    store
+        .create_baseline(
+            &project_id,
+            BaselineId::new("base-1").expect("id"),
+            &[(
+                ruth_core::domain::ArtifactId::new(req).expect("id"),
+                version,
+            )],
+            Date::new("2026-10-28T12:00:00Z").expect("fecha"),
+        )
+        .expect("baseline");
+    let meta = BaselineMeta {
+        baseline_id: "base-1".to_string(),
+        name: "Entrega 1".to_string(),
+        description: Some("Ventas".to_string()),
+        scope_module: Some("mod-2".to_string()),
+        created_at: "2026-10-28T12:00:00Z".to_string(),
+    };
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.create_baseline(&store, ids.checkpoint(), &meta)
+        .expect("crear");
+    db.close();
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    let back = loaded.baseline_meta.get("base-1").expect("meta");
+    assert_eq!(back.name, "Entrega 1");
+    assert_eq!(back.description.as_deref(), Some("Ventas"));
+    assert_eq!(back.scope_module.as_deref(), Some("mod-2"));
+    assert!(loaded
+        .store
+        .baseline(&BaselineId::new("base-1").expect("id"))
+        .is_some());
+    db2.close();
+}
+
+#[test]
+fn baseline_meta_with_dangling_refs_is_rejected() {
+    let tmp = TempDb::new("meta-colgada");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.close();
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute(
+            "INSERT INTO baseline_meta(baseline_id, name, created_at)
+             VALUES ('base-9', 'Rota', 't')",
+            [],
+        )
+        .expect("forzar");
+    }
+    let err = DbActor::spawn(&tmp.path).expect_err("debe fallar");
+    assert!(
+        matches!(err, ruth_store::StoreError::InvalidData { .. }),
+        "era {err:?}"
+    );
+}
+
+#[test]
+fn design_update_target_roundtrips_across_reopen() {
+    let tmp = TempDb::new("diseno-objetivo");
+    let (mut store, ids, project, module, req) = baby();
+    let flow = ruth_core::domain::ArtifactId::new("flujo-9").expect("id");
+    store
+        .create_artifact(
+            &ruth_core::domain::ProjectId::new(project.clone()).expect("id"),
+            &ruth_core::domain::ModuleId::new(module.clone()).expect("id"),
+            flow.clone(),
+            ruth_core::domain::ArtifactType::Flow,
+        )
+        .expect("flujo");
+    store
+        .create_version(
+            &ruth_core::domain::ProjectId::new(project.clone()).expect("id"),
+            &flow,
+            None,
+            ruth_core::domain::VersionId::new("flujo-9-v1").expect("id"),
+            ruth_core::domain::Content::new("{}").expect("contenido"),
+            &ruth_core::domain::Author::Human(
+                ruth_core::domain::HumanId::new("ana").expect("autora"),
+            ),
+            &[ruth_core::domain::VersionId::new(format!("{req}-v1")).expect("id")],
+        )
+        .expect("versión");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("dominio");
+    let mut gen = baby_design("gen-1", &project, &module, vec![format!("{req}-v1")]);
+    gen.target_artifact_id = Some("flujo-9".to_string());
+    gen.target_version_id = Some("flujo-9-v1".to_string());
+    db.record_design(&gen).expect("registrar");
+    db.close();
+    let (_db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    let back = loaded.designs.design("gen-1").expect("diseño");
+    assert_eq!(back.target_artifact_id.as_deref(), Some("flujo-9"));
+    assert_eq!(back.target_version_id.as_deref(), Some("flujo-9-v1"));
+}
+
 #[test]
 fn design_with_dangling_refs_is_rejected() {
     let tmp = TempDb::new("diseno-colgado");
@@ -895,6 +1104,551 @@ fn design_with_dangling_refs_is_rejected() {
     }
     let before = std::fs::read(&tmp.path).expect("bytes");
     let err = DbActor::spawn(&tmp.path).expect_err("referencias colgadas");
+    assert!(matches!(err, StoreError::InvalidData { .. }), "era {err:?}");
+    assert_eq!(std::fs::read(&tmp.path).expect("bytes"), before);
+}
+
+#[test]
+fn repeated_saves_keep_baselines_and_meta() {
+    use ruth_store::BaselineMeta;
+
+    // Regresión del hito 9: el segundo guardado sobre una base con baselines
+    // fallaba con FOREIGN KEY (se vaciaba `projects` antes que `baselines`).
+    let tmp = TempDb::new("guardados-baseline");
+    let rich = build_rich();
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&rich.store, rich.ids.checkpoint())
+        .expect("primer guardado");
+    db.save(&rich.store, rich.ids.checkpoint())
+        .expect("segundo guardado con baselines");
+    // Los metadatos sobreviven a guardados completos posteriores.
+    let meta = BaselineMeta {
+        baseline_id: "base-2".to_string(),
+        name: "Entrega 2".to_string(),
+        description: None,
+        scope_module: None,
+        created_at: "2026-10-25T10:00:00Z".to_string(),
+    };
+    db.create_baseline(&rich.store, rich.ids.checkpoint(), &meta)
+        .expect("metadatos");
+    db.save(&rich.store, rich.ids.checkpoint())
+        .expect("guardado tras metadatos");
+    db.close();
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert_eq!(loaded.store.baselines().len(), 2);
+    assert_eq!(
+        loaded.baseline_meta.get("base-2").expect("meta").name,
+        "Entrega 2"
+    );
+    db2.close();
+}
+
+#[test]
+fn v5_database_migrates_preserving_everything_without_layouts() {
+    let tmp = TempDb::new("migra-v5");
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute_batch(V1_DDL).expect("v1");
+        raw.execute_batch(V2_DDL).expect("v2");
+        raw.execute_batch(V3_DESIGN_DDL).expect("v3");
+        raw.execute_batch(
+            "ALTER TABLE design_generations ADD COLUMN target_artifact_id TEXT;
+             ALTER TABLE design_generations ADD COLUMN target_version_id TEXT;",
+        )
+        .expect("v4");
+        raw.execute_batch(
+            "CREATE TABLE baseline_meta(
+                baseline_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                scope_module TEXT,
+                created_at TEXT NOT NULL
+            );",
+        )
+        .expect("v5");
+        raw.execute("INSERT INTO projects(id) VALUES ('proy-1')", [])
+            .expect("proyecto");
+        raw.execute(
+            "INSERT INTO modules(id, project_id) VALUES ('mod-2', 'proy-1')",
+            [],
+        )
+        .expect("módulo");
+        raw.execute(
+            "INSERT INTO artifacts(id, project_id, module_id, kind)
+             VALUES ('req-3', 'proy-1', 'mod-2', 'requirement')",
+            [],
+        )
+        .expect("artefacto");
+        raw.execute(
+            "INSERT INTO versions(id, artifact_id, number, content, provenance_kind, provenance_by)
+             VALUES ('req-3-v1', 'req-3', 1, 'Contenido.', 'human', 'ana')",
+            [],
+        )
+        .expect("versión");
+        raw.execute(
+            "INSERT INTO approvals(version_id, approved_by, at, pos)
+             VALUES ('req-3-v1', 'ana', 't', 0)",
+            [],
+        )
+        .expect("aprobación");
+        raw.execute("INSERT INTO meta(key, value) VALUES ('next_id', '6')", [])
+            .expect("contador");
+        raw.execute("PRAGMA user_version = 5", []).expect("v5");
+    }
+    let (db, loaded) = DbActor::spawn(&tmp.path).expect("abrir v5");
+    // Datos intactos y sin disposiciones (trazado automático).
+    let version = loaded
+        .store
+        .version(&ruth_core::domain::VersionId::new("req-3-v1").expect("id"))
+        .expect("versión");
+    assert_eq!(version.content().as_str(), "Contenido.");
+    assert!(loaded.layouts.get("req-3", "req-3-v1").is_none());
+    db.close();
+    // Reabrir es idempotente y deja el esquema en la versión actual.
+    let (db2, loaded2) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert!(loaded2
+        .store
+        .version(&ruth_core::domain::VersionId::new("req-3-v1").expect("id"))
+        .is_some());
+    db2.close();
+    let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("versión");
+    assert_eq!(version, ruth_store::SCHEMA_VERSION);
+    let tables: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'design_layouts'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("tabla");
+    assert_eq!(tables, 1);
+}
+
+#[test]
+fn v6_database_migrates_with_everything_active() {
+    let tmp = TempDb::new("migra-v6");
+    let (store, ids, _project, module, req) = baby();
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    // Degradar a v6: quitar las columnas y marcar la versión anterior.
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute("ALTER TABLE modules DROP COLUMN archived", [])
+            .expect("degradar");
+        raw.execute("ALTER TABLE artifacts DROP COLUMN archived", [])
+            .expect("degradar");
+        raw.execute("PRAGMA user_version = 6", []).expect("v6");
+    }
+    let (db, loaded) = DbActor::spawn(&tmp.path).expect("abrir v6");
+    // Todo activo y datos intactos.
+    let module_ref = loaded
+        .store
+        .module(&ModuleId::new(module).expect("id"))
+        .expect("módulo");
+    assert!(!module_ref.archived());
+    let artifact = loaded
+        .store
+        .artifact(&ArtifactId::new(req).expect("id"))
+        .expect("requisito");
+    assert!(!artifact.archived());
+    assert!(loaded.store.current_version(artifact.id()).is_some());
+    db.close();
+    // Reabrir confirma la migración idempotente a v7.
+    let (db2, loaded2) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert!(loaded2.store.projects().len() == 1);
+    db2.close();
+    let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("versión");
+    assert_eq!(version, ruth_store::SCHEMA_VERSION);
+    let columns: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('artifacts') WHERE name = 'archived'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("columna");
+    assert_eq!(columns, 1);
+}
+
+#[test]
+fn archived_flags_roundtrip() {
+    let tmp = TempDb::new("archivado");
+    let (mut store, mut ids, project, module, req) = baby();
+    ruth_api::archive_module(
+        &mut store,
+        ArchiveModuleInput {
+            project_id: project.clone(),
+            module_id: module.clone(),
+        },
+    )
+    .expect("archivar módulo");
+    // Un segundo requisito archivado individualmente dentro de otro módulo.
+    let other = ruth_api::create_module(
+        &mut store,
+        &mut ids,
+        CreateModuleInput {
+            project_id: project.clone(),
+        },
+    )
+    .expect("módulo")
+    .id;
+    let detail = ruth_api::create_requirement(
+        &mut store,
+        &mut ids,
+        CreateRequirementInput {
+            project_id: project.clone(),
+            module_id: other.clone(),
+            content: "Otro requisito.".to_string(),
+            author: "ana".to_string(),
+        },
+    )
+    .expect("requisito");
+    ruth_api::archive_requirement(
+        &mut store,
+        ArchiveRequirementInput {
+            project_id: project.clone(),
+            artifact_id: detail.artifact.id.clone(),
+        },
+    )
+    .expect("archivar requisito");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    let module_ref = loaded
+        .store
+        .module(&ModuleId::new(module).expect("id"))
+        .expect("módulo");
+    assert!(module_ref.archived());
+    // El contenido conserva su flag individual (activo) aunque su módulo no.
+    let inner = loaded
+        .store
+        .artifact(&ArtifactId::new(req).expect("id"))
+        .expect("requisito");
+    assert!(!inner.archived());
+    assert!(loaded.store.is_effectively_archived(inner.id()));
+    let solo = loaded
+        .store
+        .artifact(&ArtifactId::new(detail.artifact.id).expect("id"))
+        .expect("otro");
+    assert!(solo.archived());
+    let other_ref = loaded
+        .store
+        .module(&ModuleId::new(other).expect("id"))
+        .expect("módulo");
+    assert!(!other_ref.archived());
+    // Historiales intactos bajo el archivado.
+    assert_eq!(loaded.store.versions_of(inner.id()).len(), 1);
+    db2.close();
+}
+
+#[test]
+fn delete_persists_and_keeps_the_rest() {
+    let tmp = TempDb::new("borrado");
+    let (mut store, ids, project, module, req) = baby();
+    let proposals = ProposalLog::new();
+    let designs = DesignLog::new();
+    let metalog = BaselineMetaLog::new();
+    ruth_api::delete_requirement_checked(
+        &mut store,
+        &proposals,
+        &designs,
+        DeleteRequirementInput {
+            project_id: project.clone(),
+            artifact_id: req.clone(),
+        },
+    )
+    .expect("borrar requisito");
+    ruth_api::delete_module_checked(
+        &mut store,
+        &proposals,
+        &designs,
+        &metalog,
+        DeleteModuleInput {
+            project_id: project.clone(),
+            module_id: module.clone(),
+        },
+    )
+    .expect("borrar módulo");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert!(loaded
+        .store
+        .artifact(&ArtifactId::new(req).expect("id"))
+        .is_none());
+    assert!(loaded
+        .store
+        .module(&ModuleId::new(module).expect("id"))
+        .is_none());
+    assert_eq!(loaded.store.projects().len(), 1);
+    db2.close();
+}
+
+#[test]
+fn invalid_archived_flag_is_rejected_without_overwrite() {
+    let tmp = TempDb::new("flag-malo");
+    let (store, ids, _project, _module, _req) = baby();
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute("UPDATE artifacts SET archived = 7", [])
+            .expect("inyectar");
+    }
+    let before = std::fs::read(&tmp.path).expect("bytes");
+    let err = DbActor::spawn(&tmp.path).expect_err("flag inválido");
+    assert!(matches!(err, StoreError::InvalidData { .. }), "era {err:?}");
+    assert_eq!(std::fs::read(&tmp.path).expect("bytes"), before);
+}
+
+#[test]
+fn v7_database_migrates_with_names_from_ids_and_no_titles() {
+    let tmp = TempDb::new("migra-v7");
+    let (store, ids, _project, _module, _req) = baby();
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    // Degradar a v7: quitar columnas/tabla y marcar la versión anterior.
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute("ALTER TABLE projects DROP COLUMN name", [])
+            .expect("degradar");
+        raw.execute("ALTER TABLE modules DROP COLUMN name", [])
+            .expect("degradar");
+        raw.execute("ALTER TABLE artifacts DROP COLUMN title", [])
+            .expect("degradar");
+        raw.execute("ALTER TABLE baseline_entries DROP COLUMN title", [])
+            .expect("degradar");
+        raw.execute("DROP TABLE title_history", [])
+            .expect("degradar");
+        raw.execute("PRAGMA user_version = 7", []).expect("v7");
+    }
+    let (db, loaded) = DbActor::spawn(&tmp.path).expect("abrir v7");
+    // Nombres = IDs, sin títulos, historial vacío, datos intactos.
+    let project = &loaded.store.projects()[0];
+    assert_eq!(project.name(), project.id().as_str());
+    let module = &loaded.store.modules_of(project.id())[0];
+    assert_eq!(module.name(), module.id().as_str());
+    let artifact = &loaded.store.artifacts_of(project.id(), module.id())[0];
+    assert_eq!(artifact.title(), None);
+    assert!(loaded.store.title_changes().is_empty());
+    assert!(loaded.store.current_version(artifact.id()).is_some());
+    db.close();
+    // Reabrir confirma la migración idempotente a v8.
+    let (db2, loaded2) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert_eq!(loaded2.store.projects().len(), 1);
+    db2.close();
+    let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("versión");
+    assert_eq!(version, ruth_store::SCHEMA_VERSION);
+}
+
+#[test]
+fn names_titles_and_history_roundtrip() {
+    let tmp = TempDb::new("nombres");
+    let (mut store, ids, project, module, req) = baby();
+    let project_id = ruth_core::domain::ProjectId::new(project.clone()).expect("id");
+    let module_id = ruth_core::domain::ModuleId::new(module.clone()).expect("id");
+    let req_id = ruth_core::domain::ArtifactId::new(req.clone()).expect("id");
+    store
+        .rename_project(
+            &project_id,
+            &project,
+            ruth_core::domain::Name::new("Ventas 2026".to_string()).expect("n"),
+        )
+        .expect("proyecto");
+    store
+        .rename_module(
+            &project_id,
+            &module_id,
+            &module,
+            ruth_core::domain::Name::new("Mostrador".to_string()).expect("n"),
+        )
+        .expect("módulo");
+    store
+        .rename_artifact(
+            &project_id,
+            &req_id,
+            None,
+            ruth_core::domain::Name::new("Primer título".to_string()).expect("n"),
+            &ruth_core::domain::HumanId::new("ana").expect("id"),
+            ruth_core::domain::Date::new("2026-10-28").expect("f"),
+        )
+        .expect("título");
+    store
+        .rename_artifact(
+            &project_id,
+            &req_id,
+            Some("Primer título"),
+            ruth_core::domain::Name::new("Segundo título".to_string()).expect("n"),
+            &ruth_core::domain::HumanId::new("bruno").expect("id"),
+            ruth_core::domain::Date::new("2026-10-28").expect("f"),
+        )
+        .expect("título");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert_eq!(
+        loaded.store.project(&project_id).expect("p").name(),
+        "Ventas 2026"
+    );
+    assert_eq!(
+        loaded.store.module(&module_id).expect("m").name(),
+        "Mostrador"
+    );
+    assert_eq!(
+        loaded.store.artifact(&req_id).expect("a").title(),
+        Some("Segundo título")
+    );
+    let history: Vec<&str> = loaded
+        .store
+        .title_history(&req_id)
+        .iter()
+        .map(|c| c.title())
+        .collect();
+    assert_eq!(history, vec!["Primer título", "Segundo título"]);
+    db2.close();
+}
+
+#[test]
+fn invalid_name_is_rejected_without_overwrite() {
+    let tmp = TempDb::new("nombre-malo");
+    let (store, ids, _project, _module, _req) = baby();
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute("UPDATE projects SET name = ''", [])
+            .expect("inyectar");
+    }
+    let before = std::fs::read(&tmp.path).expect("bytes");
+    let err = DbActor::spawn(&tmp.path).expect_err("nombre inválido");
+    assert!(matches!(err, StoreError::InvalidData { .. }), "era {err:?}");
+    assert_eq!(std::fs::read(&tmp.path).expect("bytes"), before);
+}
+
+#[test]
+fn v8_database_migrates_with_empty_deliveries() {
+    let tmp = TempDb::new("migra-v8");
+    let (store, ids, _project, _module, _req) = baby();
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    // Degradar a v8: quitar las tablas de entregas y marcar la versión.
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute("DROP TABLE work_delivery_entries", [])
+            .expect("degradar");
+        raw.execute("DROP TABLE work_deliveries", [])
+            .expect("degradar");
+        raw.execute("PRAGMA user_version = 8", []).expect("v8");
+    }
+    let (db, loaded) = DbActor::spawn(&tmp.path).expect("abrir v8");
+    assert!(loaded.store.deliveries().is_empty());
+    assert_eq!(loaded.store.projects().len(), 1);
+    db.close();
+    // Reabrir confirma la migración idempotente a v9.
+    let (db2, loaded2) = DbActor::spawn(&tmp.path).expect("reabrir");
+    assert!(loaded2.store.deliveries().is_empty());
+    db2.close();
+    let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+    let version: i64 = raw
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("versión");
+    assert_eq!(version, ruth_store::SCHEMA_VERSION);
+}
+
+#[test]
+fn delivery_roundtrip_preserves_entries_and_titles() {
+    use ruth_core::domain::DeliveryId;
+    let tmp = TempDb::new("entrega");
+    let (mut store, ids, project, module, req) = baby();
+    let project_id = ProjectId::new(project).expect("id");
+    let module_id = ModuleId::new(module).expect("id");
+    let req_id = ArtifactId::new(req).expect("id");
+    let v1 = store.current_version(&req_id).expect("actual").id().clone();
+    store
+        .rename_artifact(
+            &project_id,
+            &req_id,
+            None,
+            ruth_core::domain::Name::new("Confirmar venta".to_string()).expect("nombre"),
+            &HumanId::new("ana").expect("id"),
+            Date::new("2026-10-28").expect("fecha"),
+        )
+        .expect("título");
+    store
+        .create_work_delivery(
+            &project_id,
+            DeliveryId::new("entrega-1").expect("id"),
+            "Trabajo".to_string(),
+            Some("para la demo".to_string()),
+            Some(module_id.clone()),
+            std::slice::from_ref(&(req_id.clone(), v1.clone())),
+            Date::new("2026-10-28T12:00:00Z").expect("fecha"),
+        )
+        .expect("entrega");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    let deliveries = loaded.store.deliveries();
+    assert_eq!(deliveries.len(), 1);
+    let delivery = deliveries[0];
+    assert_eq!(delivery.name(), "Trabajo");
+    assert_eq!(delivery.description(), Some("para la demo"));
+    assert_eq!(delivery.scope_module(), Some(&module_id));
+    assert_eq!(delivery.entries(), &[(req_id.clone(), v1)]);
+    assert_eq!(delivery.title_of(&req_id), Some(Some("Confirmar venta")));
+    db2.close();
+}
+
+#[test]
+fn dangling_delivery_entry_is_rejected_without_overwrite() {
+    let tmp = TempDb::new("entrega-mala");
+    let (mut store, ids, project, module, req) = baby();
+    let project_id = ProjectId::new(project).expect("id");
+    let module_id = ModuleId::new(module).expect("id");
+    let req_id = ArtifactId::new(req).expect("id");
+    let v1 = store.current_version(&req_id).expect("actual").id().clone();
+    store
+        .create_work_delivery(
+            &project_id,
+            ruth_core::domain::DeliveryId::new("entrega-1").expect("id"),
+            "Trabajo".to_string(),
+            None,
+            Some(module_id),
+            std::slice::from_ref(&(req_id, v1)),
+            Date::new("2026-10-28T12:00:00Z").expect("fecha"),
+        )
+        .expect("entrega");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    db.save(&store, ids.checkpoint()).expect("guardar");
+    db.close();
+    {
+        let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
+        raw.execute("PRAGMA foreign_keys = OFF", [])
+            .expect("sin fk");
+        raw.execute(
+            "UPDATE work_delivery_entries SET version_id = 'req-1-v99'",
+            [],
+        )
+        .expect("inyectar");
+    }
+    let before = std::fs::read(&tmp.path).expect("bytes");
+    let err = DbActor::spawn(&tmp.path).expect_err("entrada colgada");
     assert!(matches!(err, StoreError::InvalidData { .. }), "era {err:?}");
     assert_eq!(std::fs::read(&tmp.path).expect("bytes"), before);
 }

@@ -10,8 +10,10 @@ use std::sync::mpsc::{self, Sender};
 
 use ruth_core::application::Store;
 
+use crate::baseline_meta::{BaselineMeta, BaselineMetaLog};
 use crate::design::{DesignLog, StoredDesignGeneration};
 use crate::error::StoreError;
+use crate::layout::LayoutLog;
 use crate::proposals::{ProposalLog, StoredGeneration};
 
 /// Estado inicial validado al abrir la base.
@@ -21,6 +23,8 @@ pub struct Loaded {
     pub next_id: u64,
     pub proposals: ProposalLog,
     pub designs: DesignLog,
+    pub baseline_meta: BaselineMetaLog,
+    pub layouts: LayoutLog,
 }
 
 enum Op {
@@ -55,6 +59,23 @@ enum Op {
     },
     DiscardDesign {
         generation_id: String,
+    },
+    CreateBaseline {
+        store: Store,
+        next_id: u64,
+        meta: BaselineMeta,
+    },
+    SaveDesignLayout {
+        store: Store,
+        next_id: u64,
+        artifact_id: String,
+        version_id: String,
+        layout_json: Option<String>,
+    },
+    UpsertDesignLayout {
+        artifact_id: String,
+        version_id: String,
+        layout_json: Option<String>,
     },
 }
 
@@ -184,6 +205,54 @@ impl DbActor {
         })
     }
 
+    /// Creación atómica de baseline: dominio (con la baseline) y metadatos
+    /// en una sola transacción.
+    pub fn create_baseline(
+        &self,
+        store: &Store,
+        next_id: u64,
+        meta: &BaselineMeta,
+    ) -> Result<(), StoreError> {
+        self.run(Op::CreateBaseline {
+            store: store.clone(),
+            next_id,
+            meta: meta.clone(),
+        })
+    }
+
+    /// Guardado atómico de revisión manual: dominio (con la versión nueva)
+    /// y disposición visual en una sola transacción.
+    pub fn save_design_layout(
+        &self,
+        store: &Store,
+        next_id: u64,
+        artifact_id: &str,
+        version_id: &str,
+        layout_json: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.run(Op::SaveDesignLayout {
+            store: store.clone(),
+            next_id,
+            artifact_id: artifact_id.to_string(),
+            version_id: version_id.to_string(),
+            layout_json: layout_json.map(str::to_string),
+        })
+    }
+
+    /// Guarda solo una disposición, sin tocar el dominio.
+    pub fn upsert_design_layout(
+        &self,
+        artifact_id: &str,
+        version_id: &str,
+        layout_json: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.run(Op::UpsertDesignLayout {
+            artifact_id: artifact_id.to_string(),
+            version_id: version_id.to_string(),
+            layout_json: layout_json.map(str::to_string),
+        })
+    }
+
     fn run(&self, op: Op) -> Result<(), StoreError> {
         let (reply_tx, reply_rx) = mpsc::channel();
         self.tx
@@ -219,12 +288,15 @@ impl DbActor {
                         next_id: 1,
                         proposals: ProposalLog::new(),
                         designs: DesignLog::new(),
+                        baseline_meta: BaselineMetaLog::new(),
+                        layouts: LayoutLog::new(),
                     },
                 ))
             } else {
                 // Base existente: validar primero, escribir después. Las v1/v2
                 // cargan con registros vacíos y migran después sin perder datos.
-                let (store, next_id, proposals, designs) = crate::persist::load(&conn, &path)?;
+                let (store, next_id, proposals, designs, baseline_meta, layouts) =
+                    crate::persist::load(&conn, &path)?;
                 crate::schema::migrate(&mut conn, &path, false)?;
                 Ok((
                     conn,
@@ -233,6 +305,8 @@ impl DbActor {
                         next_id,
                         proposals,
                         designs,
+                        baseline_meta,
+                        layouts,
                     },
                 ))
             }
@@ -301,6 +375,39 @@ impl DbActor {
                                 &generation_id,
                             )
                         }
+                        Op::CreateBaseline {
+                            store,
+                            next_id,
+                            meta,
+                        } => crate::persist::create_baseline(
+                            &mut conn, &path, &store, next_id, &meta,
+                        ),
+                        Op::SaveDesignLayout {
+                            store,
+                            next_id,
+                            artifact_id,
+                            version_id,
+                            layout_json,
+                        } => crate::persist::save_design_layout(
+                            &mut conn,
+                            &path,
+                            &store,
+                            next_id,
+                            &artifact_id,
+                            &version_id,
+                            layout_json.as_deref(),
+                        ),
+                        Op::UpsertDesignLayout {
+                            artifact_id,
+                            version_id,
+                            layout_json,
+                        } => crate::persist::upsert_design_layout(
+                            &mut conn,
+                            &path,
+                            &artifact_id,
+                            &version_id,
+                            layout_json.as_deref(),
+                        ),
                     };
                     let _ = job.reply.send(result);
                 }

@@ -26,8 +26,15 @@ import type { GenerationContextPreview, GenerationDto, ProposalDto } from "./typ
 interface GenerationPanelProps {
   projectId: string;
   moduleId: string;
+  /** Módulo archivado: historial consultable, sin generar ni aceptar. */
+  moduleArchived: boolean;
   onAccepted: (detail: RequirementDetail) => void;
   onOpenRequirement: (artifactId: string) => void;
+  /**
+   * Descripción sugerida (p. ej. desde el compositor del asistente): solo
+   * se adopta si el campo sigue intacto; nunca pisa lo escrito ni genera.
+   */
+  suggestedDescription?: string | null;
 }
 
 function editKey(generationId: string, tempId: string): string {
@@ -37,10 +44,18 @@ function editKey(generationId: string, tempId: string): string {
 export function GenerationPanel({
   projectId,
   moduleId,
+  moduleArchived,
   onAccepted,
   onOpenRequirement,
+  suggestedDescription = null,
 }: GenerationPanelProps) {
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(suggestedDescription ?? "");
+  const touchedRef = useRef(false);
+  useEffect(() => {
+    if (!touchedRef.current && suggestedDescription !== null) {
+      setDescription(suggestedDescription);
+    }
+  }, [suggestedDescription]);
   const [preview, setPreview] = useState<GenerationContextPreview[] | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [generations, setGenerations] = useState<GenerationDto[]>([]);
@@ -165,14 +180,23 @@ export function GenerationPanel({
       <div className="editor-head">
         <h3>Proponer requisitos con IA</h3>
       </div>
+      {moduleArchived && (
+        <p className="notice" role="note">
+          Módulo archivado: puedes consultar las generaciones guardadas, pero no
+          generar ni aceptar propuestas hasta restaurarlo.
+        </p>
+      )}
 
       <label className="field">
         <span>Describe el módulo</span>
         <textarea
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => {
+            touchedRef.current = true;
+            setDescription(e.target.value);
+          }}
           rows={4}
-          disabled={generating}
+          disabled={generating || moduleArchived}
           placeholder="p. ej. Ventas de productos con control de stock."
         />
       </label>
@@ -191,8 +215,14 @@ export function GenerationPanel({
           <ul className="pick-list">
             {preview.map((item) => (
               <li key={item.artifactId}>
-                <code>{item.artifactId}</code> <code>{item.versionId}</code> · {item.chars}{" "}
-                caracteres
+                {item.title !== null && item.title !== "" ? (
+                  <>
+                    {item.title} <code>{item.artifactId}</code>
+                  </>
+                ) : (
+                  <code>{item.artifactId}</code>
+                )}{" "}
+                <code>{item.versionId}</code> · {item.chars} caracteres
                 <br />
                 <span className="hint">{item.excerpt}</span>
               </li>
@@ -212,7 +242,8 @@ export function GenerationPanel({
           type="button"
           className="primary"
           onClick={() => void handlePropose()}
-          disabled={generating || acting !== null || description.trim() === ""}
+          disabled={generating || acting !== null || description.trim() === "" || moduleArchived}
+          title={moduleArchived ? "Módulo archivado: restaúralo para generar" : undefined}
         >
           {generating ? "Proponiendo…" : "Proponer requisitos"}
         </button>
@@ -271,7 +302,12 @@ export function GenerationPanel({
                 {generation.proposals.map((proposal) => {
                   const key = editKey(generation.id, proposal.tempId);
                   const edit = editFor(generation.id, proposal);
-                  const actionable = isActionable(proposal, generation.stale, acting !== null);
+                  const actionable = isActionable(
+                    proposal,
+                    generation.stale,
+                    acting !== null,
+                    moduleArchived,
+                  );
                   const busyThis = acting === key;
                   return (
                     <article key={proposal.tempId} className="proposal-card">

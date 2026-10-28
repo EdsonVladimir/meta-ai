@@ -4,10 +4,17 @@
 //! comprobación de disponibilidad y llamada a `ruth-api`. Los comandos de
 //! Meta no tocan este estado; el de generación lo suelta durante la red.
 
+pub mod archive;
+pub mod baseline;
+pub mod delivery;
 pub mod design;
+pub mod impact;
 pub mod meta;
+pub mod mockup;
 pub mod proposals;
+pub mod rename;
 pub mod requirements;
+pub mod terminal;
 
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
@@ -16,32 +23,31 @@ use ruth_api::ApiError;
 
 use crate::state::AppStateInner;
 
-/// Vista mutable del estado listo: dominio, ids, base y registros de
-/// generaciones. Vive solo dentro del bloqueo que la entrega.
+/// Vista mutable del estado listo: dominio, ids, base, registros de
+/// generaciones y disposiciones visuales. Vive solo dentro del bloqueo que
+/// la entrega.
 pub(crate) struct Ready<'a> {
     pub store: &'a mut ruth_core::application::Store,
     pub ids: &'a mut ruth_api::IdGen,
     pub db: &'a ruth_store::DbActor,
     pub log: &'a mut ruth_store::ProposalLog,
     pub designs: &'a mut ruth_store::DesignLog,
+    pub baseline_meta: &'a mut ruth_store::BaselineMetaLog,
+    pub layouts: &'a mut ruth_store::LayoutLog,
 }
 
 pub(crate) fn ready<'a>(
     guard: &'a mut MutexGuard<'_, AppStateInner>,
 ) -> Result<Ready<'a>, ApiError> {
     match &mut **guard {
-        AppStateInner::Ready {
-            store,
-            ids,
-            db,
-            proposals,
-            designs,
-        } => Ok(Ready {
-            store,
-            ids,
-            db,
-            log: proposals,
-            designs,
+        AppStateInner::Ready(ready) => Ok(Ready {
+            store: &mut ready.store,
+            ids: &mut ready.ids,
+            db: &ready.db,
+            log: &mut ready.proposals,
+            designs: &mut ready.designs,
+            baseline_meta: &mut ready.baseline_meta,
+            layouts: &mut ready.layouts,
         }),
         AppStateInner::Unavailable { message } => Err(ApiError::storage_message(message.clone())),
     }

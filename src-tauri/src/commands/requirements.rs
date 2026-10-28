@@ -30,7 +30,7 @@ pub fn core_status(state: State<AppState>) -> Result<CoreStatus, ApiError> {
     let guard = lock(&state.inner)?;
     let db_path = state.db_path.to_string_lossy().to_string();
     match &*guard {
-        AppStateInner::Ready { .. } => Ok(CoreStatus {
+        AppStateInner::Ready(..) => Ok(CoreStatus {
             ready: true,
             message: None,
             db_path: Some(db_path),
