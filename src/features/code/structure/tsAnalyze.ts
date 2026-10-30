@@ -660,6 +660,7 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
       members: collected.members,
       membersTruncated: collected.truncated,
       heuristic: node.name === undefined ? "anonymous class with a default export" : null,
+      bodyHash: memberBodyHash(source, node),
       decorators,
       flow: collectFlowFacts(source, node, (target, what) => evidenceOf(source, target, what)),
       ...(moduleMeta !== null && moduleMeta.refs.length > 0
@@ -688,6 +689,7 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
       members: collected.members,
       membersTruncated: collected.truncated,
       heuristic: null,
+      bodyHash: memberBodyHash(source, node),
     });
     heritageNames(source, node, id, refs, ordinal);
     collectTypeRefs(source, node.members, id, refs, ordinal);
@@ -717,6 +719,7 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
       members,
       membersTruncated: truncated,
       heuristic: null,
+      bodyHash: memberBodyHash(source, node),
     });
   }
 
@@ -733,6 +736,7 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
       members: [],
       membersTruncated: false,
       heuristic,
+      bodyHash: memberBodyHash(source, node),
     });
     collectNews(source, node, id, refs, ordinal);
   }

@@ -618,7 +618,7 @@ In `ProjectMapView.test.tsx`: passing `proposalFiles` and then `null` shows and 
 
 - [ ] **Step 2: Run** the listed test files. Expected: the new tests FAIL.
 
-- [ ] **Step 3: Implement.** Follow the existing helper names in `CodeProposalDialog.test.tsx`. "Propose with Muse" sits beside the "Manual analysis" toggle and opens `CodeProposalDialog` with the workspace `scope`; when no project or module is selected, the button is disabled with a title saying why. Card style: `.archboard-card.proposed` with `border: 1px dashed #ff4fd8`, a "Muse" badge and A/M/R. With a proposal and no flow open, Flow mode starts at the first added or modified component or class. Removed symbols are listed in the inspector.
+- [ ] **Step 3: Implement.** Symbol ids come from analysis order, so an overlay can change them: re-find the start symbol in `overlay.projects` by project key, `rel` and name before building the graph. Pin that with a test where the proposal adds a class above the start symbol in the same file. Follow the existing helper names in `CodeProposalDialog.test.tsx`. "Propose with Muse" sits beside the "Manual analysis" toggle and opens `CodeProposalDialog` with the workspace `scope`; when no project or module is selected, the button is disabled with a title saying why. Card style: `.archboard-card.proposed` with `border: 1px dashed #ff4fd8`, a "Muse" badge and A/M/R. With a proposal and no flow open, Flow mode starts at the first added or modified component or class. Removed symbols are listed in the inspector.
 
 - [ ] **Step 4: Run** the listed test files, then `npm test` and `npx tsc --noEmit`. Expected: PASS.
 

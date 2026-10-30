@@ -76,6 +76,8 @@ export interface StructureSymbol {
    * arrows…). 0/undefined means everything was readable.
    */
   moduleOpaque?: number;
+  /** FNV-1a of the declaration text, whitespace collapsed. */
+  bodyHash?: string;
   flow?: SymbolFlowFacts;
   component?: ComponentFacts;
 }
