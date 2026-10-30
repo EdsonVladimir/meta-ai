@@ -6063,3 +6063,59 @@ button.archboard-member:hover {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
 
+/* Architecture fills the center: boards take the free height and the
+   status bar sits on the bottom edge, with no space under it. */
+.workbench-center.architecture-view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.workbench-center.architecture-view > .architecture,
+.workbench-center.architecture-view .project-map {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench-center.architecture-view .project-map-boards {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+/* One project fills the column; several stack and scroll. */
+.workbench-center.architecture-view .project-map-sections {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.workbench-center.architecture-view .project-map-root {
+  flex: 1 0 min(420px, 100%);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench-center.architecture-view .project-map-root > .board-viewport-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
+.workbench-center.architecture-view .board-viewport {
+  height: 100%;
+  max-height: none;
+}
+
+.workbench-center.architecture-view .project-map-inspector {
+  max-height: none;
+}
+
+.workbench-center.architecture-view .archmap-statusbar {
+  position: relative;
+  flex: none;
+}
+

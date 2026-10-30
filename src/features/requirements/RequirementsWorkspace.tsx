@@ -2843,7 +2843,15 @@ export function RequirementsWorkspace() {
         {showNavigator && <NavResizeHandle />}
         </div>
 
-        <div className={`workbench-center${centerDoc !== null ? " code-view" : ""}`}>
+        <div
+          className={`workbench-center${
+            centerDoc !== null
+              ? " code-view"
+              : centerView === "architecture"
+                ? " architecture-view"
+                : ""
+          }`}
+        >
           <PerspectiveTabs
             centerView={centerView}
             ready={projectId !== null && moduleId !== null}
