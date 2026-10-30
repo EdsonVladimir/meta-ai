@@ -46,6 +46,7 @@
 // analyzed symbol. The same name in two files does NOT connect (marked
 // ambiguous); missing names are marked unresolved with their evidence.
 import ts from "ts-compiler";
+import { fnv1aHex } from "../model";
 import { STRUCTURE_LIMITS } from "./structureTypes";
 import type {
   ApiCall,
@@ -147,6 +148,36 @@ function evidenceOf(source: ts.SourceFile, node: ts.Node, what: string): string 
 function shortText(text: string, max = 80): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/** FNV-1a of the node text with whitespace runs collapsed: body changes move it, formatting does not. */
+function memberBodyHash(source: ts.SourceFile, node: ts.Node): string {
+  return fnv1aHex(node.getText(source).replace(/\s+/g, " "));
+}
+
+function paramTypesOf(
+  source: ts.SourceFile,
+  parameters: readonly ts.ParameterDeclaration[],
+): string[] {
+  return parameters.map((param) =>
+    param.type === undefined ? "unknown" : param.type.getText(source),
+  );
+}
+
+function signatureTypesOf(
+  source: ts.SourceFile,
+  member:
+    | ts.MethodDeclaration
+    | ts.MethodSignature
+    | ts.GetAccessorDeclaration
+    | ts.SetAccessorDeclaration,
+): { paramTypes: string[]; returnType: string | null } {
+  // Setters cannot declare a return type; anything else missing one is null.
+  const type = ts.isSetAccessorDeclaration(member) ? undefined : member.type;
+  return {
+    paramTypes: paramTypesOf(source, member.parameters),
+    returnType: type === undefined ? null : shortText(type.getText(source), 40),
+  };
 }
 
 /** Type names mentioned in a type node (unresolved). */
@@ -272,10 +303,20 @@ function collectMembers(
         ts.isMethodSignature(member) ||
         ts.isGetAccessorDeclaration(member) ||
         ts.isSetAccessorDeclaration(member);
+      const signature =
+        ts.isMethodDeclaration(member) ||
+        ts.isMethodSignature(member) ||
+        ts.isGetAccessorDeclaration(member) ||
+        ts.isSetAccessorDeclaration(member)
+          ? signatureTypesOf(source, member)
+          : null;
       push({
         name: shortText(name, 60),
         kind: isMethod ? "method" : "field",
         detail: signatureDetail(source, member),
+        range: toRange(source, member),
+        bodyHash: memberBodyHash(source, member),
+        ...(signature ?? {}),
         ...memberFlags(member),
       });
     } else if (ts.isConstructorDeclaration(member)) {
@@ -283,6 +324,10 @@ function collectMembers(
         name: "constructor",
         kind: "method",
         detail: signatureDetail(source, member),
+        range: toRange(source, member),
+        bodyHash: memberBodyHash(source, member),
+        paramTypes: paramTypesOf(source, member.parameters),
+        returnType: null,
         ...memberFlags(member),
       });
       // Parameter properties (`constructor(private x)`) are fields too.
@@ -292,10 +337,23 @@ function collectMembers(
         if (flags.visibility === undefined && flags.isReadonly !== true) continue;
         const type =
           param.type !== undefined ? `: ${shortText(param.type.getText(source), 40)}` : "";
-        push({ name: param.name.text, kind: "field", detail: type, ...flags });
+        push({
+          name: param.name.text,
+          kind: "field",
+          detail: type,
+          range: toRange(source, param),
+          bodyHash: memberBodyHash(source, param),
+          ...flags,
+        });
       }
     } else if (ts.isIndexSignatureDeclaration(member)) {
-      push({ name: "[index]", kind: "field", detail: memberDetail(source, member) });
+      push({
+        name: "[index]",
+        kind: "field",
+        detail: memberDetail(source, member),
+        range: toRange(source, member),
+        bodyHash: memberBodyHash(source, member),
+      });
     }
     if (truncated) break;
   }

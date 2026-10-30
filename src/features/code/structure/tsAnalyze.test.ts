@@ -444,3 +444,41 @@ export class SalesModule {}`,
     }
   });
 });
+
+describe("member details", () => {
+  function analyze(content: string) {
+    return analyzeTsFiles([input("root-1", "m.ts", content)]);
+  }
+
+  it("records range, hash and types for methods", () => {
+    const result = analyze(`export class A {
+  save(id: string, dto: CreateDto): Promise<Sale> { return run(id); }
+}`);
+    const save = result.symbols[0].members.find((m) => m.name === "save")!;
+    expect(save.range?.startLine).toBe(2);
+    expect(save.paramTypes).toEqual(["string", "CreateDto"]);
+    expect(save.returnType).toBe("Promise<Sale>");
+    expect(save.bodyHash).toMatch(/^[0-9a-f]+$/);
+  });
+
+  it("changes the hash with the body, not with whitespace", () => {
+    const hash = (body: string) =>
+      analyze(`export class A { run() { ${body} } }`).symbols[0].members[0].bodyHash;
+    expect(hash("return 1;")).toBe(hash("return   1;"));
+    expect(hash("return 1;")).not.toBe(hash("return 2;"));
+  });
+
+  it("leaves an unannotated return as null", () => {
+    const result = analyze(`export class A { run() {} }`);
+    expect(result.symbols[0].members[0].returnType).toBeNull();
+  });
+
+  it("survives overloads", () => {
+    const result = analyze(`export class A {
+  run(a: string): void;
+  run(a: number): void;
+  run(a: unknown): void {}
+}`);
+    expect(result.symbols[0].members.filter((m) => m.name === "run")).toHaveLength(3);
+  });
+});

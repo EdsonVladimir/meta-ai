@@ -38,6 +38,10 @@ export interface StructureMember {
   isStatic?: boolean;
   isAsync?: boolean;
   isReadonly?: boolean;
+  range?: StructureRange;
+  bodyHash?: string;
+  paramTypes?: string[];
+  returnType?: string | null;
 }
 
 export interface StructureSymbol {
@@ -72,6 +76,109 @@ export interface StructureSymbol {
    * arrows…). 0/undefined means everything was readable.
    */
   moduleOpaque?: number;
+  flow?: SymbolFlowFacts;
+  component?: ComponentFacts;
+}
+
+export interface StructureInjection {
+  field: string;
+  typeName: string;
+  via: "inject" | "constructor" | "repository";
+  evidence: string;
+}
+export interface StructureMemberCall {
+  member: string;
+  /** Field the call goes through; null for `this.method()`. */
+  receiver: string | null;
+  method: string;
+  /** Source order inside the member, from 0. */
+  order: number;
+  evidence: string;
+}
+export interface StructureSignalAccess {
+  member: string;
+  signal: string;
+  access: "read" | "write";
+  evidence: string;
+}
+export interface HttpUrlFact {
+  /** `environment.x` property kept as a token, e.g. "urlAcme". */
+  base: string | null;
+  /** Path text; substitutions appear as `${...}`. */
+  path: string;
+}
+export interface StructureHttpCall {
+  member: string;
+  verb: string;
+  /** null: verb proven, URL not reconstructable. */
+  url: HttpUrlFact | null;
+  returnType: string | null;
+  evidence: string;
+}
+export interface StructureRepositoryCall {
+  member: string;
+  /** Entity name from `@InjectRepository(E)`. */
+  entity: string;
+  method: string;
+  evidence: string;
+}
+export interface StructureRouteFact {
+  member: string;
+  verb: string;
+  path: string;
+  bodyType: string | null;
+  decorators: string[];
+  guards: string[];
+  interceptors: string[];
+  evidence: string;
+}
+export interface SymbolFlowFacts {
+  injections: StructureInjection[];
+  calls: StructureMemberCall[];
+  signals: StructureSignalAccess[];
+  httpCalls: StructureHttpCall[];
+  repositoryCalls: StructureRepositoryCall[];
+  routes: StructureRouteFact[];
+  /** Calls not followed (dynamic access, computed names). */
+  unresolved: string[];
+}
+export interface TemplateUse {
+  /** Tag, or attribute name for directives. */
+  name: string;
+  kind: "element" | "attribute" | "pipe";
+  line: number;
+}
+export interface TemplateFacts {
+  rel: string;
+  uses: TemplateUse[];
+}
+export interface ComponentFacts {
+  kind: "component" | "directive" | "pipe";
+  /** Selector, or the pipe name. */
+  selector: string | null;
+  standalone: boolean | null;
+  imports: string[];
+  templateRel: string | null;
+  styleRels: string[];
+  /** Set after the assets step. */
+  template?: TemplateFacts | null;
+  missingAssets?: string[];
+}
+export interface RouteRecordFact {
+  path: string | null;
+  component: string | null;
+  /** Literal `import()` target of loadComponent/loadChildren. */
+  lazyImport: string | null;
+  canActivate: string[];
+  childOf: string | null;
+  evidence: string;
+}
+export type PipelineScope = "http-client" | "global-guard" | "global-interceptor";
+export interface PipelineFact {
+  scope: PipelineScope;
+  /** Names in registration order. */
+  names: string[];
+  evidence: string;
 }
 
 /** One name listed in a `@Module`/`@NgModule` metadata array. */
@@ -194,6 +301,8 @@ export interface StructureResult {
   endpointsTruncated: boolean;
   callsTruncated: boolean;
   limits: StructureLimits;
+  routeRecords?: RouteRecordFact[];
+  pipeline?: PipelineFact[];
 }
 
 /** Analyzer input: already-read content (saved on disk). */

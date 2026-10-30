@@ -170,9 +170,14 @@ export class ShopService { all(): OrderDto[] { return []; } }`,
   it("carries rich members with their own flags", () => {
     const map = buildArchMap(mini());
     const service = map.nodes.find((n) => n.symbol.name === "SalesService")!;
-    expect(service.symbol.members).toEqual([
-      { name: "all", kind: "method", detail: "(): SaleDto[]" },
-    ]);
+    expect(service.symbol.members).toHaveLength(1);
+    expect(service.symbol.members[0]).toMatchObject({
+      name: "all",
+      kind: "method",
+      detail: "(): SaleDto[]",
+      paramTypes: [],
+      returnType: "SaleDto[]",
+    });
     expect(service.symbol.membersTruncated).toBe(false);
     expect(service.symbol.rootId).toBe("root-1");
     expect(service.symbol.rel).toBe("src/sales.service.ts");
