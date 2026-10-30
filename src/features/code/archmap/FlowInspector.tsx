@@ -269,7 +269,7 @@ function ProposalActions({
         </button>
         <button
           type="button"
-          className="secondary small"
+          className="primary small"
           disabled={stale}
           title={stale ? `Stale: ${proposal.staleReason}` : undefined}
           onClick={() => onAccept?.()}

@@ -110,3 +110,29 @@ describe("BoardViewport", () => {
     );
   });
 });
+
+describe("BoardViewport fit on entry", () => {
+  it("fits the canvas once when asked to", () => {
+    const onZoomChange = vi.fn();
+    const proto = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 1000 });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 600 });
+    render(
+      <BoardViewport
+        zoom={1}
+        onZoomChange={onZoomChange}
+        label="Board"
+        canvasWidth={2000}
+        canvasHeight={300}
+        fitOnEntry
+      >
+        <div />
+      </BoardViewport>,
+    );
+    if (proto !== undefined) Object.defineProperty(HTMLElement.prototype, "clientWidth", proto);
+    delete (HTMLElement.prototype as unknown as { clientHeight?: number }).clientHeight;
+    expect(onZoomChange).toHaveBeenCalledTimes(1);
+    expect(onZoomChange).toHaveBeenCalledWith(0.5);
+  });
+});
+

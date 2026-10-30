@@ -8,7 +8,7 @@
 // The canvas owns its compact toolbar (module filter, search,
 // layer/edge menus, grouping, details) and a bottom status bar
 // with aggregated coverage, so headers never steal board space.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fnv1aHex } from "../model";
 import { listCodeDir, listProjectLinks, normalizeCodeError, readCodeFile } from "../client";
 import type {
@@ -227,6 +227,10 @@ interface ProjectMapViewProps {
   onCloseProposal?: () => void;
   /** Reports the files of the chain on screen, the context offered to Muse. */
   onChainFiles?: (files: Array<{ rootId: string; rel: string }>) => void;
+  /** Extra actions on the status bar. */
+  footerActions?: ReactNode;
+  /** Panel that opens upward from the status bar. */
+  footerDrawer?: ReactNode;
   /** Open proposal generation for the flow inspector (absent = no panel). */
   proposalGeneration?: CodeGenerationDto | null;
   /** Why the last accept or discard failed, shown in the flow inspector. */
@@ -412,6 +416,8 @@ export function ProjectMapView({
   onOpenProposal,
   onCloseProposal,
   onChainFiles,
+  footerActions,
+  footerDrawer,
   proposalGeneration = null,
   decisionError = null,
   onAcceptProposalFile,
@@ -481,6 +487,8 @@ export function ProjectMapView({
     name: string;
     member: string | null;
   } | null>(null);
+  /** Zoom of the chain, apart from the boards: leaving restores theirs. */
+  const [flowZoom, setFlowZoom] = useState<number | null>(null);
   /** Leaving Flow mode suppresses the proposal auto-start until a new proposal. */
   const [flowDismissed, setFlowDismissed] = useState(false);
   useEffect(() => {
@@ -495,7 +503,9 @@ export function ProjectMapView({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [retryNonce, setRetryNonce] = useState<Record<string, number>>({});
   const [fileCaps, setFileCaps] = useState<Record<string, number>>({});
-  const [batchCount, setBatchCount] = useState<Record<string, number>>({});
+  /** Bumped to resume cancelled analyses; `resumeRef` says which sections. */
+  const [resumeTick, setResumeTick] = useState(0);
+  const resumeRef = useRef(new Set<string>());
   const statesRef = useRef(states);
   statesRef.current = states;
   const depsRef = useRef(deps ?? REAL_DEPS);
@@ -681,7 +691,7 @@ export function ProjectMapView({
   const retrySig = sections
     .map(
       (section) =>
-        `${section.key}@${fileCaps[section.key] ?? PROJECT_MAP_MAX_FILES}:${retryNonce[section.key] ?? 0}:b${batchCount[section.key] ?? 1}`,
+        `${section.key}@${fileCaps[section.key] ?? PROJECT_MAP_MAX_FILES}:${retryNonce[section.key] ?? 0}`,
     )
     .join(",");
   const scopeSig = scope.kind === "all" ? "all" : `${scope.rootId}::${scope.rel}:${scope.kind}`;
@@ -694,7 +704,7 @@ export function ProjectMapView({
         if (section.analyzer === "none") continue;
         const nonce = retryNonce[section.key] ?? 0;
         const cap = fileCaps[section.key] ?? PROJECT_MAP_MAX_FILES;
-        const wantBatches = batchCount[section.key] ?? 1;
+        const resuming = resumeRef.current.delete(section.key);
         const cached = statesRef.current[section.key];
         if (
           cached !== undefined &&
@@ -703,7 +713,7 @@ export function ProjectMapView({
             cached.status === "cancelled") &&
           cached.nonce === nonce &&
           cached.cap === cap &&
-          cached.batches === wantBatches
+          !resuming
         ) {
           continue;
         }
@@ -792,19 +802,33 @@ export function ProjectMapView({
             keepRels.every((rel, index) => inputs[index]?.rel === rel);
           let base = emptyResult();
           let done = 0;
-          if (sameRun && prefixOk && keep.batches <= wantBatches) {
+          if (sameRun && prefixOk) {
             base = keep.result;
             done = keep.batches;
           }
-          for (let batch = done + 1; batch <= wantBatches; batch += 1) {
+          const totalBatches = Math.ceil(inputs.length / MAP_ANALYZE_BATCH);
+          for (let batch = done + 1; batch <= totalBatches; batch += 1) {
             const slice = inputs.slice((batch - 1) * MAP_ANALYZE_BATCH, batch * MAP_ANALYZE_BATCH);
-            if (slice.length === 0) break;
             if (!live()) return;
             const part = await depsRef.current.analyzeTs(slice);
             if (!live()) return;
             base = combineResults([base, part]);
             done = batch;
             mergedRef.current[section.key] = { nonce, batches: done, result: base };
+            // Progress for the status bar, and what Cancel keeps.
+            const partial = buildArchMap(base);
+            patch({
+              map: { ...partial, skipped: [...partial.skipped, ...skipped] },
+              relations: base.relations,
+              symbolIndex: indexSymbols(base.symbols),
+              rels: base.files.map((file) => file.rel),
+              batches: done,
+            });
+            if (batch < totalBatches) {
+              // Lets the screen paint between batches.
+              await new Promise((resolve) => setTimeout(resolve, 0));
+              if (!live()) return;
+            }
           }
           const result = base;
           const built = buildArchMap(result);
@@ -842,7 +866,7 @@ export function ProjectMapView({
     // Signatures (not identities) drive re-runs; epoch + tokens drop
     // stale work on scope switches and cancels.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, visibleSig, retrySig, scopeSig]);
+  }, [projectId, visibleSig, retrySig, scopeSig, resumeTick]);
 
   // Re-analysis after an Accept (inspector or dialog): the owning
   // sections retry, so the batch loop re-reads from disk.
@@ -870,8 +894,8 @@ export function ProjectMapView({
     tokenRef.current[key] = (tokenRef.current[key] ?? 0) + 1;
     setStates((prev) => {
       const current = prev[key] ?? fresh(retryNonce[key] ?? 0, fileCaps[key] ?? PROJECT_MAP_MAX_FILES);
-      // Cancelling a later batch keeps the accumulated map (still
-      // honest: pending stays visible with its Continue button, and
+      // Cancelling after a batch keeps the accumulated map (still
+      // honest: pending stays visible with "Continue analysis", and
       // completed batches resume instead of re-running).
       const keepMap = current.map !== null && current.batches > 0;
       return {
@@ -1082,8 +1106,10 @@ export function ProjectMapView({
     setRetryNonce((prev) => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
   }
 
+  /** Resumes a cancelled analysis from its last finished batch. */
   function continueSection(key: string): void {
-    setBatchCount((prev) => ({ ...prev, [key]: (prev[key] ?? 1) + 1 }));
+    resumeRef.current.add(key);
+    setResumeTick((tick) => tick + 1);
   }
 
   function loadMoreSection(key: string): void {
@@ -1114,22 +1140,8 @@ export function ProjectMapView({
   function handleLeaveFlow(): void {
     setFlowStart(null);
     setFlowSelected(null);
+    setFlowZoom(null);
     setFlowDismissed(true);
-  }
-
-  /** "Analyze all": every section with pending files gets the batches it needs. */
-  function handleAnalyzeAll(): void {
-    setBatchCount((prev) => {
-      const next = { ...prev };
-      for (const section of sections) {
-        if (sectionPending(section) <= 0) continue;
-        const state = states[section.key];
-        const total = (state?.collected ?? 0) - (state?.map?.skipped.length ?? 0);
-        const needed = Math.max(1, Math.ceil(total / MAP_ANALYZE_BATCH));
-        next[section.key] = Math.max(prev[section.key] ?? 1, needed);
-      }
-      return next;
-    });
   }
 
   function handleShowAllHidden(): void {
@@ -1578,8 +1590,8 @@ export function ProjectMapView({
                       {`Partial chain: ${countLabel(totals.pending, "file", "files")} not analyzed`}
                     </span>
                   )}
-                  {totals.pending > 0 && (
-                    <button type="button" className="secondary small" onClick={handleAnalyzeAll}>
+                  {totals.pending > 0 && !totals.busy && (
+                    <button type="button" className="secondary small" onClick={handleContinueAll}>
                       Analyze all
                     </button>
                   )}
@@ -1590,11 +1602,12 @@ export function ProjectMapView({
                   </p>
                 )}
                 <BoardViewport
-                  zoom={activeZoom}
-                  onZoomChange={handleZoomChange}
+                  zoom={flowZoom ?? activeZoom}
+                  onZoomChange={setFlowZoom}
                   label={flowMode.name === null ? "Flow" : `Flow of ${flowMode.name}`}
                   canvasWidth={flowMode.layout.width}
                   canvasHeight={flowMode.layout.height}
+                  fitOnEntry
                 >
                   <FlowBoard
                     graph={flowMode.graph}
@@ -1685,6 +1698,7 @@ export function ProjectMapView({
                     proposal: flowProposal ?? null,
                     decisionError,
                     generation: proposalGeneration,
+                    proposalOpen: proposalFiles !== null,
                     checks: flowChecks,
                     onOpenProposal,
                     onAccept:
@@ -1703,9 +1717,11 @@ export function ProjectMapView({
           />
         </div>
       )}
-      {sections.length > 0 && (
+      {(sections.length > 0 || footerActions !== undefined) && (
         <StatusBar
           totals={totals}
+          actions={footerActions}
+          drawer={footerDrawer}
           scopeChip={scopeChip}
           onResetScope={() => onScopeChange({ kind: "all" })}
           canContinue={!totals.busy && totals.pending > 0}
@@ -1831,7 +1847,7 @@ function buildDetailRow(
     ...idle,
     status: `${map.nodes.length} symbols · ${map.files.length} files · ${edges} edges`,
     notes: sectionDetailNotes(state),
-    continueLabel: pending > 0 ? `Analyze more (${pending} pending)` : null,
+    continueLabel: pending > 0 ? `Continue analysis (${pending} pending)` : null,
     showLoadMore: state.collectTruncatedBy === "files",
   };
 }
@@ -1902,7 +1918,11 @@ function StatusBar({
   onContinue,
   unsaved,
   onShowUnsaved,
+  actions,
+  drawer,
 }: {
+  actions: ReactNode;
+  drawer: ReactNode;
   totals: CoverageTotals;
   scopeChip: string | null;
   onResetScope: () => void;
@@ -1914,7 +1934,7 @@ function StatusBar({
   const coverage =
     totals.collected === 0 && totals.busy
       ? "Analyzing…"
-      : `${totals.analyzed}/${totals.collected} files analyzed` +
+      : `${totals.busy ? "Analyzing " : ""}${totals.analyzed}/${totals.collected} files${totals.busy ? "…" : " analyzed"}` +
         (totals.pending > 0 ? ` · ${totals.pending} pending` : "") +
         (totals.failed > 0 ? ` · ${totals.failed} failed` : "") +
         (totals.errors > 0 ? ` · ${totals.errors} errors` : "") +
@@ -1937,7 +1957,7 @@ function StatusBar({
       </span>
       {canContinue && (
         <button type="button" className="secondary small" onClick={onContinue}>
-          Analyze more
+          Continue analysis
         </button>
       )}
       {unsaved > 0 && (
@@ -1950,6 +1970,8 @@ function StatusBar({
           {unsaved} unsaved
         </button>
       )}
+      {actions !== undefined && <span className="archmap-statusbar-actions">{actions}</span>}
+      {drawer}
     </footer>
   );
 }
@@ -2013,6 +2035,7 @@ function BoardInspector({
     proposal: FlowInspectorProps["proposal"];
     decisionError: string | null;
     generation: CodeGenerationDto | null;
+    proposalOpen: boolean;
     checks: ProposalCheck[] | null;
     onOpenProposal: (() => void) | undefined;
     onAccept: (() => void) | undefined;
@@ -2026,16 +2049,23 @@ function BoardInspector({
   const collapsed = useRequirementsUi((s) => s.archInspectorCollapsed);
   const setWidth = useRequirementsUi((s) => s.setArchInspectorWidth);
   const setCollapsed = useRequirementsUi((s) => s.setArchInspectorCollapsed);
+  const generationId = flow?.generation?.id ?? null;
+  const proposedFiles = (flow?.proposalOpen ?? false) || generationId !== null;
+  // A proposal waits for a decision: its panel opens on its own.
+  useEffect(() => {
+    if (proposedFiles) setCollapsed(false);
+  }, [proposedFiles, generationId, setCollapsed]);
+  const hasData = flow !== null ? flow.selected !== null || proposedFiles : data !== null;
 
   if (collapsed) {
     return (
       <div className="project-map-inspector-rail">
         <button
           type="button"
-          className="secondary small"
+          className={`secondary small${hasData ? " has-data" : ""}`}
           aria-expanded={false}
-          aria-label="Show inspector"
-          title="Show inspector"
+          aria-label={hasData ? "Show inspector, details ready" : "Show inspector"}
+          title={hasData ? "Show inspector: details ready" : "Show inspector"}
           onClick={() => setCollapsed(false)}
         >
           «

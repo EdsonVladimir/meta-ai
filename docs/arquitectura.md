@@ -1502,8 +1502,9 @@ duplicated.
   `ruth-ide:layout`, are guarded by the symbol name, cap at
   200 entries, and degrade to automatic when stale.
 - **Coverage.** Each section reports discovered / analyzed /
-  failed / excluded / pending; the first batch analyzes 20
-  files and "Analyze more" continues on demand. Collection
+  failed / excluded / pending. Analysis runs by itself in
+  batches of 20 files, with progress and Cancel; a cancelled
+  run resumes with "Continue analysis". Collection
   puts application code first and tests, test folders and
   config last (`isSecondaryFile` in `projectMaps.ts`), so the
   first batches cover the application structure. Resolution stays per batch: relations across batch

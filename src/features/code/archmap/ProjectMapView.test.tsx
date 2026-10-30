@@ -5,7 +5,7 @@
 // shows a compact breadcrumb only: scope and visibility are driven
 // from the outside, like the explorer tree drives them. All IO
 // injected; no Tauri, no network.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
@@ -170,6 +170,8 @@ function renderView(options: {
   onCloseProposal?: () => void;
   reanalyzeRequest?: ReanalyzeRequest | null;
   onChainFiles?: (files: Array<{ rootId: string; rel: string }>) => void;
+  footerActions?: ReactNode;
+  footerDrawer?: ReactNode;
 }) {
   const api: {
     setScope: (scope: ArchScope) => void;
@@ -229,6 +231,8 @@ function renderView(options: {
         onOpenProposal={options.onOpenProposal}
         onCloseProposal={options.onCloseProposal}
         onChainFiles={options.onChainFiles}
+        footerActions={options.footerActions}
+        footerDrawer={options.footerDrawer}
       />
     );
   }
@@ -723,7 +727,7 @@ describe("nested project scopes", () => {
     expect(screen.queryByLabelText("Diagram of ACME")).toBeNull();
     // Sibling exclusion: each section only lists its own files.
     expect(
-      within(fe).getByRole("button", { name: "apps/fe/app.controller.ts, 1 symbols" }),
+      await within(fe).findByRole("button", { name: "apps/fe/app.controller.ts, 1 symbols" }),
     ).toBeTruthy();
     expect(within(fe).queryByText(/apps\/be\//)).toBeNull();
     expect(
@@ -838,22 +842,23 @@ describe("nested project scopes", () => {
     fireEvent.click(details.getByRole("button", { name: /Load more files/ }));
     // Collection completes (the analyzer still caps at 20 files per batch).
     await waitFor(() => expect(details.queryByText(/first 200 files collected/)).toBeNull());
-    expect(details.getByText("0 symbols · 20 files · 0 edges")).toBeTruthy();
-    expect(statusBar().textContent).toMatch(/20\/205 files analyzed · 185 pending/);
+    await waitFor(() => expect(statusBar().textContent).toMatch(/205\/205 files analyzed/));
+    // Every file is analyzed; the map draws up to its cap and says so.
+    expect(details.getByText("0 symbols · 200 files · 0 edges")).toBeTruthy();
+    expect(details.getByText(/first 200 files drawn/)).toBeTruthy();
   });
 
-  it("analyzes the first batch and continues on demand", async () => {
-    const deps = batchDeps(25);
-    renderView({ roots: NESTED_ROOTS, deps });
-    await screen.findByLabelText("Diagram of big");
-    // The analyzer cap (20 files per call) is honored, never silent.
-    await waitFor(() =>
-      expect(statusBar().textContent).toMatch(/20\/25 files analyzed · 5 pending/),
+  it("analyzes every batch on its own, with no button to press", async () => {
+    const analyzeTs = vi.fn((files: Parameters<ProjectMapDeps["analyzeTs"]>[0]) =>
+      Promise.resolve(analyzeTsFiles(files)),
     );
-    fireEvent.click(within(statusBar()).getByRole("button", { name: "Analyze more" }));
+    renderView({ roots: NESTED_ROOTS, deps: { ...batchDeps(25), analyzeTs } });
+    await screen.findByLabelText("Diagram of big");
     await waitFor(() => expect(statusBar().textContent).toMatch(/25\/25 files analyzed/));
+    // The analyzer cap (20 files per call) stays, split in two calls.
+    expect(analyzeTs).toHaveBeenCalledTimes(2);
     expect(statusBar().textContent).not.toMatch(/pending/);
-    expect(within(statusBar()).queryByRole("button", { name: "Analyze more" })).toBeNull();
+    expect(within(statusBar()).queryByRole("button", { name: /Continue analysis/ })).toBeNull();
     const details = await openDetails();
     expect(details.getByText("25 symbols · 25 files · 0 edges")).toBeTruthy();
   });
@@ -1220,12 +1225,56 @@ describe("nested project scopes", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: /^Leave flow/ })).toBeNull());
   });
 
-  it("warns about a partial chain and analyzes everything on request", async () => {
-    const deps = batchDeps(25);
+  it("keeps a cancelled analysis honest and continues it on request", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const deps: ProjectMapDeps = {
+      ...batchDeps(25),
+      analyzeTs: async (files) => {
+        calls += 1;
+        if (calls === 2) await gate;
+        return analyzeTsFiles(files);
+      },
+    };
     renderView({ roots: NESTED_ROOTS, deps, groupBy: "symbols" });
+    const section = await screen.findByLabelText("Diagram of big");
+    fireEvent.click(await within(section).findByRole("button", { name: "Cancel" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Show flow of C0/ }));
     expect(await screen.findByText(/Partial chain: 5 files not analyzed/)).toBeTruthy();
+    release();
     fireEvent.click(screen.getByRole("button", { name: "Analyze all" }));
     await waitFor(() => expect(screen.queryByText(/Partial chain/)).toBeNull());
+    expect(statusBar().textContent).toMatch(/25\/25 files analyzed/);
+  });
+
+  it("starts with the inspector closed and lights it when data is ready", async () => {
+    useRequirementsUi.setState({ archInspectorCollapsed: true });
+    renderView({ groupBy: "symbols" });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    expect(screen.queryByRole("complementary", { name: "Board inspector" })).toBeNull();
+    const idle = screen.getByRole("button", { name: "Show inspector" });
+    expect(idle.className).not.toContain("has-data");
+    fireEvent.click(screen.getByRole("button", { name: /^SalesController, class/ }));
+    const ready = await screen.findByRole("button", { name: "Show inspector, details ready" });
+    expect(ready.className).toContain("has-data");
+    expect(screen.queryByRole("complementary", { name: "Board inspector" })).toBeNull();
+  });
+
+  it("opens the inspector when a proposal needs a decision", async () => {
+    useRequirementsUi.setState({ archInspectorCollapsed: true });
+    const { setProposalFiles } = renderView({ groupBy: "symbols" });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    setProposalFiles([proposalFile("src/report.ts", `export class Report {}`, "create")]);
+    expect(await screen.findByRole("complementary", { name: "Board inspector" })).toBeTruthy();
+  });
+
+  it("hosts extra actions and a drawer in the status bar", async () => {
+    renderView({ footerActions: <button type="button">Extra</button>, footerDrawer: <p>Drawer</p> });
+    const bar = await screen.findByLabelText("Analysis status");
+    expect(within(bar).getByRole("button", { name: "Extra" })).toBeTruthy();
+    expect(within(bar).getByText("Drawer")).toBeTruthy();
   });
 });

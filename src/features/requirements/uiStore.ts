@@ -389,7 +389,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   mapHiddenProjects: {},
   codeFolderSelection: null,
   archInspectorWidth: null,
-  archInspectorCollapsed: false,
+  archInspectorCollapsed: true,
   layerOverrides: {},
   archModule: null,
   archShowExternalRefs: false,

@@ -129,6 +129,63 @@ export function ArchitectureView() {
   const rootNames = Object.fromEntries(roots.map((root) => [root.id, root.name]));
   const canPropose = selectedProjectId !== null && selectedModuleId !== null;
   const proposalScope = scope.length > 0 ? scope : chainFiles;
+  const footerActions = (
+    <>
+      <button
+        type="button"
+        className="secondary small"
+        disabled={!canPropose}
+        title={
+          canPropose
+            ? `Muse reads ${proposalScope.length} file(s): the chain on screen, or your manual scope`
+            : "Select a project and a module to propose with Muse"
+        }
+        onClick={() => {
+          setProposeOpen(true);
+          setProposeHidden(false);
+        }}
+      >
+        Propose with Muse
+      </button>
+      <button
+        type="button"
+        className="secondary small architecture-manual-toggle"
+        aria-expanded={manualOpen}
+        aria-controls="architecture-manual"
+        title="Analyze chosen files by hand, propose code, link symbols and keep snapshots."
+        onClick={() => {
+          setManualMounted(true);
+          setManualOpen((prev) => !prev);
+        }}
+      >
+        <span aria-hidden="true">{manualOpen ? "▾" : "▴"}</span> Manual analysis
+      </button>
+    </>
+  );
+  const footerDrawer = manualMounted ? (
+    <section
+      id="architecture-manual"
+      className="architecture-scope"
+      aria-label="Manual scope analysis"
+      hidden={!manualOpen}
+    >
+      <StructureView
+        scope={scope}
+        rootNames={rootNames}
+        onRemoveScope={(key) => setScope((prev) => prev.filter((file) => scopeKey(file) !== key))}
+        onAddActiveFile={handleAddActiveFile}
+        onAddActiveFolder={handleAddActiveFolder}
+        tabs={tabs}
+        onOpenFile={openFileByRef}
+        analyzeTs={analyzeTs}
+        projectId={selectedProjectId}
+        moduleId={selectedModuleId}
+        onFileChanged={notifyFileChanged}
+        prefs={prefs}
+        loader={loader}
+      />
+    </section>
+  ) : undefined;
   return (
     <div className="architecture">
       <ProjectMapView
@@ -153,6 +210,8 @@ export function ArchitectureView() {
           setProposal(null);
         }}
         onChainFiles={setChainFiles}
+        footerActions={footerActions}
+        footerDrawer={footerDrawer}
         proposalGeneration={proposal}
         decisionError={decisionError}
         onAcceptProposalFile={acceptProposalFile}
@@ -162,37 +221,6 @@ export function ArchitectureView() {
         prefs={prefs}
         loader={loader}
       />
-      <div className="architecture-actions">
-        <button
-          type="button"
-          className="secondary small architecture-manual-toggle"
-          aria-expanded={manualOpen}
-          aria-controls="architecture-manual"
-          title="Analyze chosen files by hand, propose code, link symbols and keep snapshots."
-          onClick={() => {
-            setManualMounted(true);
-            setManualOpen((prev) => !prev);
-          }}
-        >
-          <span aria-hidden="true">{manualOpen ? "▾" : "▸"}</span> Manual analysis
-        </button>
-        <button
-          type="button"
-          className="secondary small"
-          disabled={!canPropose}
-          title={
-            canPropose
-              ? `Muse reads ${proposalScope.length} file(s): the chain on screen, or your manual scope`
-              : "Select a project and a module to propose with Muse"
-          }
-          onClick={() => {
-            setProposeOpen(true);
-            setProposeHidden(false);
-          }}
-        >
-          Propose with Muse
-        </button>
-      </div>
       {proposeOpen && canPropose && (
         <CodeProposalDialog
           projectId={selectedProjectId}
@@ -213,32 +241,6 @@ export function ArchitectureView() {
           prefs={prefs}
           loader={loader}
         />
-      )}
-      {manualMounted && (
-        <section
-          id="architecture-manual"
-          className="architecture-scope"
-          aria-label="Manual scope analysis"
-          hidden={!manualOpen}
-        >
-          <StructureView
-            scope={scope}
-            rootNames={rootNames}
-            onRemoveScope={(key) =>
-              setScope((prev) => prev.filter((file) => scopeKey(file) !== key))
-            }
-            onAddActiveFile={handleAddActiveFile}
-            onAddActiveFolder={handleAddActiveFolder}
-            tabs={tabs}
-            onOpenFile={openFileByRef}
-            analyzeTs={analyzeTs}
-            projectId={selectedProjectId}
-            moduleId={selectedModuleId}
-            onFileChanged={notifyFileChanged}
-            prefs={prefs}
-            loader={loader}
-          />
-        </section>
       )}
     </div>
   );

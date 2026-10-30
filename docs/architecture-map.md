@@ -121,6 +121,13 @@ unresolved in the inspector, never connected.
 - Related template/stylesheet files are not shown: the extraction
   has no `templateUrl`/`styleUrls` data.
 
+## Analysis coverage
+
+Every collected file is analyzed without a button: batches of 20 run
+one after another, the status bar shows progress, and Cancel keeps what
+finished ("Continue analysis" resumes it). The analyzer still caps each
+call at 20 files. The map draws at most 200 files and says so.
+
 ## Limits
 
 - TypeScript only in map v1; other scope files are listed as skipped.

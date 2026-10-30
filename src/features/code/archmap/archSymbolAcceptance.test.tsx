@@ -170,14 +170,13 @@ function cardColumn(cardButton: HTMLElement): Element | null {
   return cardButton.closest(".archboard-col");
 }
 
-/** The footer status bar: coverage and the Analyze more action. */
+/** The footer status bar: scope and coverage. */
 function statusBar(): HTMLElement {
   return screen.getByLabelText("Analysis status");
 }
 
-/** Analyzes the remaining batch from the status bar and waits for it. */
+/** Waits for the automatic batches to cover every file. */
 async function analyzeRest(): Promise<void> {
-  fireEvent.click(await within(statusBar()).findByRole("button", { name: "Analyze more" }));
   await waitFor(() => expect(statusBar().textContent).toMatch(/26\/26 files analyzed/));
 }
 
@@ -249,18 +248,11 @@ describe("symbol board acceptance", () => {
     expect(within(inspector).queryByText("ping(): string")).toBeNull();
   });
 
-  it("continues past the 20-file batch with honest counters", async () => {
+  it("analyzes past the 20-file batch on its own", async () => {
     const { container } = renderBoard();
     await screen.findByLabelText(/Diagram of /);
-    await waitFor(() =>
-      expect(statusBar().textContent).toMatch(/20\/26 files analyzed · 6 pending/),
-    );
-    expect(container.querySelectorAll(".archboard-card").length).toBeLessThan(
-      extractedSymbols(),
-    );
     await analyzeRest();
     expect(statusBar().textContent).not.toMatch(/pending/);
-    expect(within(statusBar()).queryByRole("button", { name: "Analyze more" })).toBeNull();
     expect(container.querySelectorAll(".archboard-card").length).toBe(extractedSymbols());
   });
 

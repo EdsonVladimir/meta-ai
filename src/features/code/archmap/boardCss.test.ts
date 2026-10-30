@@ -69,4 +69,11 @@ describe("board CSS constants", () => {
     expect(px(rule(".flowboard-more"), "height")).toBe(ARCH_MORE_ROW_H);
     expect(px(rule(".flowboard-sig"), "height")).toBe(ARCH_META_ROW_H);
   });
+
+  it("lets hidden panels actually hide", () => {
+    // `display: flex` on these would otherwise defeat the attribute.
+    expect(rule(".modal-backdrop[hidden]")).toMatch(/display\s*:\s*none/);
+    expect(rule(".architecture-scope[hidden]")).toMatch(/display\s*:\s*none/);
+  });
 });
+

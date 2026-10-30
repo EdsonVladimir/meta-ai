@@ -15,6 +15,8 @@ interface BoardViewportProps {
   /** Canvas size from the layout pass (for Fit, no measuring). */
   canvasWidth: number;
   canvasHeight: number;
+  /** Fits the canvas when mounted, so a whole chain opens on screen. */
+  fitOnEntry?: boolean;
   children: ReactNode;
 }
 
@@ -30,6 +32,7 @@ export function BoardViewport({
   label,
   canvasWidth,
   canvasHeight,
+  fitOnEntry = false,
   children,
 }: BoardViewportProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +80,12 @@ export function BoardViewport({
     node.scrollLeft = 0;
     node.scrollTop = 0;
   }
+
+  useEffect(() => {
+    if (fitOnEntry) fit();
+    // Once per mount: later changes keep the person's own zoom.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function panFrom(event: React.MouseEvent): void {
     if (event.button !== 0) return;

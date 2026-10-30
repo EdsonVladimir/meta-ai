@@ -5944,12 +5944,6 @@ button.archboard-member:hover {
   color: var(--muted);
 }
 
-.architecture-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-
 .architecture-manual-toggle[aria-expanded="true"] {
   color: var(--fg);
 }
@@ -5958,9 +5952,42 @@ button.archboard-member:hover {
   display: none;
 }
 
+/* Opens upward from the status bar, over the boards. */
+.architecture-scope {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 25;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid #36414e;
+  border-radius: 6px;
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.archmap-statusbar-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* The collapsed inspector lights up when it has something to show. */
+.project-map-inspector-rail .secondary.has-data {
+  color: var(--accent-fg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Analysis status bar: scope chip, coverage and quick actions under
    the boards. */
+/* Stays in view however long the boards are: its actions must be reachable. */
 .archmap-statusbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -6012,5 +6039,27 @@ button.archboard-member:hover {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 4px;
+}
+
+/* A mounted dialog can step aside: `display` must not defeat `hidden`. */
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+/* Quiet until wanted: sixteen cards should not shout sixteen buttons. */
+.archboard-card-head > .secondary.small {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 0.68rem;
+  color: var(--board-text-2);
+  background: transparent;
+  border-color: transparent;
+}
+
+.archboard-card:hover .archboard-card-head > .secondary.small,
+.archboard-card-head > .secondary.small:focus-visible {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
 
