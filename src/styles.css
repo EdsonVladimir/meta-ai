@@ -5996,3 +5996,7 @@ button.archboard-member:hover {
   color: var(--fg);
 }
 
+.flow-check.pass { color: var(--ok); }
+.flow-check.warn { color: var(--warn); }
+.flow-check.fail { color: var(--err); }
+

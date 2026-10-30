@@ -11,7 +11,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fnv1aHex } from "../model";
 import { listCodeDir, listProjectLinks, normalizeCodeError, readCodeFile } from "../client";
-import type { CodeFileDto, CodeProposalFileDto, CodeRootDto, CodeTab } from "../types";
+import type {
+  CodeFileDto,
+  CodeGenerationDto,
+  CodeProposalFileDto,
+  CodeRootDto,
+  CodeTab,
+} from "../types";
 import type { CodeEditorPrefs } from "../editorPrefs";
 import type { MonacoApi } from "../monacoLoader";
 import { listModules } from "../../requirements/client";
@@ -76,6 +82,7 @@ import {
   buildProposalOverlay,
   type ProposalOverlay,
 } from "./proposalOverlay";
+import { checkProposal, type ProposalCheck } from "./proposalChecks";
 import {
   ArchitectureToolbar,
   type ToolbarDetailRow,
@@ -220,8 +227,8 @@ interface ProjectMapViewProps {
   onCloseProposal?: () => void;
   /** Reports the files of the chain on screen, the context offered to Muse. */
   onChainFiles?: (files: Array<{ rootId: string; rel: string }>) => void;
-  /** Proposal generation context (id + stale reason) for the flow inspector. */
-  proposalContext?: { generationId: string; staleReason: string | null };
+  /** Open proposal generation for the flow inspector (absent = no panel). */
+  proposalGeneration?: CodeGenerationDto | null;
   /** Why the last accept or discard failed, shown in the flow inspector. */
   decisionError?: string | null;
   /** Accepts one proposed file from the flow inspector. */
@@ -405,7 +412,7 @@ export function ProjectMapView({
   onOpenProposal,
   onCloseProposal,
   onChainFiles,
-  proposalContext,
+  proposalGeneration = null,
   decisionError = null,
   onAcceptProposalFile,
   onDiscardProposalFile,
@@ -1178,6 +1185,7 @@ export function ProjectMapView({
     layout: FlowLayout;
     name: string | null;
     member: string | null;
+    overlay: ProposalOverlay | null;
     removed: Array<{ rootId: string; rel: string; name: string }>;
     otherChanges: string[];
   } | null => {
@@ -1269,6 +1277,7 @@ export function ProjectMapView({
       layout: layoutFlowBoard(graph),
       name,
       member: start.member,
+      overlay,
       removed: overlay?.removed ?? [],
       otherChanges,
     };
@@ -1279,7 +1288,7 @@ export function ProjectMapView({
   // The pending proposal for the selected box (nothing to decide
   // without a selection, or once the file is decided).
   const flowProposal = useMemo((): FlowInspectorProps["proposal"] => {
-    if (flowMode === null || proposalContext === undefined) return null;
+    if (flowMode === null || proposalGeneration === null) return null;
     const selectedNode =
       flowSelected === null
         ? undefined
@@ -1293,11 +1302,20 @@ export function ProjectMapView({
     );
     if (match === undefined) return null;
     return {
-      generationId: proposalContext.generationId,
+      generationId: proposalGeneration.id,
       file: match,
-      staleReason: proposalContext.staleReason,
+      staleReason: proposalGeneration.stale
+        ? (proposalGeneration.staleReason ?? "the context changed.")
+        : null,
     };
-  }, [flowMode, flowSelected, proposalFiles, proposalContext]);
+  }, [flowMode, flowSelected, proposalFiles, proposalGeneration]);
+
+  // Local verification of the open proposal, reusing the overlay
+  // built for the board (nothing to verify without one).
+  const flowChecks = useMemo((): ProposalCheck[] | null => {
+    if (flowMode === null || flowMode.overlay === null || proposalGeneration === null) return null;
+    return checkProposal(proposalGeneration, flowMode.overlay, flowMode.graph);
+  }, [flowMode, proposalGeneration]);
 
   // The chain on screen is what Muse reads; a proposal's own files
   // do not exist on disk yet, so they never count as context.
@@ -1666,6 +1684,8 @@ export function ProjectMapView({
                     otherChanges: flowMode.otherChanges,
                     proposal: flowProposal ?? null,
                     decisionError,
+                    generation: proposalGeneration,
+                    checks: flowChecks,
                     onAccept:
                       flowProposal == null
                         ? undefined
@@ -1991,6 +2011,8 @@ function BoardInspector({
     otherChanges: string[];
     proposal: FlowInspectorProps["proposal"];
     decisionError: string | null;
+    generation: CodeGenerationDto | null;
+    checks: ProposalCheck[] | null;
     onAccept: (() => void) | undefined;
     onDiscard: (() => void) | undefined;
     onOpenCode: ((rootId: string, rel: string, line: number) => void) | undefined;
@@ -2047,6 +2069,8 @@ function BoardInspector({
               selected={flow.selected}
               proposal={flow.proposal}
               decisionError={flow.decisionError}
+              generation={flow.generation}
+              checks={flow.checks}
               onAccept={flow.onAccept}
               onDiscard={flow.onDiscard}
               onOpenCode={flow.onOpenCode}

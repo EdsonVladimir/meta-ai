@@ -8,9 +8,10 @@ import { CodeConflictDiff } from "../CodeConflictDiff";
 import { DEFAULT_CODE_EDITOR_PREFS, type CodeEditorPrefs } from "../editorPrefs";
 import { languageForFile } from "../model";
 import type { MonacoApi } from "../monacoLoader";
-import type { CodeProposalFileDto } from "../types";
+import type { CodeGenerationDto, CodeProposalFileDto } from "../types";
 import { memberSignalLines } from "./flowLayout";
 import type { FlowEdge, FlowGraph, FlowPending } from "./flowModel";
+import type { ProposalCheck } from "./proposalChecks";
 
 export interface FlowInspectorProps {
   graph: FlowGraph;
@@ -25,6 +26,10 @@ export interface FlowInspectorProps {
   onDiscard?: () => void;
   /** Why the last accept or discard failed. */
   decisionError?: string | null;
+  /** Open proposal generation for the verification panel (absent = no panel). */
+  generation?: CodeGenerationDto | null;
+  /** Local checks over the generation (shown under "Ruth verified"). */
+  checks?: ProposalCheck[] | null;
   /** Opens real code at a member line (absent = no button). */
   onOpenCode?: (rootId: string, rel: string, line: number) => void;
   prefs?: CodeEditorPrefs;
@@ -72,6 +77,76 @@ function PendingList({ items }: { items: FlowPending[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+const CHECK_STATUS: Record<ProposalCheck["status"], string> = {
+  pass: "Pass",
+  warn: "Warn",
+  fail: "Fail",
+};
+
+function VerificationPanel({
+  generation,
+  checks,
+}: {
+  generation: CodeGenerationDto;
+  checks: ProposalCheck[];
+}) {
+  const usage = generation.usage;
+  const tokens =
+    usage.inputTokens !== null || usage.outputTokens !== null
+      ? `${usage.inputTokens ?? "?"}+${usage.outputTokens ?? "?"} tokens`
+      : "tokens unknown";
+  const scopeFiles = generation.scope.length;
+  const scopeText = `${scopeFiles} scope file${scopeFiles === 1 ? "" : "s"}`;
+  return (
+    <section className="archmap-section" aria-label="Verification">
+      <h4>Verification</h4>
+      <p className="hint">
+        Model {generation.model} · {tokens} · {scopeText} sent to Meta
+      </p>
+      <Block title="Muse says">
+        <p>{generation.explanation === "" ? "No explanation." : generation.explanation}</p>
+        <p className="hint">Assumptions</p>
+        {generation.assumptions.length === 0 ? (
+          <p className="hint">None</p>
+        ) : (
+          <ul className="archmap-list">
+            {generation.assumptions.map((assumption) => (
+              <li key={assumption}>{assumption}</li>
+            ))}
+          </ul>
+        )}
+        <p className="hint">Questions</p>
+        {generation.questions.length === 0 ? (
+          <p className="hint">None</p>
+        ) : (
+          <ul className="archmap-list">
+            {generation.questions.map((question) => (
+              <li key={question}>{question}</li>
+            ))}
+          </ul>
+        )}
+      </Block>
+      <Block title="Ruth verified">
+        {checks.length === 0 ? (
+          <p className="hint">No checks ran.</p>
+        ) : (
+          <ul className="archmap-list">
+            {checks.map((check) => (
+              <li key={check.id}>
+                <strong className={`flow-check ${check.status}`}>
+                  {CHECK_STATUS[check.status]}
+                </strong>
+                : <code>{check.label}</code>
+                <p className="hint">{check.detail}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Block>
+    </section>
   );
 }
 
@@ -205,6 +280,8 @@ export function FlowInspector({
   onAccept,
   onDiscard,
   decisionError = null,
+  generation = null,
+  checks = null,
   onOpenCode,
   prefs,
   loader,
@@ -241,10 +318,15 @@ export function FlowInspector({
         onClose={() => setDiffOpen(false)}
       />
     ) : null;
+  const verificationBlock =
+    generation == null ? null : (
+      <VerificationPanel generation={generation} checks={checks ?? []} />
+    );
   if (node === undefined || selected === null) {
     return (
       <div className="archmap-inspector">
         {proposalBlock}
+        {verificationBlock}
         <p className="hint">Select a chain row to inspect it.</p>
         {graph.pending.length > 0 && (
           <Block title="Pending">
@@ -264,6 +346,7 @@ export function FlowInspector({
           {symbol.kind} · {symbol.rel}
         </p>
         {proposalBlock}
+        {verificationBlock}
         <Block title="Members">
           {node.members.length === 0 ? (
             <p className="hint">None</p>
@@ -311,6 +394,7 @@ export function FlowInspector({
         </div>
       )}
       {proposalBlock}
+      {verificationBlock}
       <Block title="Inputs">
         {params.length === 0 ? (
           <p className="hint">None</p>

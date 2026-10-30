@@ -3,7 +3,7 @@
 // toolbar (filters, search, edges, module, details); this view only
 // keeps the shared zoom so scope switches never reset it. Saved
 // content only; drafts warn where analyzed.
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useCodeWorkspace } from "../useCodeWorkspace";
 import { useRequirementsUi } from "../../requirements/uiStore";
 import { StructureView, scopeKey, type ScopeFile } from "../structure/StructureView";
@@ -57,16 +57,6 @@ export function ArchitectureView() {
     setProposal(generation);
   }, []);
   const proposalFiles = proposal === null ? null : proposal.files;
-  const proposalContext = useMemo(
-    () =>
-      proposal === null
-        ? undefined
-        : {
-            generationId: proposal.id,
-            staleReason: proposal.stale ? (proposal.staleReason ?? "the context changed.") : null,
-          },
-    [proposal],
-  );
   const reanalyzeNonce = useRef(0);
   const [reanalyzeRequest, setReanalyzeRequest] = useState<ReanalyzeRequest | null>(null);
   const requestReanalyze = useCallback(
@@ -163,7 +153,7 @@ export function ArchitectureView() {
           setProposal(null);
         }}
         onChainFiles={setChainFiles}
-        proposalContext={proposalContext}
+        proposalGeneration={proposal}
         decisionError={decisionError}
         onAcceptProposalFile={acceptProposalFile}
         onDiscardProposalFile={discardProposalFile}

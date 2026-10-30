@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 // Flow inspector: selected member detail (inputs, output, relations, evidence).
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { readCodeFile } from "../client";
 import { DEFAULT_CODE_EDITOR_PREFS } from "../editorPrefs";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import type { StructureInput } from "../structure/structureTypes";
+import type { CodeGenerationDto } from "../types";
 import { buildFlowGraph } from "./flowModel";
 import type { FlowProject, FlowStart } from "./flowModel";
+import { checkProposal } from "./proposalChecks";
+import type { ProposalOverlay } from "./proposalOverlay";
 import { FlowInspector, type FlowInspectorProps } from "./FlowInspector";
 
 vi.mock("../client", () => ({
@@ -138,6 +141,72 @@ it("reads the current file to compare against the proposal", async () => {
   fireEvent.click(screen.getByRole("button", { name: "View code" }));
   expect(await screen.findByText(/return 1;/)).toBeTruthy();
   expect(screen.getByText(/return 2;/)).toBeTruthy();
+});
+
+const GEN: CodeGenerationDto = {
+  id: "gen-1",
+  projectId: "p1",
+  moduleId: "m1",
+  requirementArtifactId: "req-1",
+  requirementVersionId: "req-1-v1",
+  screenArtifactId: "",
+  screenId: "",
+  screenVersionId: "",
+  screenSources: [],
+  model: "Meta Muse",
+  templateVersion: 1,
+  usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+  createdAt: "t",
+  explanation: "Adds the discount.",
+  assumptions: ["In-memory stock."],
+  questions: ["On reserve or on confirm?"],
+  scope: [{ rootId: "r", rel: "a.ts", fingerprint: "h:a.ts" }],
+  files: [PROPOSAL.file],
+  stale: false,
+  staleReason: null,
+};
+const EMPTY_OVERLAY: ProposalOverlay = { projects: [], changes: new Map(), removed: [], notes: [] };
+
+it("shows the verification panel for an open proposal", () => {
+  renderInspector({
+    proposal: PROPOSAL,
+    generation: GEN,
+    checks: checkProposal(GEN, EMPTY_OVERLAY, PGRAPH),
+  });
+  expect(screen.getByRole("heading", { name: "Verification" })).toBeTruthy();
+  expect(screen.getByText(/Meta Muse/)).toBeTruthy();
+  expect(screen.getByText(/10\+20 tokens/)).toBeTruthy();
+  expect(screen.getByText(/1 scope file/)).toBeTruthy();
+  expect(screen.getByText("Muse says")).toBeTruthy();
+  expect(screen.getByText("Adds the discount.")).toBeTruthy();
+  expect(screen.getByText("In-memory stock.")).toBeTruthy();
+  expect(screen.getByText("On reserve or on confirm?")).toBeTruthy();
+  expect(screen.getByText("Ruth verified")).toBeTruthy();
+  expect(screen.getAllByText("Pass")).toHaveLength(4);
+});
+
+it("shows the verification panel with no row selected", () => {
+  renderInspector({
+    selected: null,
+    proposal: null,
+    generation: GEN,
+    checks: checkProposal(GEN, EMPTY_OVERLAY, PGRAPH),
+  });
+  expect(screen.getByRole("heading", { name: "Verification" })).toBeTruthy();
+  expect(screen.getByText("Select a chain row to inspect it.")).toBeTruthy();
+});
+
+it("reports check statuses as text", () => {
+  const stale = { ...GEN, stale: true, staleReason: "the context changed." };
+  renderInspector({
+    proposal: { ...PROPOSAL, staleReason: "the context changed." },
+    generation: stale,
+    checks: checkProposal(stale, EMPTY_OVERLAY, PGRAPH),
+  });
+  const panel = within(screen.getByLabelText("Verification"));
+  expect(panel.getByText("Fail")).toBeTruthy();
+  expect(panel.getByText(/the context changed/)).toBeTruthy();
+  expect(panel.getAllByText("Pass")).toHaveLength(3);
 });
 
 it("names signal writes and pending links of a member", () => {
