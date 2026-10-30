@@ -106,7 +106,7 @@ it("draws a proposal across both projects before it reaches the disk", () => {
   const side = (key: string): FlowProject => ({
     key,
     label: key,
-    result: analyzeTsFiles(collectInputs(key).map((input) => ({ ...input, rootId: "r", rel: `${key}/${input.rel}` }))),
+    result: analyzeTsFiles(collectInputs(key).map((input) => ({ ...input, rootId: "r" }))),
   });
   const projects = [side("frontend"), side("backend")];
   const proposed = (rel: string, content: string, operation: string) => ({
@@ -122,7 +122,7 @@ it("draws a proposal across both projects before it reaches the disk", () => {
   const storeRel = "frontend/src/app/reservas/reservas.store.ts";
   const store = projects[0].result.files.find((f) => f.rel === storeRel);
   expect(store).toBeDefined();
-  const original = collectInputs("frontend").find((input) => `frontend/${input.rel}` === storeRel)!;
+  const original = collectInputs("frontend").find((input) => input.rel === storeRel)!;
   const overlay = buildProposalOverlay(projects, [
     proposed(
       storeRel,
