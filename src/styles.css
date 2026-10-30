@@ -6000,3 +6000,17 @@ button.archboard-member:hover {
 .flow-check.warn { color: var(--warn); }
 .flow-check.fail { color: var(--err); }
 
+/* Adjustment request under a proposal. */
+#code-proposal-adjust {
+  flex: 1 1 16rem;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+

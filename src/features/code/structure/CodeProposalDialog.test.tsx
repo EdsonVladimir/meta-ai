@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CodeProposalDialog, type CodeGenApi } from "./CodeProposalDialog";
+import type { CodeGenRequest } from "../client";
 import { DEFAULT_CODE_EDITOR_PREFS } from "../editorPrefs";
 import type {
   CodeGenContextDto,
@@ -160,6 +161,8 @@ function renderDialog(
   );
   return { onFileAccepted, onReanalyze, onClose };
 }
+
+const generate_ = (): Promise<void> => generate();
 
 async function generate(): Promise<void> {
   fireEvent.change(await screen.findByLabelText("Requirement", { selector: "select" }), {
@@ -376,5 +379,39 @@ describe("code proposal dialog", () => {
     expect(onGeneration).toHaveBeenLastCalledWith(expect.objectContaining({ id: "gen-1" }));
     fireEvent.click(screen.getByRole("button", { name: /Close/ }));
     expect(onGeneration).toHaveBeenLastCalledWith(null);
+  });
+
+  it("sends the adjustment as a new generation", async () => {
+    const api = {
+      ...fakeApi(),
+      generate: vi.fn(async (_input: CodeGenRequest) => generationDto({ id: "gen-1" })),
+    };
+    renderDialog({ api });
+    await generate();
+    fireEvent.change(screen.getByLabelText("Ask Muse to adjust"), { target: { value: "add email" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send adjustment" }));
+    await waitFor(() => expect(api.generate).toHaveBeenCalledTimes(2));
+    expect(api.generate.mock.calls[1]![0].instruction).toBe("add email");
+  });
+
+  it("sends the proposal being adjusted and clears the request", async () => {
+    const generate = vi.fn(async (_input: CodeGenRequest) => generationDto({ id: "gen-1" }));
+    renderDialog(fakeApi({ generate }));
+    await generate_();
+    fireEvent.change(screen.getByLabelText("Ask Muse to adjust"), {
+      target: { value: "add email" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send adjustment" }));
+    await waitFor(() => expect(generate).toHaveBeenCalledTimes(2));
+    expect(generate.mock.calls[1][0].previousGenerationId).toBe("gen-1");
+    await waitFor(() =>
+      expect((screen.getByLabelText("Ask Muse to adjust") as HTMLInputElement).value).toBe(""),
+    );
+  });
+
+  it("keeps Send adjustment disabled when empty", async () => {
+    renderDialog({});
+    await generate();
+    expect((screen.getByRole("button", { name: "Send adjustment" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

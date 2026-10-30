@@ -53,6 +53,12 @@ pub struct CodeGenContextInput {
     pub module_id: String,
     pub source: CodeGenSourceInput,
     pub scope: Vec<CodeScopeFileInput>,
+    /// Person-written adjustment, appended to the model input.
+    #[serde(default)]
+    pub instruction: Option<String>,
+    /// Proposal the instruction adjusts; its files go to the model.
+    #[serde(default)]
+    pub previous_generation_id: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -392,10 +398,21 @@ pub fn code_gen_context(
             chars: file.content.chars().count(),
         })
         .collect();
+    let instruction_chars = input
+        .instruction
+        .as_deref()
+        .map(|text| {
+            text.trim()
+                .chars()
+                .take(ruth_meta::code::MAX_INSTRUCTION_CHARS)
+                .count()
+        })
+        .unwrap_or(0);
     let total_chars = requirement_chars
         + screen_chars
         + screen_sources.iter().map(|s| s.chars).sum::<usize>()
-        + files.iter().map(|f| f.chars).sum::<usize>();
+        + files.iter().map(|f| f.chars).sum::<usize>()
+        + instruction_chars;
     Ok(CodeGenContextDto {
         project_id: context.project_id,
         module_id: context.module_id,
@@ -419,13 +436,30 @@ pub async fn code_generate(
     input: CodeGenContextInput,
 ) -> Result<CodeGenerationDto, ApiError> {
     // Short lock: saved-context snapshot and generation mark.
-    let context = {
+    let (context, previous) = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
         let roots = workspace_of(ready.code_roots);
         let context = snapshot_for(ready.store, &roots, &input)?;
+        let previous: Vec<ruth_meta::code::PreviousCodeFile> = input
+            .previous_generation_id
+            .as_deref()
+            .and_then(|id| ready.codegen.get(id))
+            .map(|generation| {
+                generation
+                    .files
+                    .iter()
+                    .filter(|file| file.state != ruth_store::CodeFileState::Discarded)
+                    .map(|file| ruth_meta::code::PreviousCodeFile {
+                        rel: file.rel.clone(),
+                        operation: file.operation.clone(),
+                        content: file.content.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         mark_inflight(&state.inflight, &input.module_id)?;
-        context
+        (context, previous)
     };
     let _guard = InflightGuard::hold(&state.inflight, input.module_id.clone());
 
@@ -448,6 +482,8 @@ pub async fn code_generate(
             ruth_meta::code::build_code_input(&requirement, &scope)
         }
     };
+    let prompt = ruth_meta::code::append_previous_proposal(prompt, &previous);
+    let prompt = ruth_meta::code::append_instruction(prompt, input.instruction.as_deref());
     let allowed: Vec<String> = {
         let mut roots: Vec<String> = scope.iter().map(|f| f.root_id.clone()).collect();
         roots.sort();

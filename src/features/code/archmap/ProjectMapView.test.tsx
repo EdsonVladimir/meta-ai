@@ -16,7 +16,13 @@ import {
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import { useRequirementsUi, type ArchScope } from "../../requirements/uiStore";
 import { clearDiscoveryCache } from "../detectProjects";
-import type { CodeListingDto, CodeProposalFileDto, CodeRootDto, CodeTab } from "../types";
+import type {
+  CodeGenerationDto,
+  CodeListingDto,
+  CodeProposalFileDto,
+  CodeRootDto,
+  CodeTab,
+} from "../types";
 
 afterEach(() => cleanup());
 
@@ -159,6 +165,7 @@ function renderView(options: {
   onShowAllProjects?: () => void;
   groupBy?: "symbols" | "files";
   proposalFiles?: CodeProposalFileDto[] | null;
+  proposalGeneration?: CodeGenerationDto | null;
   onOpenProposal?: () => void;
   onCloseProposal?: () => void;
   reanalyzeRequest?: ReanalyzeRequest | null;
@@ -217,6 +224,7 @@ function renderView(options: {
           setHiddenProjects({});
         }}
         proposalFiles={options.proposalFiles ?? proposalFiles}
+        proposalGeneration={options.proposalGeneration}
         reanalyzeRequest={options.reanalyzeRequest ?? reanalyzeRequest}
         onOpenProposal={options.onOpenProposal}
         onCloseProposal={options.onCloseProposal}
@@ -524,6 +532,30 @@ describe("proposal on the X-ray", () => {
     expect(onOpenProposal).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Close proposal" }));
     expect(onCloseProposal).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Ask Muse to adjust from the inspector", async () => {
+    const onOpenProposal = vi.fn();
+    const { setProposalFiles } = renderView({
+      groupBy: "symbols",
+      onOpenProposal,
+      proposalGeneration: {
+        id: "gen-1",
+        model: "muse-spark-1.3",
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        explanation: "",
+        assumptions: [],
+        questions: [],
+        scope: [],
+        files: [],
+        stale: false,
+        staleReason: null,
+      } as unknown as CodeGenerationDto,
+    });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    setProposalFiles([proposalFile("src/report.ts", `export class Report {}`, "create")]);
+    fireEvent.click(await screen.findByRole("button", { name: "Ask Muse to adjust" }));
+    expect(onOpenProposal).toHaveBeenCalledTimes(1);
   });
 
   it("offers the open chain as the context for Muse", async () => {

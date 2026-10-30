@@ -209,6 +209,10 @@ export interface CodeGenRequest {
   moduleId: string;
   source: CodeGenSourceInput;
   scope: CodeScopeInput[];
+  /** Person-written adjustment, appended to the model input. */
+  instruction?: string;
+  /** Proposal the instruction adjusts; its files go to the model. */
+  previousGenerationId?: string;
 }
 
 export function genCodeContext(input: CodeGenRequest): Promise<CodeGenContextDto> {

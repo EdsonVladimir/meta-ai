@@ -1686,6 +1686,7 @@ export function ProjectMapView({
                     decisionError,
                     generation: proposalGeneration,
                     checks: flowChecks,
+                    onOpenProposal,
                     onAccept:
                       flowProposal == null
                         ? undefined
@@ -2013,6 +2014,7 @@ function BoardInspector({
     decisionError: string | null;
     generation: CodeGenerationDto | null;
     checks: ProposalCheck[] | null;
+    onOpenProposal: (() => void) | undefined;
     onAccept: (() => void) | undefined;
     onDiscard: (() => void) | undefined;
     onOpenCode: ((rootId: string, rel: string, line: number) => void) | undefined;
@@ -2071,6 +2073,7 @@ function BoardInspector({
               decisionError={flow.decisionError}
               generation={flow.generation}
               checks={flow.checks}
+              onOpenProposal={flow.onOpenProposal}
               onAccept={flow.onAccept}
               onDiscard={flow.onDiscard}
               onOpenCode={flow.onOpenCode}

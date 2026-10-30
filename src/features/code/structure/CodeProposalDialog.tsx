@@ -127,6 +127,7 @@ export function CodeProposalDialog({
   const [generating, setGenerating] = useState(false);
   const [opError, setOpError] = useState<string | null>(null);
   const [generation, setGeneration] = useState<CodeGenerationDto | null>(null);
+  const [adjustment, setAdjustment] = useState("");
   const [previous, setPrevious] = useState<CodeGenerationDto[] | null>(null);
   const [previousBusy, setPreviousBusy] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -200,7 +201,7 @@ export function CodeProposalDialog({
     };
   }, [api, projectId, moduleId]);
 
-  function request(): CodeGenRequest {
+  function request(adjust?: { instruction: string; previous: string }): CodeGenRequest {
     return {
       projectId,
       moduleId,
@@ -209,6 +210,9 @@ export function CodeProposalDialog({
           ? { kind: "screen", mockupId: selectedMockup, screenId: selectedScreen }
           : { kind: "requirement", artifactId: selectedReq },
       scope: scope.map((file) => ({ rootId: file.rootId, rel: file.rel })),
+      ...(adjust === undefined
+        ? {}
+        : { instruction: adjust.instruction, previousGenerationId: adjust.previous }),
     };
   }
 
@@ -233,13 +237,14 @@ export function CodeProposalDialog({
     }
   }
 
-  async function runGenerate(): Promise<void> {
+  async function runGenerate(adjust?: { instruction: string; previous: string }): Promise<void> {
     setGenerating(true);
     setOpError(null);
     try {
-      const created = await api.generate(request());
+      const created = await api.generate(request(adjust));
       if (!live.current) return;
       setGeneration(created);
+      setAdjustment("");
       setExpanded(null);
       setCurrentTexts({});
       setFileNotice(null);
@@ -630,6 +635,25 @@ export function CodeProposalDialog({
                 }}
               >
                 ← New proposal
+              </button>
+            </div>
+            <div className="button-row">
+              <label htmlFor="code-proposal-adjust">Ask Muse to adjust</label>
+              <input
+                id="code-proposal-adjust"
+                type="text"
+                value={adjustment}
+                onChange={(event) => setAdjustment(event.target.value)}
+              />
+              <button
+                type="button"
+                className="secondary small"
+                disabled={adjustment.trim() === "" || generating}
+                onClick={() =>
+                  void runGenerate({ instruction: adjustment, previous: generation.id })
+                }
+              >
+                {generating ? "Sending…" : "Send adjustment"}
               </button>
             </div>
             <h4>

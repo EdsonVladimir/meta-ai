@@ -30,6 +30,8 @@ export interface FlowInspectorProps {
   generation?: CodeGenerationDto | null;
   /** Local checks over the generation (shown under "Ruth verified"). */
   checks?: ProposalCheck[] | null;
+  /** Reopens the proposal dialog to ask Muse to adjust (absent = no button). */
+  onOpenProposal?: () => void;
   /** Opens real code at a member line (absent = no button). */
   onOpenCode?: (rootId: string, rel: string, line: number) => void;
   prefs?: CodeEditorPrefs;
@@ -89,9 +91,11 @@ const CHECK_STATUS: Record<ProposalCheck["status"], string> = {
 function VerificationPanel({
   generation,
   checks,
+  onOpenProposal,
 }: {
   generation: CodeGenerationDto;
   checks: ProposalCheck[];
+  onOpenProposal: (() => void) | undefined;
 }) {
   const usage = generation.usage;
   const tokens =
@@ -127,6 +131,13 @@ function VerificationPanel({
               <li key={question}>{question}</li>
             ))}
           </ul>
+        )}
+        {onOpenProposal !== undefined && (
+          <div className="button-row">
+            <button type="button" className="secondary small" onClick={onOpenProposal}>
+              Ask Muse to adjust
+            </button>
+          </div>
         )}
       </Block>
       <Block title="Ruth verified">
@@ -282,6 +293,7 @@ export function FlowInspector({
   decisionError = null,
   generation = null,
   checks = null,
+  onOpenProposal,
   onOpenCode,
   prefs,
   loader,
@@ -320,7 +332,11 @@ export function FlowInspector({
     ) : null;
   const verificationBlock =
     generation == null ? null : (
-      <VerificationPanel generation={generation} checks={checks ?? []} />
+      <VerificationPanel
+        generation={generation}
+        checks={checks ?? []}
+        onOpenProposal={onOpenProposal}
+      />
     );
   if (node === undefined || selected === null) {
     return (

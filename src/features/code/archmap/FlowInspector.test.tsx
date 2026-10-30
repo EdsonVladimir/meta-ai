@@ -209,6 +209,25 @@ it("reports check statuses as text", () => {
   expect(panel.getAllByText("Pass")).toHaveLength(3);
 });
 
+it("reopens the dialog to ask Muse to adjust", () => {
+  const onOpenProposal = vi.fn();
+  renderInspector({
+    proposal: PROPOSAL,
+    generation: GEN,
+    checks: checkProposal(GEN, EMPTY_OVERLAY, PGRAPH),
+    onOpenProposal,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Ask Muse to adjust" }));
+  expect(onOpenProposal).toHaveBeenCalledTimes(1);
+  cleanup();
+  renderInspector({
+    proposal: PROPOSAL,
+    generation: GEN,
+    checks: checkProposal(GEN, EMPTY_OVERLAY, PGRAPH),
+  });
+  expect(screen.queryByRole("button", { name: "Ask Muse to adjust" })).toBeNull();
+});
+
 it("names signal writes and pending links of a member", () => {
   const front = project("f", {
     "s.ts": `export class S {

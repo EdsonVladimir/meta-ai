@@ -40,6 +40,8 @@ pub const MAX_CODE_EXPLANATION_CHARS: usize = 2_000;
 pub const MAX_CODE_ASSUMPTIONS: usize = 5;
 pub const MAX_CODE_QUESTIONS: usize = 5;
 pub const MAX_CODE_NOTE_CHARS: usize = 1_000;
+/// Person-written adjustment to a proposal: longer text is cut.
+pub const MAX_INSTRUCTION_CHARS: usize = 2000;
 
 pub const CODE_MAX_OUTPUT_TOKENS: u32 = 8192;
 pub const CODE_TIMEOUT_SECS: u64 = 120;
@@ -233,6 +235,55 @@ pub fn build_code_input_from_screen(screen: &CodeScreenSource, scope: &[CodeScop
         }
         rendered.pop();
     }
+}
+
+/// Appends a person request under a fixed heading after the
+/// built input. A blank or missing instruction changes nothing;
+/// longer ones are cut to `MAX_INSTRUCTION_CHARS`.
+pub fn append_instruction(input: String, instruction: Option<&str>) -> String {
+    let clean = instruction.map(str::trim).unwrap_or("");
+    if clean.is_empty() {
+        return input;
+    }
+    format!(
+        "{input}\n\n## Person request\n{}",
+        truncate_chars(clean, MAX_INSTRUCTION_CHARS)
+    )
+}
+
+/// A file of the proposal being adjusted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviousCodeFile {
+    pub rel: String,
+    pub operation: String,
+    pub content: String,
+}
+
+/// Appends the proposal being adjusted, so an adjustment changes it
+/// instead of starting over. On overflow, whole files drop from the end.
+pub fn append_previous_proposal(input: String, files: &[PreviousCodeFile]) -> String {
+    let mut rendered: Vec<String> = files
+        .iter()
+        .map(|file| {
+            format!(
+                "--- {} ({}) ---\n{}",
+                file.rel,
+                file.operation,
+                truncate_chars(file.content.trim(), MAX_CODE_SCOPE_FILE_CHARS)
+            )
+        })
+        .collect();
+    while !rendered.is_empty() {
+        let output = format!(
+            "{input}\n\n## Previous proposal to adjust\nKeep everything the person does not ask to change.\n{}",
+            rendered.join("\n\n")
+        );
+        if output.chars().count() <= MAX_CODE_INPUT_CHARS {
+            return output;
+        }
+        rendered.pop();
+    }
+    input
 }
 
 /// JSON schema sent in `text.format`.
