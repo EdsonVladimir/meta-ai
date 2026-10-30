@@ -40,7 +40,10 @@
 //   websockets and other HTTP clients.
 // - Honest limit: any `<obj>.get('/…')` (even a `map.get`) registers
 //   as an endpoint by shape; joining with real calls is what gives it
-//   meaning in the API view.
+//   meaning in the API view. The one exception: receivers that are
+//   `HttpClient` fields (`this.<field>` in `httpClientFieldsOf`) never
+//   register — those calls are consumed APIs, recorded as flow facts
+//   (`StructureHttpCall`) instead.
 //
 // Strict resolution: a name only connects when it identifies ONE single
 // analyzed symbol. The same name in two files does NOT connect (marked
@@ -48,7 +51,7 @@
 import ts from "ts-compiler";
 import { fnv1aHex } from "../model";
 import { STRUCTURE_LIMITS } from "./structureTypes";
-import { collectFlowFacts } from "./tsFlowFacts";
+import { collectFlowFacts, httpClientFieldsOf } from "./tsFlowFacts";
 import type {
   ApiCall,
   ApiEndpoint,
@@ -803,14 +806,31 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
     });
   }
 
+  // HttpClient fields of the enclosing class (null outside classes):
+  // their calls are consumed APIs, never exposed endpoints.
+  let httpFields: Set<string> | null = null;
+
   // Full walk (includes method bodies): routes and calls.
   function visitCalls(node: ts.Node): void {
+    if (ts.isClassDeclaration(node)) {
+      const outer = httpFields;
+      httpFields = httpClientFieldsOf(node);
+      ts.forEachChild(node, visitCalls);
+      httpFields = outer;
+      return;
+    }
     if (ts.isCallExpression(node)) {
       const target = node.expression;
       if (ts.isPropertyAccessExpression(target)) {
         const verb = target.name.text.toLowerCase();
         const receiver = target.expression;
-        if (ROUTE_VERBS.has(verb) && !isNamed(receiver, "axios")) {
+        const httpReceiver =
+          httpFields !== null &&
+          ts.isPropertyAccessExpression(receiver) &&
+          receiver.expression.kind === ts.SyntaxKind.ThisKeyword &&
+          (ts.isIdentifier(receiver.name) || ts.isPrivateIdentifier(receiver.name)) &&
+          httpFields.has(ts.idText(receiver.name));
+        if (ROUTE_VERBS.has(verb) && !isNamed(receiver, "axios") && !httpReceiver) {
           const url = staticUrl(node.arguments[0]);
           if (url !== null && url.startsWith("/")) {
             emitEndpoint(verb.toUpperCase(), url, node, `route ${verb}`);

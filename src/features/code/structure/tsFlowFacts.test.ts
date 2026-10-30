@@ -131,4 +131,62 @@ describe("collectFlowFacts", () => {
     ]);
     expect(flow.unresolved).toEqual([]);
   });
+
+  const service = (body: string) => `export class S {
+  private http = inject(HttpClient);
+  private apiUrl = environment.urlAcme + 'carga';
+  private plain = '/items';
+  run(id: string) { ${body} }
+}`;
+
+  it.each([
+    ["return this.http.get<Item[]>(this.apiUrl);", "GET", { base: "urlAcme", path: "carga" }, "Item[]"],
+    ["return this.http.post<Item>(`${this.apiUrl}/bulk`, id);", "POST", { base: "urlAcme", path: "carga/bulk" }, "Item"],
+    ["return this.http.get(this.apiUrl + '/x');", "GET", { base: "urlAcme", path: "carga/x" }, null],
+    ["return this.http.delete(`${this.apiUrl}/${id}`);", "DELETE", { base: "urlAcme", path: "carga/${...}" }, null],
+    ["return this.http.get(this.plain);", "GET", { base: null, path: "/items" }, null],
+    ["return this.http.get('/x');", "GET", { base: null, path: "/x" }, null],
+  ])("reconstructs %s", (body, verb, url, returnType) => {
+    const [call] = flowOf(service(body)).httpCalls;
+    expect(call).toMatchObject({ member: "run", verb, url, returnType });
+  });
+
+  it("keeps the verb when the URL is not provable", () => {
+    const [call] = flowOf(service("return this.http.get(makeUrl(id));")).httpCalls;
+    expect(call.verb).toBe("GET");
+    expect(call.url).toBeNull();
+  });
+
+  it("does not list HttpClient calls as member calls", () => {
+    expect(flowOf(service("return this.http.get('/x');")).calls).toEqual([]);
+  });
+
+  it("never invents a verb from a non-verb HttpClient method", () => {
+    const flow = flowOf(`export class S {
+  private http = inject(HttpClient);
+  run() { return this.http.request('POST', '/x'); }
+}`);
+    expect(flow.httpCalls).toEqual([]);
+    expect(flow.calls).toEqual([]);
+    expect(flow.unresolved).toHaveLength(1);
+  });
+
+  it("numbers member calls without gaps around signals and HTTP", () => {
+    const flow = flowOf(`export class S {
+  private http = inject(HttpClient);
+  private s = inject(T);
+  readonly n = signal(0);
+  run() {
+    this.n.set(1);
+    this.s.first();
+    this.http.get('/x');
+    this.n();
+    this.s.second();
+  }
+}`);
+    expect(flow.calls.map((c) => [c.method, c.order])).toEqual([
+      ["first", 0],
+      ["second", 1],
+    ]);
+  });
 });

@@ -482,3 +482,24 @@ describe("member details", () => {
     expect(result.symbols[0].members.filter((m) => m.name === "run")).toHaveLength(3);
   });
 });
+
+describe("HttpClient endpoints", () => {
+  function analyze(content: string) {
+    return analyzeTsFiles([input("root-1", "s.ts", content)]);
+  }
+
+  it("never registers HttpClient calls as endpoints", () => {
+    const result = analyze(`export class S {
+  constructor(private http: HttpClient) {}
+  run() { return this.http.get('/x'); }
+}`);
+    expect(result.endpoints).toEqual([]);
+  });
+
+  it("keeps Express-shaped routes and other receivers as endpoints", () => {
+    const result = analyze(`const app = express();
+app.get('/a', handler);
+export class S { private map = new Map(); run() { this.map.get('/b'); } }`);
+    expect(result.endpoints.map((e) => e.url)).toEqual(["/a", "/b"]);
+  });
+});

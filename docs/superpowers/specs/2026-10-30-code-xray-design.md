@@ -186,6 +186,13 @@ HTTP join: verb and normalized path must match after removing the base
 token. Several candidates means ambiguous; none means "no destination".
 The backend must be associated with the same Ruth project.
 
+Gateway prefixes: ACME services call `{urlApiGateway}acme/ingesta`,
+while the NestJS route is `/ingesta`, because the gateway owns the
+`acme/` segment. An exact path match would leave those calls without a
+destination. The Stage 3 plan must define this match using evidence
+(gateway route configuration, or a per-root prefix the user confirms),
+never by guessing from suffixes.
+
 ### 5.2 Analysis coverage
 
 Flow mode needs the scope analyzed. With pending files it shows

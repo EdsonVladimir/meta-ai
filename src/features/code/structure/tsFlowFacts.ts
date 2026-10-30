@@ -3,6 +3,8 @@
 // `repositoryCalls` and `routes` stay empty until later tasks.
 import ts from "ts-compiler";
 import type {
+  HttpUrlFact,
+  StructureHttpCall,
   StructureInjection,
   StructureMemberCall,
   StructureSignalAccess,
@@ -10,6 +12,8 @@ import type {
 } from "./structureTypes";
 
 const SIGNAL_WRITERS = new Set(["set", "update", "mutate"]);
+/** `HttpClient` methods whose name is the HTTP verb. */
+const HTTP_CLIENT_VERBS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 /** Field initializers whose callback runs as part of that field. */
 const REACTIVE_WRAPPERS = new Set(["computed", "effect"]);
 
@@ -131,6 +135,115 @@ function walkableBody(
   return null;
 }
 
+/** Same cut as `shortText(..., 40)` in tsAnalyze (kept local: no import cycle). */
+function cutType(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 40 ? `${flat.slice(0, 39)}…` : flat;
+}
+
+function isHttpClientType(type: ts.TypeNode | undefined): boolean {
+  return (
+    type !== undefined &&
+    ts.isTypeReferenceNode(type) &&
+    ts.isIdentifier(type.typeName) &&
+    type.typeName.text === "HttpClient"
+  );
+}
+
+function isInjectHttpClient(init: ts.Expression | undefined): boolean {
+  if (init === undefined || !ts.isCallExpression(init)) return false;
+  if (!ts.isIdentifier(init.expression) || init.expression.text !== "inject") return false;
+  const first = init.arguments[0];
+  if (first !== undefined && ts.isIdentifier(first) && first.text === "HttpClient") return true;
+  const typeArg = init.typeArguments?.[0];
+  return isHttpClientType(typeArg);
+}
+
+/**
+ * Fields proven to be Angular `HttpClient`: annotated as such, or
+ * injected with it (`inject(HttpClient)`, `inject<HttpClient>()`).
+ * Constructor parameters count when they declare a field.
+ */
+export function httpClientFieldsOf(node: ts.ClassDeclaration): Set<string> {
+  const out = new Set<string>();
+  for (const member of node.members) {
+    if (ts.isPropertyDeclaration(member)) {
+      const name = member.name;
+      if (!ts.isIdentifier(name) && !ts.isPrivateIdentifier(name)) continue;
+      if (isHttpClientType(member.type) || isInjectHttpClient(member.initializer)) {
+        out.add(ts.idText(name));
+      }
+    } else if (ts.isConstructorDeclaration(member)) {
+      for (const param of member.parameters) {
+        if (!ts.isIdentifier(param.name)) continue;
+        if (!isInjectionParam(param)) continue;
+        if (!isHttpClientType(param.type)) continue;
+        out.add(param.name.text);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * URL reconstruction over a strict whitelist: string and template
+ * literals, `+` concatenation, `this.<field>` with a resolving
+ * initializer, and `environment.<x>` as the base token. Anything
+ * else (calls, ternaries, parameters…) gives null.
+ */
+function resolveHttpUrl(
+  source: ts.SourceFile,
+  expr: ts.Expression | undefined,
+  fields: Map<string, ts.Expression>,
+  visiting: Set<string>,
+): HttpUrlFact | null {
+  if (expr === undefined) return null;
+  if (ts.isStringLiteralLike(expr)) return { base: null, path: expr.text };
+  if (ts.isTemplateExpression(expr)) {
+    let base: string | null = null;
+    let path = expr.head.text;
+    for (const span of expr.templateSpans) {
+      const part = resolveHttpUrl(source, span.expression, fields, visiting);
+      if (part === null) {
+        path += "${...}";
+      } else {
+        base = base ?? part.base;
+        path += part.path;
+      }
+      path += span.literal.text;
+    }
+    return { base, path };
+  }
+  if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = resolveHttpUrl(source, expr.left, fields, visiting);
+    const right = resolveHttpUrl(source, expr.right, fields, visiting);
+    if (left === null || right === null) return null;
+    return { base: left.base ?? right.base, path: left.path + right.path };
+  }
+  if (
+    ts.isPropertyAccessExpression(expr) &&
+    ts.isIdentifier(expr.expression) &&
+    expr.expression.text === "environment" &&
+    ts.isIdentifier(expr.name)
+  ) {
+    return { base: expr.name.text, path: "" };
+  }
+  if (
+    ts.isPropertyAccessExpression(expr) &&
+    isThis(expr.expression) &&
+    (ts.isIdentifier(expr.name) || ts.isPrivateIdentifier(expr.name))
+  ) {
+    const field = ts.idText(expr.name);
+    const init = fields.get(field);
+    if (init === undefined || visiting.has(field)) return null;
+    visiting.add(field);
+    const resolved = resolveHttpUrl(source, init, fields, visiting);
+    visiting.delete(field);
+    return resolved;
+  }
+  return null;
+}
+
 /** A literal element key (`this.s["go"]`); null when dynamic. */
 function literalKey(argument: ts.Expression | undefined): string | null {
   if (argument === undefined) return null;
@@ -146,20 +259,56 @@ export function collectFlowFacts(
 ): SymbolFlowFacts {
   const injections = collectInjections(source, node, evidence);
   const signals = signalFieldsOf(source, node);
+  const httpFields = httpClientFieldsOf(node);
+  const fieldInits = new Map<string, ts.Expression>();
+  for (const member of node.members) {
+    if (!ts.isPropertyDeclaration(member) || member.initializer === undefined) continue;
+    if (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name)) continue;
+    fieldInits.set(ts.idText(member.name), member.initializer);
+  }
   const calls: StructureMemberCall[] = [];
   const accesses: StructureSignalAccess[] = [];
+  const httpCalls: StructureHttpCall[] = [];
   const unresolved: string[] = [];
 
+  // True when the call took a member-call order slot (signals and
+  // HTTP calls live in their own streams).
   const recordCall = (call: ts.CallExpression, member: string, order: number): boolean => {
     const callee = call.expression;
+    // `this.http.<verb>(...)`: an HTTP call, never a member call.
+    if (
+      ts.isPropertyAccessExpression(callee) &&
+      ts.isPropertyAccessExpression(callee.expression) &&
+      isThis(callee.expression.expression) &&
+      (ts.isIdentifier(callee.expression.name) ||
+        ts.isPrivateIdentifier(callee.expression.name)) &&
+      httpFields.has(ts.idText(callee.expression.name)) &&
+      (ts.isIdentifier(callee.name) || ts.isPrivateIdentifier(callee.name))
+    ) {
+      const method = ts.idText(callee.name);
+      if (!HTTP_CLIENT_VERBS.has(method)) {
+        unresolved.push(evidence(call, `http ${method}`));
+        return false;
+      }
+      const verb = method.toUpperCase();
+      const typeArg = call.typeArguments?.[0];
+      httpCalls.push({
+        member,
+        verb,
+        url: resolveHttpUrl(source, call.arguments[0], fieldInits, new Set()),
+        returnType: typeArg === undefined ? null : cutType(typeArg.getText(source)),
+        evidence: evidence(call, `http ${verb}`),
+      });
+      return false;
+    }
     // `this.field()` / `this.method()`: a signal read, or a call.
     if (ts.isPropertyAccessExpression(callee) && isThis(callee.expression)) {
       const name = callee.name.getText(source);
       if (signals.has(name)) {
         accesses.push({ member, signal: name, access: "read", evidence: evidence(call, `signal read ${name}`) });
-      } else {
-        calls.push({ member, receiver: null, method: name, order, evidence: evidence(call, `call this.${name}`) });
+        return false;
       }
+      calls.push({ member, receiver: null, method: name, order, evidence: evidence(call, `call this.${name}`) });
       return true;
     }
     // `this.field.method()`: a signal write, or a call.
@@ -173,9 +322,9 @@ export function collectFlowFacts(
       if (signals.has(field)) {
         if (!SIGNAL_WRITERS.has(method)) return false;
         accesses.push({ member, signal: field, access: "write", evidence: evidence(call, `signal write ${field}`) });
-      } else {
-        calls.push({ member, receiver: field, method, order, evidence: evidence(call, `call this.${field}.${method}`) });
+        return false;
       }
+      calls.push({ member, receiver: field, method, order, evidence: evidence(call, `call this.${field}.${method}`) });
       return true;
     }
     // `this.field["literal"]()` / `this["literal"]()`: provable keys resolve.
@@ -222,7 +371,7 @@ export function collectFlowFacts(
     injections,
     calls,
     signals: accesses,
-    httpCalls: [],
+    httpCalls,
     repositoryCalls: [],
     routes: [],
     unresolved,
