@@ -606,6 +606,16 @@ pub fn generation_freshness(
         }
     }
     for entry in &generation.scope {
+        // A file this proposal already wrote changed by its own accept,
+        // which must not block the rest of the same proposal.
+        let accepted_here = generation.files.iter().any(|file| {
+            file.state == CodeFileState::Accepted
+                && file.root_id == entry.root_id
+                && file.rel == entry.rel
+        });
+        if accepted_here {
+            continue;
+        }
         let Some(root) = roots.get(&entry.root_id) else {
             freshness.changed_scope.push(ScopeChange {
                 root_id: entry.root_id.clone(),

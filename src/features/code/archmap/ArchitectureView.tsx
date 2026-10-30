@@ -3,13 +3,14 @@
 // toolbar (filters, search, edges, module, details); this view only
 // keeps the shared zoom so scope switches never reset it. Saved
 // content only; drafts warn where analyzed.
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useCodeWorkspace } from "../useCodeWorkspace";
 import { useRequirementsUi } from "../../requirements/uiStore";
 import { StructureView, scopeKey, type ScopeFile } from "../structure/StructureView";
 import { CodeProposalDialog } from "../structure/CodeProposalDialog";
-import type { CodeGenerationDto, CodeProposalFileDto } from "../types";
-import { ProjectMapView } from "./ProjectMapView";
+import { acceptCodeFile, discardCodeFile, normalizeCodeError } from "../client";
+import type { CodeGenerationDto } from "../types";
+import { ProjectMapView, type ReanalyzeRequest } from "./ProjectMapView";
 
 export function ArchitectureView() {
   const {
@@ -50,10 +51,84 @@ export function ArchitectureView() {
   const [proposeHidden, setProposeHidden] = useState(false);
   /** Files of the chain on screen: what Muse reads when no scope was chosen. */
   const [chainFiles, setChainFiles] = useState<ScopeFile[]>([]);
-  const [proposalFiles, setProposalFiles] = useState<CodeProposalFileDto[] | null>(null);
+  const [proposal, setProposal] = useState<CodeGenerationDto | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const handleGeneration = useCallback((generation: CodeGenerationDto | null): void => {
-    setProposalFiles(generation === null ? null : generation.files);
+    setProposal(generation);
   }, []);
+  const proposalFiles = proposal === null ? null : proposal.files;
+  const proposalContext = useMemo(
+    () =>
+      proposal === null
+        ? undefined
+        : {
+            generationId: proposal.id,
+            staleReason: proposal.stale ? (proposal.staleReason ?? "the context changed.") : null,
+          },
+    [proposal],
+  );
+  const reanalyzeNonce = useRef(0);
+  const [reanalyzeRequest, setReanalyzeRequest] = useState<ReanalyzeRequest | null>(null);
+  const requestReanalyze = useCallback(
+    (files: Array<{ rootId: string; rel: string }>): void => {
+      reanalyzeNonce.current += 1;
+      setReanalyzeRequest({ files, nonce: reanalyzeNonce.current });
+    },
+    [],
+  );
+  // Accept from the inspector: the same command as the dialog, then
+  // the owning section re-analyzes and the mark leaves the card.
+  const acceptProposalFile = useCallback(
+    (pos: number): void => {
+      if (proposal === null) return;
+      const generationId = proposal.id;
+      void (async () => {
+        try {
+          setDecisionError(null);
+          const outcome = await acceptCodeFile(generationId, pos);
+          setProposal(outcome.generation);
+          if (outcome.alreadyAccepted) return;
+          const file = outcome.generation.files.find((entry) => entry.pos === pos);
+          if (file === undefined) return;
+          notifyFileChanged(file.rootId, file.rel);
+          requestReanalyze([{ rootId: file.rootId, rel: file.rel }]);
+        } catch (raw) {
+          setDecisionError(normalizeCodeError(raw).message);
+        }
+      })();
+    },
+    [proposal, notifyFileChanged, requestReanalyze],
+  );
+  const discardProposalFile = useCallback(
+    (pos: number): void => {
+      if (proposal === null) return;
+      const generationId = proposal.id;
+      void (async () => {
+        try {
+          setDecisionError(null);
+          setProposal(await discardCodeFile(generationId, pos));
+        } catch (raw) {
+          setDecisionError(normalizeCodeError(raw).message);
+        }
+      })();
+    },
+    [proposal],
+  );
+  const handleOpenCode = useCallback(
+    (rootId: string, rel: string, line: number): void => {
+      openFileByRef(rootId, rel, { startLine: line, startCol: 1, endLine: line, endCol: 1 });
+    },
+    [openFileByRef],
+  );
+  // The dialog's Re-analyze button re-reads what was accepted.
+  const handleReanalyze = useCallback(async (): Promise<void> => {
+    if (proposal === null) return;
+    const accepted = proposal.files
+      .filter((file) => file.state === "accepted")
+      .map((file) => ({ rootId: file.rootId, rel: file.rel }));
+    if (accepted.length === 0) return;
+    requestReanalyze(accepted);
+  }, [proposal, requestReanalyze]);
 
   if (!desktop) {
     return <p className="hint">Architecture needs the Ruth IDE desktop app.</p>;
@@ -82,11 +157,20 @@ export function ArchitectureView() {
         proposalFiles={proposalFiles}
         onOpenProposal={() => setProposeHidden(false)}
         onCloseProposal={() => {
+          setDecisionError(null);
           setProposeOpen(false);
           setProposeHidden(false);
-          setProposalFiles(null);
+          setProposal(null);
         }}
         onChainFiles={setChainFiles}
+        proposalContext={proposalContext}
+        decisionError={decisionError}
+        onAcceptProposalFile={acceptProposalFile}
+        onDiscardProposalFile={discardProposalFile}
+        onOpenCode={handleOpenCode}
+        reanalyzeRequest={reanalyzeRequest}
+        prefs={prefs}
+        loader={loader}
       />
       <div className="architecture-actions">
         <button
@@ -127,8 +211,11 @@ export function ArchitectureView() {
           rootNames={rootNames}
           baseline={null}
           current={null}
-          onReanalyze={async () => {}}
-          onFileAccepted={notifyFileChanged}
+          onReanalyze={handleReanalyze}
+          onFileAccepted={(rootId, rel) => {
+            notifyFileChanged(rootId, rel);
+            requestReanalyze([{ rootId, rel }]);
+          }}
           onGeneration={handleGeneration}
           onViewOnXray={() => setProposeHidden(true)}
           hidden={proposeHidden}

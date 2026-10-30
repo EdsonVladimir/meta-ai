@@ -8,7 +8,11 @@
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { ProjectMapView, type ProjectMapDeps } from "./ProjectMapView";
+import {
+  ProjectMapView,
+  type ProjectMapDeps,
+  type ReanalyzeRequest,
+} from "./ProjectMapView";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import { useRequirementsUi, type ArchScope } from "../../requirements/uiStore";
 import { clearDiscoveryCache } from "../detectProjects";
@@ -157,6 +161,7 @@ function renderView(options: {
   proposalFiles?: CodeProposalFileDto[] | null;
   onOpenProposal?: () => void;
   onCloseProposal?: () => void;
+  reanalyzeRequest?: ReanalyzeRequest | null;
   onChainFiles?: (files: Array<{ rootId: string; rel: string }>) => void;
 }) {
   const api: {
@@ -164,7 +169,8 @@ function renderView(options: {
     setHiddenProjects: (hidden: Record<string, boolean>) => void;
     setHidden: (hidden: Record<string, boolean>) => void;
     setProposalFiles: (files: CodeProposalFileDto[] | null) => void;
-  } = { setScope: () => {}, setHiddenProjects: () => {}, setHidden: () => {}, setProposalFiles: () => {} };
+    setReanalyzeRequest: (request: ReanalyzeRequest | null) => void;
+  } = { setScope: () => {}, setHiddenProjects: () => {}, setHidden: () => {}, setProposalFiles: () => {}, setReanalyzeRequest: () => {} };
   const onToggleRoot = options.onToggleRoot ?? (() => {});
   function Harness() {
     const [hidden, setHidden] = useState<Record<string, boolean>>(options.hidden ?? {});
@@ -175,10 +181,14 @@ function renderView(options: {
     const [proposalFiles, setProposalFiles] = useState<CodeProposalFileDto[] | null>(
       options.proposalFiles ?? null,
     );
+    const [reanalyzeRequest, setReanalyzeRequest] = useState<ReanalyzeRequest | null>(
+      options.reanalyzeRequest ?? null,
+    );
     api.setScope = setScope;
     api.setHiddenProjects = setHiddenProjects;
     api.setHidden = setHidden;
     api.setProposalFiles = setProposalFiles;
+    api.setReanalyzeRequest = setReanalyzeRequest;
     return (
       <ProjectMapView
         projectId="p1"
@@ -207,6 +217,7 @@ function renderView(options: {
           setHiddenProjects({});
         }}
         proposalFiles={options.proposalFiles ?? proposalFiles}
+        reanalyzeRequest={options.reanalyzeRequest ?? reanalyzeRequest}
         onOpenProposal={options.onOpenProposal}
         onCloseProposal={options.onCloseProposal}
         onChainFiles={options.onChainFiles}
@@ -220,6 +231,7 @@ function renderView(options: {
     setHiddenProjects: (hidden: Record<string, boolean>) => act(() => api.setHiddenProjects(hidden)),
     setHidden: (hidden: Record<string, boolean>) => act(() => api.setHidden(hidden)),
     setProposalFiles: (files: CodeProposalFileDto[] | null) => act(() => api.setProposalFiles(files)),
+    setReanalyzeRequest: (request: ReanalyzeRequest | null) => act(() => api.setReanalyzeRequest(request)),
   };
 }
 
@@ -523,6 +535,61 @@ describe("proposal on the X-ray", () => {
         { rootId: "be", rel: "src/sales.controller.ts" },
       ]),
     );
+  });
+
+  it("stays on the chain after every file is accepted, now as real code", async () => {
+    let created = false;
+    const report = `export class Report { run() {} }`;
+    const deps = makeDeps({
+      listDir: async (rootId, rel) => {
+        const base = TREE[`${rootId}::${rel}`] ?? { entries: [], truncated: false };
+        if (rootId !== "be" || !created) return base;
+        return {
+          ...base,
+          entries: [
+            ...base.entries,
+            { name: "report.ts", rel: "src/report.ts", kind: "file", size: 10 },
+          ],
+        };
+      },
+      readFile: async (rootId, rel) => {
+        const text = rel === "src/report.ts" ? report : CONTENTS[`${rootId}::${rel}`];
+        if (text === undefined) throw { kind: "code_not_found", message: "missing" };
+        return { text, fingerprint: "h", size: text.length };
+      },
+    });
+    const { container, setProposalFiles, setReanalyzeRequest } = renderView({
+      groupBy: "symbols",
+      deps,
+    });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    const file = proposalFile("src/report.ts", report, "create");
+    setProposalFiles([file]);
+    expect(await screen.findByText(/Flow: Report/)).toBeTruthy();
+    expect(container.querySelector(".archboard-card.proposed")).not.toBeNull();
+    created = true;
+    setProposalFiles([{ ...file, state: "accepted" }]);
+    setReanalyzeRequest({ files: [{ rootId: "be", rel: "src/report.ts" }], nonce: 1 });
+    await waitFor(() => expect(screen.getByTitle(/^Method: run/)).toBeTruthy());
+    expect(screen.getByText(/Flow: Report/)).toBeTruthy();
+    expect(container.querySelector(".archboard-card.proposed")).toBeNull();
+  });
+
+  it("re-reads one file when re-analysis is requested", async () => {
+    let ctrl = CTRL;
+    const deps = makeDeps({
+      readFile: async (rootId: string, rel: string) => {
+        const text = rel.endsWith("sales.controller.ts") ? ctrl : CONTENTS[`${rootId}::${rel}`];
+        if (text === undefined) throw { kind: "code_not_found", message: "missing" };
+        return { text, fingerprint: "h", size: text.length };
+      },
+    });
+    const { setReanalyzeRequest } = renderView({ groupBy: "symbols", deps });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    expect(screen.queryByTitle(/^Method: list/)).toBeNull();
+    ctrl = CTRL_WITH_LIST;
+    setReanalyzeRequest({ files: [{ rootId: "be", rel: "src/sales.controller.ts" }], nonce: 1 });
+    expect(await screen.findByTitle(/^Method: list/)).toBeTruthy();
   });
 });
 

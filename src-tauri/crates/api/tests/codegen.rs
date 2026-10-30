@@ -286,6 +286,47 @@ fn accept_validates_state_requirement_scope_and_target() {
 }
 
 #[test]
+fn accepting_a_scope_file_does_not_block_the_rest_of_the_proposal() {
+    let mut baby = baby();
+    let context = ruth_api::snapshot_code_context(
+        &baby.store,
+        &baby.roots,
+        &baby.project,
+        &baby.module,
+        &baby.req,
+        &scope_one(),
+    )
+    .expect("context");
+    let stored = ruth_api::build_stored_codegen(
+        &baby.roots,
+        &mut baby.ids,
+        RecordCodeGenInput {
+            context,
+            code: proposal(vec![
+                modify("src/a.ts", "const a = 200;\n"),
+                create("src/b.ts", "export {};\n"),
+            ]),
+            model: "m".to_string(),
+            usage: None,
+            created_at: "t".to_string(),
+        },
+    )
+    .expect("record");
+    let gid = stored.id.clone();
+    let mut log = CodeGenLog::new();
+    log.record(stored).expect("memory");
+    // The first file lands on disk, changing a file the scope read.
+    std::fs::write(baby.dir.join("src").join("a.ts"), "const a = 200;\n").expect("accept");
+    log.mark_file_accepted(&gid, 0, "t").expect("mark");
+    let check = ruth_api::check_accept(&baby.store, &baby.roots, &log, &gid, 1).expect("ready");
+    assert!(matches!(check, AcceptCheck::Ready(_)));
+    let freshness =
+        ruth_api::generation_freshness(&baby.store, &baby.roots, log.get(&gid).expect("g"));
+    assert!(!freshness.stale());
+    let _ = std::fs::remove_dir_all(&baby.dir);
+}
+
+#[test]
 fn moved_or_deleted_requirement_blocks_and_reports() {
     let mut baby = baby();
     // Requirement with a second version BEFORE generating: the proposal

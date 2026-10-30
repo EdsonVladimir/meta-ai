@@ -12,6 +12,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fnv1aHex } from "../model";
 import { listCodeDir, listProjectLinks, normalizeCodeError, readCodeFile } from "../client";
 import type { CodeFileDto, CodeProposalFileDto, CodeRootDto, CodeTab } from "../types";
+import type { CodeEditorPrefs } from "../editorPrefs";
+import type { MonacoApi } from "../monacoLoader";
 import { listModules } from "../../requirements/client";
 import { defaultAnalyzeTs } from "../structure/tsWorkerClient";
 import { combineResults, emptyResult } from "../structure/structureMerge";
@@ -62,7 +64,7 @@ import { BoardViewport } from "./BoardViewport";
 import { ArchMapInspector, type SymbolRef } from "./ArchMapInspector";
 import { FlowBoard } from "./FlowBoard";
 import { layoutFlowBoard, type FlowLayout } from "./flowLayout";
-import { FlowInspector } from "./FlowInspector";
+import { FlowInspector, type FlowInspectorProps } from "./FlowInspector";
 import {
   buildFlowGraph,
   type FlowGraph,
@@ -109,6 +111,12 @@ export interface ProjectMapDeps {
   analyzeTs: (files: StructureInput[]) => Promise<StructureResult>;
   /** Existing manual module↔code associations (absent = none offered). */
   loadManualModules?: (projectId: string) => Promise<ManualModule[]>;
+}
+
+/** Asks the view to re-read files through the retry path (fresh disk content). */
+export interface ReanalyzeRequest {
+  files: Array<{ rootId: string; rel: string }>;
+  nonce: number;
 }
 
 const REAL_DEPS: ProjectMapDeps = {
@@ -212,6 +220,22 @@ interface ProjectMapViewProps {
   onCloseProposal?: () => void;
   /** Reports the files of the chain on screen, the context offered to Muse. */
   onChainFiles?: (files: Array<{ rootId: string; rel: string }>) => void;
+  /** Proposal generation context (id + stale reason) for the flow inspector. */
+  proposalContext?: { generationId: string; staleReason: string | null };
+  /** Why the last accept or discard failed, shown in the flow inspector. */
+  decisionError?: string | null;
+  /** Accepts one proposed file from the flow inspector. */
+  onAcceptProposalFile?: (pos: number) => void;
+  /** Discards one proposed file from the flow inspector. */
+  onDiscardProposalFile?: (pos: number) => void;
+  /** Opens a symbol line in the code editor from the flow inspector. */
+  onOpenCode?: (rootId: string, rel: string, line: number) => void;
+  /** Re-reads listed files through the retry path when a new nonce arrives. */
+  reanalyzeRequest?: ReanalyzeRequest | null;
+  /** Editor display preferences for the proposal diff. */
+  prefs?: CodeEditorPrefs;
+  /** Shared Monaco loader for the proposal diff. */
+  loader?: () => Promise<MonacoApi>;
 }
 
 /** Scope a proposal can read (`MAX_CODE_SCOPE_FILES` in `ruth-meta`). */
@@ -220,6 +244,14 @@ const MAX_PROPOSAL_SCOPE = 8;
 function baseName(rel: string): string {
   const slash = rel.lastIndexOf("/");
   return slash === -1 ? rel : rel.slice(slash + 1);
+}
+
+/** Whether a root file falls inside a section (scope minus nested exclusions). */
+function withinScope(section: MapSection, rel: string): boolean {
+  if (section.rel !== "" && rel !== section.rel && !rel.startsWith(`${section.rel}/`)) {
+    return false;
+  }
+  return !section.excludeRels.some((ex) => rel === ex || rel.startsWith(`${ex}/`));
 }
 
 /** Flow projects from analyzed sections (titles as labels, merged results as input). */
@@ -373,6 +405,14 @@ export function ProjectMapView({
   onOpenProposal,
   onCloseProposal,
   onChainFiles,
+  proposalContext,
+  decisionError = null,
+  onAcceptProposalFile,
+  onDiscardProposalFile,
+  onOpenCode,
+  reanalyzeRequest = null,
+  prefs,
+  loader,
 }: ProjectMapViewProps) {
   // Canvas filters live here (the toolbar renders here too). Provided
   // props pin values from the outside (tests, embeds); otherwise the
@@ -422,6 +462,16 @@ export function ProjectMapView({
   /** Flow board selection (node + optional member). */
   const [flowSelected, setFlowSelected] = useState<{
     nodeId: string;
+    member: string | null;
+  } | null>(null);
+  /**
+   * The chain on screen, by content: ids shift across re-analysis, and
+   * an accepted proposal leaves no change to start from.
+   */
+  const drawnStartRef = useRef<{
+    projectKey: string;
+    rel: string;
+    name: string;
     member: string | null;
   } | null>(null);
   /** Leaving Flow mode suppresses the proposal auto-start until a new proposal. */
@@ -787,6 +837,28 @@ export function ProjectMapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, visibleSig, retrySig, scopeSig]);
 
+  // Re-analysis after an Accept (inspector or dialog): the owning
+  // sections retry, so the batch loop re-reads from disk.
+  const reanalyzeSeen = useRef(0);
+  useEffect(() => {
+    if (reanalyzeRequest === null || reanalyzeRequest.nonce === reanalyzeSeen.current) return;
+    reanalyzeSeen.current = reanalyzeRequest.nonce;
+    const keys = new Set<string>();
+    for (const file of reanalyzeRequest.files) {
+      for (const section of sections) {
+        if (section.root.id !== file.rootId) continue;
+        if (!withinScope(section, file.rel)) continue;
+        keys.add(section.key);
+      }
+    }
+    if (keys.size === 0) return;
+    setRetryNonce((prev) => {
+      const next = { ...prev };
+      for (const key of keys) next[key] = (next[key] ?? 0) + 1;
+      return next;
+    });
+  }, [reanalyzeRequest, sections]);
+
   function cancelSection(key: string): void {
     tokenRef.current[key] = (tokenRef.current[key] ?? 0) + 1;
     setStates((prev) => {
@@ -1117,9 +1189,25 @@ export function ProjectMapView({
     const projects = overlay === null ? baseProjects : overlay.projects;
     let start: FlowStart | null = flowStart;
     let name: string | null = null;
+    /** The chain drawn before, found again by project, file and name. */
+    const redrawn = (): { start: FlowStart; name: string } | null => {
+      const last = drawnStartRef.current;
+      if (last === null) return null;
+      const symbol = projects
+        .find((project) => project.key === last.projectKey)
+        ?.result.symbols.find((entry) => entry.rel === last.rel && entry.name === last.name);
+      if (symbol === undefined) return null;
+      return {
+        start: { projectKey: last.projectKey, symbolId: symbol.id, member: last.member },
+        name: symbol.name,
+      };
+    };
     if (start === null) {
-      if (overlay === null || flowDismissed) return null;
-      const auto = firstChangeStart(projects, overlay);
+      if (overlay === null || flowDismissed) {
+        drawnStartRef.current = null;
+        return null;
+      }
+      const auto = firstChangeStart(projects, overlay) ?? redrawn();
       if (auto === null) return null;
       start = auto.start;
       name = auto.name;
@@ -1149,6 +1237,24 @@ export function ProjectMapView({
         graph = drawn(start);
       }
     }
+    const first = graph.nodes[0];
+    if (first === undefined) {
+      const again = redrawn();
+      if (again !== null) {
+        start = again.start;
+        name = again.name;
+        graph = drawn(start);
+      }
+    }
+    const root = graph.nodes[0];
+    if (root !== undefined) {
+      drawnStartRef.current = {
+        projectKey: root.projectKey,
+        rel: root.symbol.rel,
+        name: root.symbol.name,
+        member: start.member,
+      };
+    }
     const onChain = new Set(
       graph.nodes.map((node) => `${node.symbol.rootId}:${node.symbol.rel}:${node.symbol.name}`),
     );
@@ -1169,6 +1275,29 @@ export function ProjectMapView({
     // Merged results accumulate in a ref; states change on every batch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowStart, flowDismissed, proposalFiles, sections, states]);
+
+  // The pending proposal for the selected box (nothing to decide
+  // without a selection, or once the file is decided).
+  const flowProposal = useMemo((): FlowInspectorProps["proposal"] => {
+    if (flowMode === null || proposalContext === undefined) return null;
+    const selectedNode =
+      flowSelected === null
+        ? undefined
+        : flowMode.graph.nodes.find((entry) => entry.id === flowSelected.nodeId);
+    if (selectedNode === undefined) return null;
+    const match = (proposalFiles ?? []).find(
+      (file) =>
+        file.state === "pending" &&
+        file.rootId === selectedNode.symbol.rootId &&
+        file.rel === selectedNode.symbol.rel,
+    );
+    if (match === undefined) return null;
+    return {
+      generationId: proposalContext.generationId,
+      file: match,
+      staleReason: proposalContext.staleReason,
+    };
+  }, [flowMode, flowSelected, proposalFiles, proposalContext]);
 
   // The chain on screen is what Muse reads; a proposal's own files
   // do not exist on disk yet, so they never count as context.
@@ -1535,6 +1664,19 @@ export function ProjectMapView({
                     selected: flowSelected,
                     removed: flowMode.removed,
                     otherChanges: flowMode.otherChanges,
+                    proposal: flowProposal ?? null,
+                    decisionError,
+                    onAccept:
+                      flowProposal == null
+                        ? undefined
+                        : () => onAcceptProposalFile?.(flowProposal.file.pos),
+                    onDiscard:
+                      flowProposal == null
+                        ? undefined
+                        : () => onDiscardProposalFile?.(flowProposal.file.pos),
+                    onOpenCode,
+                    prefs,
+                    loader,
                   }
             }
           />
@@ -1847,6 +1989,13 @@ function BoardInspector({
     selected: { nodeId: string; member: string | null } | null;
     removed: Array<{ rootId: string; rel: string; name: string }>;
     otherChanges: string[];
+    proposal: FlowInspectorProps["proposal"];
+    decisionError: string | null;
+    onAccept: (() => void) | undefined;
+    onDiscard: (() => void) | undefined;
+    onOpenCode: ((rootId: string, rel: string, line: number) => void) | undefined;
+    prefs: CodeEditorPrefs | undefined;
+    loader: (() => Promise<MonacoApi>) | undefined;
   } | null;
 }) {
   const width = useRequirementsUi((s) => s.archInspectorWidth);
@@ -1893,7 +2042,17 @@ function BoardInspector({
       <div className="project-map-inspector-scroll">
         {flow !== null ? (
           <>
-            <FlowInspector graph={flow.graph} selected={flow.selected} />
+            <FlowInspector
+              graph={flow.graph}
+              selected={flow.selected}
+              proposal={flow.proposal}
+              decisionError={flow.decisionError}
+              onAccept={flow.onAccept}
+              onDiscard={flow.onDiscard}
+              onOpenCode={flow.onOpenCode}
+              prefs={flow.prefs}
+              loader={flow.loader}
+            />
             {flow.removed.length > 0 && (
               <section className="archmap-section" aria-label="Removed by the proposal">
                 <h5 className="flow-inspector-title">Removed</h5>

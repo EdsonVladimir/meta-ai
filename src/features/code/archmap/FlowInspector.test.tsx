@@ -1,12 +1,20 @@
 // @vitest-environment jsdom
 // Flow inspector: selected member detail (inputs, output, relations, evidence).
-import { afterEach, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { readCodeFile } from "../client";
+import { DEFAULT_CODE_EDITOR_PREFS } from "../editorPrefs";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import type { StructureInput } from "../structure/structureTypes";
 import { buildFlowGraph } from "./flowModel";
 import type { FlowProject, FlowStart } from "./flowModel";
-import { FlowInspector } from "./FlowInspector";
+import { FlowInspector, type FlowInspectorProps } from "./FlowInspector";
+
+vi.mock("../client", () => ({
+  readCodeFile: vi.fn(async () => {
+    throw new Error("no backend");
+  }),
+}));
 
 afterEach(() => cleanup());
 
@@ -59,6 +67,79 @@ it("asks for a selection when nothing is selected", () => {
   expect(screen.getByText("Select a chain row to inspect it.")).toBeTruthy();
 });
 
+const PROJ = project("r", {
+  "a.ts": `export class A {\n  run() { return 1; }\n}`,
+});
+const PGRAPH = buildFlowGraph([PROJ], startAt(PROJ, "A", "run"));
+const PNODE = PGRAPH.nodes[0].id;
+const PROPOSAL: NonNullable<FlowInspectorProps["proposal"]> = {
+  generationId: "gen-1",
+  file: {
+    pos: 0,
+    rootId: "r",
+    rel: "a.ts",
+    operation: "modify",
+    state: "pending",
+    decidedAt: null,
+    content: `export class A {\n  run() { return 2; }\n}`,
+    expectedFingerprint: null,
+  },
+  staleReason: null,
+};
+
+function renderInspector(extra: Partial<FlowInspectorProps> = {}) {
+  render(
+    <FlowInspector
+      graph={PGRAPH}
+      selected={{ nodeId: PNODE, member: "run" }}
+      prefs={DEFAULT_CODE_EDITOR_PREFS}
+      loader={() => Promise.reject(new Error("no monaco"))}
+      {...extra}
+    />,
+  );
+}
+
+it("shows Accept and Discard only for a proposed file", () => {
+  renderInspector({ proposal: PROPOSAL });
+  expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Discard" })).toBeTruthy();
+  cleanup();
+  renderInspector({ proposal: null });
+  expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
+});
+
+it("shows the code diff for a proposed member", async () => {
+  renderInspector({ proposal: PROPOSAL });
+  fireEvent.click(screen.getByRole("button", { name: "View code" }));
+  expect(await screen.findByLabelText("Proposed code")).toBeTruthy();
+});
+
+it("opens real code at the member line", () => {
+  const onOpenCode = vi.fn();
+  renderInspector({ proposal: null, onOpenCode });
+  fireEvent.click(screen.getByRole("button", { name: "Open in code" }));
+  expect(onOpenCode).toHaveBeenCalledWith("r", "a.ts", 2);
+});
+
+it("blocks Accept on a stale proposal and says why", () => {
+  renderInspector({ proposal: { ...PROPOSAL, staleReason: "the context changed." } });
+  expect(screen.getByRole("button", { name: "Accept" })).toHaveProperty("disabled", true);
+  expect(screen.getByText(/the context changed/)).toBeTruthy();
+});
+
+it("reads the current file to compare against the proposal", async () => {
+  vi.mocked(readCodeFile).mockResolvedValueOnce({
+    text: `export class A {\n  run() { return 1; }\n}`,
+    fingerprint: "h",
+    size: 10,
+  });
+  renderInspector({ proposal: PROPOSAL });
+  fireEvent.click(screen.getByRole("button", { name: "View code" }));
+  expect(await screen.findByText(/return 1;/)).toBeTruthy();
+  expect(screen.getByText(/return 2;/)).toBeTruthy();
+});
+
 it("names signal writes and pending links of a member", () => {
   const front = project("f", {
     "s.ts": `export class S {
@@ -82,5 +163,31 @@ it("lists pending links before anything is selected", () => {
   const graph = buildFlowGraph([front], startAt(front, "S", "run"));
   render(<FlowInspector graph={graph} selected={null} />);
   expect(screen.getByText("Fantasma")).toBeTruthy();
+});
+
+it("hides Open in code for code that is only proposed", () => {
+  const graph = {
+    ...GRAPH,
+    nodes: GRAPH.nodes.map((node) => ({ ...node, change: "modified" as const })),
+  };
+  render(
+    <FlowInspector
+      graph={graph}
+      selected={{ nodeId: graph.nodes[0].id, member: "crear" }}
+      onOpenCode={() => {}}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: "Open in code" })).toBeNull();
+});
+
+it("shows why an accept failed", () => {
+  render(
+    <FlowInspector
+      graph={GRAPH}
+      selected={{ nodeId: GRAPH.nodes[0].id, member: "crear" }}
+      decisionError="The scope changed; generate a new proposal."
+    />,
+  );
+  expect(screen.getByRole("alert").textContent).toContain("The scope changed");
 });
 
