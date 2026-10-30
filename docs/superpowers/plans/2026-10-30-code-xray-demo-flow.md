@@ -677,7 +677,7 @@ Meta must do a contextual, verifiable task. This panel shows what Muse received 
 
 **Files:**
 - Create: `src/features/code/archmap/proposalChecks.ts`, `proposalChecks.test.ts`
-- Modify: `src/features/code/archmap/FlowInspector.tsx`, `FlowInspector.test.tsx`
+- Modify: `src/features/code/archmap/FlowInspector.tsx`, `FlowInspector.test.tsx`, `ProjectMapView.tsx`, `ArchitectureView.tsx`
 
 **Interfaces:**
 - Consumes: `CodeGenerationDto`, `ProposalOverlay`, `FlowGraph`.
@@ -734,7 +734,7 @@ In `FlowInspector.test.tsx`: the panel shows the model name, token counts, the n
 
 - [ ] **Step 2: Run** both test files. Expected: FAIL.
 
-- [ ] **Step 3: Implement `checkProposal`** and the panel. The `scope` check compares `modify` files with `generation.scope`. Show Muse's `explanation`, `assumptions` and `questions` under "Muse says", separate from "Ruth verified".
+- [ ] **Step 3: Implement `checkProposal`** and the panel. `ArchitectureView` passes the whole `CodeGenerationDto` to `ProjectMapView` in a new `proposalGeneration` prop, replacing `proposalContext`; the panel shows whenever a proposal is open, even with no row selected. Build the overlay once in `flowMode` and return it so the checks reuse it. The `scope` check compares `modify` files with `generation.scope`. Show Muse's `explanation`, `assumptions` and `questions` under "Muse says", separate from "Ruth verified".
 
 - [ ] **Step 4: Run** both test files, then `npm test` and `npx tsc --noEmit`. Expected: PASS.
 
