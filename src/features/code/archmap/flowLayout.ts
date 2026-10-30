@@ -43,7 +43,8 @@ export function pendingBoxKey(index: number): string {
 
 /** Signal accesses of one chain member, as display lines ("writes reservas"). */
 export function memberSignalLines(node: FlowNode, member: string): string[] {
-  return (node.symbol.flow?.signals ?? [])
+  const own = (node.symbol.flow?.signals ?? []).filter((access) => access.via === undefined);
+  return [...own, ...(node.foreignSignals ?? [])]
     .filter((access) => access.member === member)
     .map((access) => `${access.access === "write" ? "writes" : "reads"} ${access.signal}`);
 }

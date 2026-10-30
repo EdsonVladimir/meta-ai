@@ -102,6 +102,8 @@ export interface StructureSignalAccess {
   signal: string;
   access: "read" | "write";
   evidence: string;
+  /** Injected field it goes through; the flow proves the target is a signal. */
+  via?: string;
 }
 export interface HttpUrlFact {
   /** `environment.x` property kept as a token, e.g. "urlAcme". */
@@ -138,6 +140,8 @@ export interface SymbolFlowFacts {
   injections: StructureInjection[];
   calls: StructureMemberCall[];
   signals: StructureSignalAccess[];
+  /** Signal fields this class declares, so callers can recognize them. */
+  signalFields?: string[];
   httpCalls: StructureHttpCall[];
   repositoryCalls: StructureRepositoryCall[];
   routes: StructureRouteFact[];

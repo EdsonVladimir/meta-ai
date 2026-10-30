@@ -7,6 +7,7 @@ import { STRUCTURE_LIMITS } from "../structure/structureTypes";
 import type { StructureInput } from "../structure/structureTypes";
 import { buildFlowGraph, FLOW_MAX_NODES } from "./flowModel";
 import type { FlowProject, FlowStart } from "./flowModel";
+import { memberSignalLines } from "./flowLayout";
 
 function project(key: string, files: Record<string, string>): FlowProject {
   const inputs: StructureInput[] = Object.entries(files).map(([rel, content]) => ({
@@ -192,5 +193,55 @@ export class A {
   run() { this.r.navigate([]); }
 }` });
   expect(buildFlowGraph([p], startAt(p, "A", "run")).pending).toEqual([]);
+});
+
+const SIGNAL_STORE = `export class ItemsStore {
+  readonly items = signal<string[]>([]);
+  readonly cache = new Map<string, string>();
+  load() {}
+}`;
+
+it("tells signals of an injected store from plain calls", () => {
+  const p = project("fe", {
+    "c.ts": `export class C {
+  private store = inject(ItemsStore);
+  run() { this.store.items(); this.store.items.set([]); this.store.load(); this.store.cache.set("a", "b"); }
+}`,
+    "s.ts": SIGNAL_STORE,
+  });
+  const graph = buildFlowGraph([p], startAt(p, "C", "run"));
+  const caller = graph.nodes.find((node) => node.symbol.name === "C")!;
+  expect(memberSignalLines(caller, "run")).toEqual(["reads store.items", "writes store.items"]);
+  const store = graph.nodes.find((node) => node.symbol.name === "ItemsStore")!;
+  expect(store.members).toEqual(expect.arrayContaining(["items", "load"]));
+  expect(graph.pending).toEqual([]);
+});
+
+it("links the store even when a member only writes its signal", () => {
+  const p = project("fe", {
+    "c.ts": `export class C {
+  private store = inject(ItemsStore);
+  run() { this.store.items.set([]); }
+}`,
+    "s.ts": SIGNAL_STORE,
+  });
+  const graph = buildFlowGraph([p], startAt(p, "C", "run"));
+  expect(graph.nodes.map((node) => node.symbol.name)).toEqual(["C", "ItemsStore"]);
+  expect(graph.edges).toHaveLength(1);
+});
+
+it("shows a write it cannot prove as pending, not as a signal", () => {
+  const p = project("fe", {
+    "c.ts": `export class C {
+  private store = inject(MissingStore);
+  run() { this.store.items.set([]); }
+}`,
+  });
+  const graph = buildFlowGraph([p], startAt(p, "C", "run"));
+  const caller = graph.nodes[0];
+  expect(memberSignalLines(caller, "run")).toEqual([]);
+  expect(graph.pending.map((entry) => [entry.kind, entry.label])).toEqual([
+    ["unresolved", "MissingStore"],
+  ]);
 });
 

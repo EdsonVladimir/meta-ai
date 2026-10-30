@@ -14,10 +14,14 @@ import type {
 import { collectNestRoutes } from "./tsNestFacts";
 
 const SIGNAL_WRITERS = new Set(["set", "update", "mutate"]);
+/** Angular calls that create a signal field. */
+const SIGNAL_FACTORIES = new Set(["signal", "computed", "input", "model", "toSignal", "linkedSignal"]);
+/** Factories with a `.required` form: `input.required<T>()`. */
+const REQUIRED_FACTORIES = new Set(["input", "model"]);
 /** `HttpClient` methods whose name is the HTTP verb. */
 const HTTP_CLIENT_VERBS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 /** Field initializers whose callback runs as part of that field. */
-const REACTIVE_WRAPPERS = new Set(["computed", "effect"]);
+const REACTIVE_WRAPPERS = new Set(["computed", "effect", "linkedSignal"]);
 
 /** The `this` keyword node (`this.foo`, `this[k]`). */
 function isThis(node: ts.Node): boolean {
@@ -43,15 +47,40 @@ function isInjectionParam(param: ts.ParameterDeclaration): boolean {
   );
 }
 
+function isSignalFactory(callee: ts.Expression): boolean {
+  if (ts.isIdentifier(callee)) return SIGNAL_FACTORIES.has(callee.text);
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    REQUIRED_FACTORIES.has(callee.expression.text) &&
+    callee.name.getText() === "required"
+  );
+}
+
 function signalFieldsOf(source: ts.SourceFile, node: ts.ClassDeclaration): Set<string> {
   const out = new Set<string>();
+  const fields: Array<{ name: string; callee: ts.Expression }> = [];
   for (const member of node.members) {
     if (!ts.isPropertyDeclaration(member)) continue;
     const init = member.initializer;
     if (init === undefined || !ts.isCallExpression(init)) continue;
-    if (!ts.isIdentifier(init.expression)) continue;
-    if (init.expression.text !== "signal" && init.expression.text !== "computed") continue;
-    out.add(member.name.getText(source));
+    fields.push({ name: member.name.getText(source), callee: init.expression });
+  }
+  for (const field of fields) {
+    if (isSignalFactory(field.callee)) out.add(field.name);
+  }
+  // `this.x.asReadonly()` follows its source, wherever that is declared.
+  for (const field of fields) {
+    const callee = field.callee;
+    if (
+      ts.isPropertyAccessExpression(callee) &&
+      callee.name.getText(source) === "asReadonly" &&
+      ts.isPropertyAccessExpression(callee.expression) &&
+      isThis(callee.expression.expression) &&
+      out.has(callee.expression.name.getText(source))
+    ) {
+      out.add(field.name);
+    }
   }
   return out;
 }
@@ -403,6 +432,21 @@ export function collectFlowFacts(
       calls.push({ member, receiver: field, method, order, evidence: evidence(call, `call this.${field}.${method}`) });
       return true;
     }
+    // `this.store.items.set(...)`: a write if `items` proves to be a signal.
+    if (
+      ts.isPropertyAccessExpression(callee) &&
+      SIGNAL_WRITERS.has(callee.name.getText(source)) &&
+      ts.isPropertyAccessExpression(callee.expression) &&
+      ts.isPropertyAccessExpression(callee.expression.expression) &&
+      isThis(callee.expression.expression.expression)
+    ) {
+      const via = callee.expression.expression.name.getText(source);
+      const signal = callee.expression.name.getText(source);
+      if (injections.some((injection) => injection.field === via)) {
+        accesses.push({ member, signal, access: "write", via, evidence: evidence(call, `signal write ${via}.${signal}`) });
+      }
+      return false;
+    }
     // `this.field["literal"]()` / `this["literal"]()`: provable keys resolve.
     if (ts.isElementAccessExpression(callee)) {
       const key = literalKey(callee.argumentExpression);
@@ -447,6 +491,7 @@ export function collectFlowFacts(
     injections,
     calls,
     signals: accesses,
+    signalFields: [...signals],
     httpCalls,
     repositoryCalls,
     routes: collectNestRoutes(source, node, evidence),

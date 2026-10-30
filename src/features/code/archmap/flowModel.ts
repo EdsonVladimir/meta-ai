@@ -11,6 +11,7 @@ import type {
   StructureRepositoryCall,
   StructureResult,
   StructureRouteFact,
+  StructureSignalAccess,
   StructureSymbol,
   SymbolFlowFacts,
 } from "../structure/structureTypes";
@@ -33,6 +34,8 @@ export interface FlowNode {
   members: string[];
   /** Distance from the start; orders columns. */
   depth: number;
+  /** Signals of injected classes, proven: `signal` reads "store.items". */
+  foreignSignals?: StructureSignalAccess[];
   change?: FlowChange;
   memberChanges?: Record<string, FlowChange>;
 }
@@ -137,6 +140,7 @@ function startMembers(symbol: StructureSymbol): string[] {
     ...new Set([
       ...symbol.members.filter((entry) => entry.kind === "method").map((entry) => entry.name),
       ...(facts?.calls ?? []).map((entry) => entry.member),
+      ...(facts?.signals ?? []).filter((entry) => entry.via !== undefined).map((entry) => entry.member),
       ...(facts?.httpCalls ?? []).map((entry) => entry.member),
       ...(facts?.repositoryCalls ?? []).map((entry) => entry.member),
     ]),
@@ -250,6 +254,60 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
     addEdge(edge);
   };
 
+  const noteForeignSignal = (node: FlowNode, access: StructureSignalAccess): void => {
+    const notes = (node.foreignSignals ??= []);
+    const repeated = notes.some(
+      (entry) =>
+        entry.member === access.member &&
+        entry.signal === access.signal &&
+        entry.access === access.access,
+    );
+    if (!repeated) notes.push(access);
+  };
+
+  /** `this.store.items.set()`: links the store only if `items` is its signal. */
+  const followForeignWrite = (
+    flow: SymbolFlowFacts,
+    project: FlowProject,
+    node: FlowNode,
+    member: string,
+    access: StructureSignalAccess,
+    order: number,
+  ): void => {
+    const injection = flow.injections.find((entry) => entry.field === access.via);
+    if (injection === undefined) return;
+    const candidates = project.result.symbols.filter(
+      (symbol) => symbol.name === injection.typeName,
+    );
+    if (candidates.length === 1) {
+      // A non-signal field (`this.store.cache.set()` on a Map) is no chain link.
+      if (candidates[0].flow?.signalFields?.includes(access.signal) !== true) return;
+      const target = ensureNode(project, candidates[0], node.depth + 1);
+      if (target === null) return;
+      noteForeignSignal(node, { ...access, signal: `${access.via}.${access.signal}` });
+      arrive(project, target, access.signal, {
+        kind: "call",
+        fromNode: node.id,
+        fromMember: member,
+        toNode: target.id,
+        toMember: access.signal,
+        order,
+        evidence: access.evidence,
+      });
+      return;
+    }
+    if (candidates.length === 0 && isPackageImport(project.result, node.symbol, injection.typeName)) {
+      return;
+    }
+    graph.pending.push({
+      kind: candidates.length === 0 ? "unresolved" : "ambiguous",
+      label: injection.typeName,
+      fromNode: node.id,
+      fromMember: member,
+      evidence: access.evidence,
+    });
+  };
+
   const followCall = (
     flow: SymbolFlowFacts,
     project: FlowProject,
@@ -286,6 +344,14 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
     if (candidates.length === 1) {
       const target = ensureNode(project, candidates[0], node.depth + 1);
       if (target === null) return;
+      if (candidates[0].flow?.signalFields?.includes(call.method) === true) {
+        noteForeignSignal(node, {
+          member,
+          signal: `${call.receiver}.${call.method}`,
+          access: "read",
+          evidence: call.evidence,
+        });
+      }
       arrive(project, target, call.method, {
         kind: "call",
         fromNode: node.id,
@@ -420,6 +486,12 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
     for (const call of flow.calls) {
       if (call.member !== member) continue;
       followCall(flow, project, node, member, call);
+    }
+    let writeIndex = 0;
+    for (const access of flow.signals) {
+      if (access.member !== member || access.via === undefined) continue;
+      followForeignWrite(flow, project, node, member, access, writeIndex);
+      writeIndex += 1;
     }
     let httpIndex = 0;
     for (const call of flow.httpCalls) {

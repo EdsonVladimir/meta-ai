@@ -56,6 +56,42 @@ describe("collectFlowFacts", () => {
     expect(flow.calls).toEqual([]);
   });
 
+  it("knows every Angular signal source, not only signal and computed", () => {
+    const flow = flowOf(`export class A {
+  readonly #base = signal(0);
+  readonly label = input<string>();
+  readonly id = input.required<number>();
+  readonly open = model(false);
+  readonly list = toSignal(this.obs);
+  readonly next = linkedSignal(() => 1);
+  readonly total = this.#base.asReadonly();
+  readonly plain = 3;
+  run() { this.label(); this.id(); this.list(); this.next(); this.total(); this.open.set(true); }
+}`);
+    expect(flow.signalFields).toEqual(["#base", "label", "id", "open", "list", "next", "total"]);
+    expect(flow.signals.map((s) => [s.signal, s.access])).toEqual([
+      ["label", "read"],
+      ["id", "read"],
+      ["list", "read"],
+      ["next", "read"],
+      ["total", "read"],
+      ["open", "write"],
+    ]);
+    expect(flow.calls).toEqual([]);
+  });
+
+  it("records writes through an injected field, unproven until the flow resolves them", () => {
+    const flow = flowOf(`export class A {
+  private store = inject(S);
+  private other = 1;
+  run() { this.store.items.set([]); this.store.items.update((x) => x); this.store.items.length(); this.other.x.set(1); }
+}`);
+    expect(flow.signals.map((s) => [s.signal, s.access, s.via])).toEqual([
+      ["items", "write", "store"],
+      ["items", "write", "store"],
+    ]);
+  });
+
   it("records dynamic calls as unresolved", () => {
     const flow = flowOf(`export class A {
   private s = inject(S);
