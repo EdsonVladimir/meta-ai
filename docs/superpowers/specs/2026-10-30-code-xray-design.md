@@ -1,7 +1,11 @@
 # Code X-ray: composition, execution flow and change governance
 
-Status: draft for review. Date: 2026-10-30.
+Status: approved. Date: 2026-10-30.
 Delivered in stages; each stage gets its own implementation plan.
+
+Hackathon note: this is a Meta hackathon demo, with the video due on
+2026-11-04. Section 7A defines the demo story and takes priority over
+Stages 4 and 5.
 
 ## 1. Purpose
 
@@ -186,12 +190,17 @@ HTTP join: verb and normalized path must match after removing the base
 token. Several candidates means ambiguous; none means "no destination".
 The backend must be associated with the same Ruth project.
 
-Gateway prefixes: ACME services call `{urlApiGateway}acme/ingesta`,
-while the NestJS route is `/ingesta`, because the gateway owns the
-`acme/` segment. An exact path match would leave those calls without a
-destination. The Stage 3 plan must define this match using evidence
-(gateway route configuration, or a per-root prefix the user confirms),
-never by guessing from suffixes.
+Names resolve inside the caller's project first. ACME has classes with
+the same name in the gateway and the backend (`AuditoriaService`), so a
+global lookup would mark them ambiguous. Only HTTP links cross projects.
+
+Gateways are ordinary hops. The ACME gateway is a NestJS app with its
+own controllers (`@Controller('acme/auditoria')`), so frontend calls
+match it exactly. It forwards with `proxy.forward('get', BASE_PATH)` to
+`/api/auditoria`, which matches the backend route under its
+`setGlobalPrefix('api')`. A proxy call is a fact only when the injected
+type name ends in `Proxy` or `ProxyService`, the method is `forward`, and
+the first argument is a verb literal.
 
 ### 5.2 Analysis coverage
 
@@ -283,6 +292,34 @@ Open points to settle in the Stage 5 plan: the Git access mechanism
 hold member hashes without a schema change. A schema change must follow
 the migration rules.
 
+## 7A. Proposal X-ray (demo priority)
+
+The story: write a requirement, Muse proposes code, Ruth draws the
+proposal on the X-ray **before anything reaches the disk**, the person
+reads the code from a box, then approves, discards or asks for an
+adjustment.
+
+- **Overlay**: each `CodeGenerationDto` carries full file contents with
+  `create` or `modify`. Ruth analyzes those contents in memory, replacing
+  the same files of the current analysis. Nothing is written.
+- **Change detection**: by symbol and member keys and `bodyHash`, as
+  added, modified or removed. This replaces Git for the demo; Stage 5
+  stays for later.
+- **Look**: fuchsia `#ff4fd8`, dashed border and a "Muse" label, with
+  A, M or R. Color never stands alone. Accepted files turn into normal
+  solid cards after re-analysis.
+- **Read the code**: a box opens the proposed code in a diff against the
+  current file, at the member range when known.
+- **Decide**: Accept and Discard reuse the existing per-file commands,
+  with their fingerprint checks.
+- **Adjust**: "Ask Muse to adjust" sends a new generation with one extra
+  instruction of at most 2000 characters. It never edits a proposal in
+  place. Editing by hand happens after accepting, in the code editor.
+- **Stale proposals**: the existing stale state blocks acceptance and is
+  shown on the overlay.
+
+Cut order if time runs short: Adjust first, then the Pages view.
+
 ## 8. Error handling
 
 - Unreadable, missing or unparsable files never fail a batch: partial
@@ -315,6 +352,7 @@ the migration rules.
 | 2 | Extraction engine | 1 |
 | 3 | Flow mode | 2 |
 | 4 | Pages view | 2 |
+| 3A | Proposal X-ray (section 7A) | 3 |
 | 5 | Change comparison | 2, and uses 3 and 4 |
 
 Stage 2 is invisible on its own, so its plan should end with the HTTP
