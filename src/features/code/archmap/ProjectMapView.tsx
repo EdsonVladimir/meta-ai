@@ -56,10 +56,19 @@ import {
   type BoardEdgeOpts,
   type BoardExpansion,
 } from "./boardLayout";
-import { ArchMapBoard } from "./ArchMapBoard";
+import { ArchMapBoard, countLabel } from "./ArchMapBoard";
 import { ArchSymbolBoard } from "./ArchSymbolBoard";
 import { BoardViewport } from "./BoardViewport";
 import { ArchMapInspector, type SymbolRef } from "./ArchMapInspector";
+import { FlowBoard } from "./FlowBoard";
+import { layoutFlowBoard, type FlowLayout } from "./flowLayout";
+import { FlowInspector } from "./FlowInspector";
+import {
+  buildFlowGraph,
+  type FlowGraph,
+  type FlowProject,
+  type FlowStart,
+} from "./flowModel";
 import {
   ArchitectureToolbar,
   type ToolbarDetailRow,
@@ -197,6 +206,20 @@ function baseName(rel: string): string {
   return slash === -1 ? rel : rel.slice(slash + 1);
 }
 
+/** Flow projects from analyzed sections (titles as labels, merged results as input). */
+export function flowProjectsOf(
+  sections: MapSection[],
+  merged: Record<string, { result: StructureResult }>,
+): FlowProject[] {
+  const projects: FlowProject[] = [];
+  for (const section of sections) {
+    const found = merged[section.key];
+    if (found === undefined) continue;
+    projects.push({ key: section.key, label: section.title, result: found.result });
+  }
+  return projects;
+}
+
 export function indexSymbols(symbols: StructureSymbol[]): Map<string, SymbolRef> {
   const index = new Map<string, SymbolRef>();
   for (const symbol of symbols) {
@@ -219,6 +242,8 @@ function toggleSetValue<T>(set: Set<T>, value: T): Set<T> {
 }
 
 interface InspectorData {
+  /** Section the selection belongs to. */
+  sectionKey: string;
   file: ArchMapFile;
   /** The selected symbol card, when the selection came from the symbol board. */
   node: ArchMapNode | null;
@@ -245,6 +270,7 @@ function findInspectorData(
         ? null
         : (map.nodes.find((entry) => entry.id === selectedSymbolId) ?? null);
     return {
+      sectionKey: section.key,
       file,
       node,
       edges: map.edges,
@@ -319,6 +345,13 @@ export function ProjectMapView({
     setSelectedSymbolIdRaw(id);
     setSelectedMember(null);
   };
+  /** Flow mode entry (null = boards); the chip leaves it. */
+  const [flowStart, setFlowStart] = useState<FlowStart | null>(null);
+  /** Flow board selection (node + optional member). */
+  const [flowSelected, setFlowSelected] = useState<{
+    nodeId: string;
+    member: string | null;
+  } | null>(null);
   /** Expansion is keyed by globally unique ids, so it survives project switches. */
   const [expansion, setExpansion] = useState<BoardExpansion>(emptyExpansion);
   /** Symbol cards with their member list collapsed (open by default). */
@@ -701,6 +734,8 @@ export function ProjectMapView({
     setSelectedKey(null);
     setSelectedSymbolId(null);
     setArchModule(null);
+    setFlowStart(null);
+    setFlowSelected(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, scopeSig]);
 
@@ -912,6 +947,31 @@ export function ProjectMapView({
     }
   }
 
+  function handleShowFlow(sectionKey: string, symbolId: string, member: string | null): void {
+    setFlowStart({ projectKey: sectionKey, symbolId, member });
+    setFlowSelected(null);
+  }
+
+  function handleLeaveFlow(): void {
+    setFlowStart(null);
+    setFlowSelected(null);
+  }
+
+  /** "Analyze all": every section with pending files gets the batches it needs. */
+  function handleAnalyzeAll(): void {
+    setBatchCount((prev) => {
+      const next = { ...prev };
+      for (const section of sections) {
+        if (sectionPending(section) <= 0) continue;
+        const state = states[section.key];
+        const total = (state?.collected ?? 0) - (state?.map?.skipped.length ?? 0);
+        const needed = Math.max(1, Math.ceil(total / MAP_ANALYZE_BATCH));
+        next[section.key] = Math.max(prev[section.key] ?? 1, needed);
+      }
+      return next;
+    });
+  }
+
   function handleShowAllHidden(): void {
     onShowAllProjects();
     for (const root of projectRoots) {
@@ -959,6 +1019,27 @@ export function ProjectMapView({
     }
     return { collected, analyzed, failed, pending, busy, errors, truncated };
   }, [sections, states]);
+
+  const flowMode = useMemo((): {
+    graph: FlowGraph;
+    layout: FlowLayout;
+    name: string | null;
+  } | null => {
+    if (flowStart === null) return null;
+    const projects = flowProjectsOf(sections, mergedRef.current);
+    const graph = buildFlowGraph(projects, flowStart);
+    let name: string | null = null;
+    for (const project of projects) {
+      const symbol = project.result.symbols.find((entry) => entry.id === flowStart.symbolId);
+      if (symbol !== undefined) {
+        name = symbol.name;
+        break;
+      }
+    }
+    return { graph, layout: layoutFlowBoard(graph), name };
+    // Merged results accumulate in a ref; states change on every batch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowStart, sections, states]);
 
   const detailRows = useMemo((): ToolbarDetailRow[] => {
     const rows: ToolbarDetailRow[] = sections.map((section) =>
@@ -1165,52 +1246,108 @@ export function ProjectMapView({
       {sections.length > 0 && (
         <div className="project-map-boards">
           <div className="project-map-sections">
-            {sections.map((section) => (
-              <ProjectMapSection
-                key={section.key}
-                section={section}
-                state={states[section.key] ?? null}
-                filteredFiles={
-                  filteredBySection.get(section.key)?.files ?? EMPTY_FILTERED_MAP
+            {flowMode !== null && flowStart !== null ? (
+              <section
+                className="project-map-root"
+                aria-label={
+                  flowMode.name === null ? "Flow" : `Flow of ${flowMode.name}`
                 }
-                filteredSymbols={
-                  filteredBySection.get(section.key)?.symbols ?? EMPTY_FILTERED_SYMBOLS
-                }
-                referenceIds={symbolMode ? references.ids : EMPTY_SET}
-                referenceNote={
-                  selectedOption === null ? null : `outside ${selectedOption.label}`
-                }
-                moduleLabel={selectedOption?.label ?? null}
-                showCaption={sections.length > 1 || section.analyzer === "none"}
-                edgeOpts={activeEdgeOpts}
-                expansion={expansion}
-                onToggleSymbols={(key) =>
-                  setExpansion((prev) => ({
-                    ...prev,
-                    allSymbols: toggleSetValue(prev.allSymbols, key),
-                  }))
-                }
-                onToggleMembers={(id) =>
-                  setExpansion((prev) => ({
-                    ...prev,
-                    openMembers: toggleSetValue(prev.openMembers, id),
-                  }))
-                }
-                selectedKey={selectedKey}
-                selectedSymbolId={selectedSymbolId}
-                onSelect={handleSelect}
-                onSelectSymbol={(map, id) => handleSelectSymbol(map, id)}
-                selectedMember={selectedMember}
-                onSelectMember={handleSelectMember}
-                groupBy={activeGroupBy}
-                collapsed={collapsed}
-                onToggleCollapsed={(id) => setCollapsed((prev) => toggleSetValue(prev, id))}
-                onRetry={() => retrySection(section.key)}
-                onCancel={() => cancelSection(section.key)}
-                zoom={activeZoom}
-                onZoomChange={handleZoomChange}
-              />
-            ))}
+              >
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="secondary small"
+                    aria-label="Leave flow"
+                    onClick={handleLeaveFlow}
+                  >
+                    {flowMode.name === null
+                      ? "Flow ×"
+                      : flowStart.member === null
+                        ? `Flow: ${flowMode.name} ×`
+                        : `Flow: ${flowMode.name}.${flowStart.member}() ×`}
+                  </button>
+                  {totals.pending > 0 && (
+                    <span className="hint" role="status">
+                      {`Partial chain: ${countLabel(totals.pending, "file", "files")} not analyzed`}
+                    </span>
+                  )}
+                  {totals.pending > 0 && (
+                    <button type="button" className="secondary small" onClick={handleAnalyzeAll}>
+                      Analyze all
+                    </button>
+                  )}
+                </div>
+                {flowMode.graph.nodes.length === 0 && (
+                  <p className="hint" role="note">
+                    This symbol is no longer in the analysis. Leave the flow and pick it again.
+                  </p>
+                )}
+                <BoardViewport
+                  zoom={activeZoom}
+                  onZoomChange={handleZoomChange}
+                  label={flowMode.name === null ? "Flow" : `Flow of ${flowMode.name}`}
+                  canvasWidth={flowMode.layout.width}
+                  canvasHeight={flowMode.layout.height}
+                >
+                  <FlowBoard
+                    graph={flowMode.graph}
+                    layout={flowMode.layout}
+                    selected={flowSelected}
+                    onSelect={setFlowSelected}
+                  />
+                </BoardViewport>
+              </section>
+            ) : (
+              sections.map((section) => (
+                <ProjectMapSection
+                  key={section.key}
+                  section={section}
+                  state={states[section.key] ?? null}
+                  filteredFiles={
+                    filteredBySection.get(section.key)?.files ?? EMPTY_FILTERED_MAP
+                  }
+                  filteredSymbols={
+                    filteredBySection.get(section.key)?.symbols ?? EMPTY_FILTERED_SYMBOLS
+                  }
+                  referenceIds={symbolMode ? references.ids : EMPTY_SET}
+                  referenceNote={
+                    selectedOption === null ? null : `outside ${selectedOption.label}`
+                  }
+                  moduleLabel={selectedOption?.label ?? null}
+                  showCaption={sections.length > 1 || section.analyzer === "none"}
+                  edgeOpts={activeEdgeOpts}
+                  expansion={expansion}
+                  onToggleSymbols={(key) =>
+                    setExpansion((prev) => ({
+                      ...prev,
+                      allSymbols: toggleSetValue(prev.allSymbols, key),
+                    }))
+                  }
+                  onToggleMembers={(id) =>
+                    setExpansion((prev) => ({
+                      ...prev,
+                      openMembers: toggleSetValue(prev.openMembers, id),
+                    }))
+                  }
+                  selectedKey={selectedKey}
+                  selectedSymbolId={selectedSymbolId}
+                  onSelect={handleSelect}
+                  onSelectSymbol={(map, id) => handleSelectSymbol(map, id)}
+                  selectedMember={selectedMember}
+                  onSelectMember={handleSelectMember}
+                  groupBy={activeGroupBy}
+                  collapsed={collapsed}
+                  onToggleCollapsed={(id) => setCollapsed((prev) => toggleSetValue(prev, id))}
+                  onRetry={() => retrySection(section.key)}
+                  onCancel={() => cancelSection(section.key)}
+                  onShowFlow={(symbolId, member) =>
+                    handleShowFlow(section.key, symbolId, member)
+                  }
+                  zoom={activeZoom}
+                  onZoomChange={handleZoomChange}
+                />
+              ))
+            )}
           </div>
           <BoardInspector
             data={inspectorData}
@@ -1224,6 +1361,17 @@ export function ProjectMapView({
             outsideModule={outsideModuleProp}
             memberships={inspectorMemberships}
             referenceNote={inspectorReferenceNote}
+            onShowFlow={
+              inspectorData === null
+                ? undefined
+                : (symbolId, member) =>
+                    handleShowFlow(inspectorData.sectionKey, symbolId, member)
+            }
+            flow={
+              flowMode === null
+                ? null
+                : { graph: flowMode.graph, selected: flowSelected }
+            }
           />
         </div>
       )}
@@ -1513,6 +1661,8 @@ function BoardInspector({
   outsideModule,
   memberships,
   referenceNote,
+  onShowFlow,
+  flow,
 }: {
   data: InspectorData | null;
   onSelectFile: (rootId: string, rel: string) => void;
@@ -1525,6 +1675,12 @@ function BoardInspector({
   outsideModule: { moduleLabel: string; onShowAll: () => void } | null;
   memberships: string[] | null;
   referenceNote: string | null;
+  onShowFlow: ((symbolId: string, member: string | null) => void) | undefined;
+  /** Flow mode detail (replaces the map inspector while set). */
+  flow: {
+    graph: FlowGraph;
+    selected: { nodeId: string; member: string | null } | null;
+  } | null;
 }) {
   const width = useRequirementsUi((s) => s.archInspectorWidth);
   const collapsed = useRequirementsUi((s) => s.archInspectorCollapsed);
@@ -1568,23 +1724,28 @@ function BoardInspector({
         </button>
       </div>
       <div className="project-map-inspector-scroll">
-        <ArchMapInspector
-          file={data?.file ?? null}
-          edges={data?.edges ?? []}
-          onSelectFile={onSelectFile}
-          relations={data?.relations ?? []}
-          symbolIndex={data?.symbolIndex}
-          selectedSymbolId={selectedSymbolId}
-          onSelectSymbol={onSelectSymbol}
-          selectedMember={selectedMember}
-          onSelectMember={onSelectMember}
-          node={data?.node ?? null}
-          nodeLayer={nodeLayer}
-          onSetLayerOverride={onSetLayerOverride}
-          outsideModule={outsideModule}
-          memberships={memberships}
-          referenceNote={referenceNote}
-        />
+        {flow !== null ? (
+          <FlowInspector graph={flow.graph} selected={flow.selected} />
+        ) : (
+          <ArchMapInspector
+            file={data?.file ?? null}
+            edges={data?.edges ?? []}
+            onSelectFile={onSelectFile}
+            relations={data?.relations ?? []}
+            symbolIndex={data?.symbolIndex}
+            selectedSymbolId={selectedSymbolId}
+            onSelectSymbol={onSelectSymbol}
+            selectedMember={selectedMember}
+            onSelectMember={onSelectMember}
+            node={data?.node ?? null}
+            nodeLayer={nodeLayer}
+            onSetLayerOverride={onSetLayerOverride}
+            outsideModule={outsideModule}
+            memberships={memberships}
+            referenceNote={referenceNote}
+            onShowFlow={onShowFlow}
+          />
+        )}
       </div>
     </aside>
   );
@@ -1666,6 +1827,7 @@ interface ProjectMapSectionProps {
   onToggleCollapsed: (id: string) => void;
   onRetry: () => void;
   onCancel: () => void;
+  onShowFlow: (symbolId: string, member: string | null) => void;
   zoom: number;
   onZoomChange?: (zoom: number) => void;
 }
@@ -1694,6 +1856,7 @@ function ProjectMapSection({
   onToggleCollapsed,
   onRetry,
   onCancel,
+  onShowFlow,
   zoom,
   onZoomChange,
 }: ProjectMapSectionProps) {
@@ -1806,6 +1969,7 @@ function ProjectMapSection({
               projectLabel={section.title}
               selectedMember={selectedMember}
               onSelectMember={(id, index) => onSelectMember(map, id, index)}
+              onShowFlow={onShowFlow}
             />
           ) : (
             <ArchMapBoard

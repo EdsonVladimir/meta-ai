@@ -43,6 +43,8 @@ export interface ArchSymbolBoardProps {
   onSelectMember?: (symbolId: string, index: number) => void;
   onToggleMembers: (symbolId: string) => void;
   onSelect: (id: string | null) => void;
+  /** Opens Flow mode from a card head (absent = no button, reference cards never). */
+  onShowFlow?: (symbolId: string, member: string | null) => void;
 }
 
 function edgeKinds(edge: ArchMapSymbolEdge): string {
@@ -64,6 +66,7 @@ export function ArchSymbolBoard({
   onSelectMember,
   onToggleMembers,
   onSelect,
+  onShowFlow,
 }: ArchSymbolBoardProps) {
   const references = referenceIds ?? new Set<string>();
   const shown = visibleSymbolEdges(edges, visibleIds, selectedId, edgeOpts);
@@ -119,6 +122,11 @@ export function ArchSymbolBoard({
                   referenceNote={referenceNote ?? null}
                   onToggleMembers={() => onToggleMembers(node.id)}
                   onSelect={() => onSelect(node.id === selectedId ? null : node.id)}
+                  onShowFlow={
+                    onShowFlow === undefined
+                      ? undefined
+                      : (member) => onShowFlow(node.id, member)
+                  }
                 />
               ))}
             </div>
@@ -180,6 +188,7 @@ function SymbolCard({
   onSelectMember,
   onToggleMembers,
   onSelect,
+  onShowFlow,
 }: {
   node: ArchMapNode;
   /** Effective layer (manual overrides applied): drives the role accent. */
@@ -195,6 +204,7 @@ function SymbolCard({
   onSelectMember: ((index: number) => void) | undefined;
   onToggleMembers: () => void;
   onSelect: () => void;
+  onShowFlow: ((member: string | null) => void) | undefined;
 }) {
   const { symbol } = node;
   const base = node.rel.split("/").pop() ?? node.rel;
@@ -210,26 +220,64 @@ function SymbolCard({
     ? `${symbol.name}, ${symbol.kind}, outside the module`
     : `${symbol.name}, ${symbol.kind}, ${countLabel(count, "member", "members")}`;
   const decorators = symbol.decorators.map((name) => `@${name}`).join(" ");
+  // A chain starts at code that does something: not at contracts or wiring.
+  const flowable =
+    !reference &&
+    (symbol.kind === "class" || symbol.kind === "component") &&
+    layer !== "contracts" &&
+    layer !== "composition";
+  const showFlow = flowable ? onShowFlow : undefined;
+  const headTitle = `${symbol.kind} ${symbol.name}${decorators === "" ? "" : ` ${decorators}`} — ${role}, ${language}\n${node.rel}${reference ? " (outside the module)" : ""}`;
+  const headInner = (
+    <>
+      <span className={`archboard-kind kind-${symbol.kind}`} aria-hidden="true">
+        {KIND_BADGE[symbol.kind] ?? "?"}
+      </span>
+      <span className="archboard-card-name">{symbol.name}</span>
+      <span className={`archboard-lang lang-${language.toLowerCase()}`}>{language}</span>
+    </>
+  );
   return (
     <div
       className={`archboard-card role-${layer}${selected ? " selected" : ""}${reference ? " reference" : ""}`}
       style={{ width: ARCH_CARD_W, height }}
       data-role={role}
     >
-      <button
-        type="button"
-        className="archboard-card-head"
-        title={`${symbol.kind} ${symbol.name}${decorators === "" ? "" : ` ${decorators}`} — ${role}, ${language}\n${node.rel}${reference ? " (outside the module)" : ""}`}
-        aria-label={headLabel}
-        aria-pressed={selected}
-        onClick={onSelect}
-      >
-        <span className={`archboard-kind kind-${symbol.kind}`} aria-hidden="true">
-          {KIND_BADGE[symbol.kind] ?? "?"}
-        </span>
-        <span className="archboard-card-name">{symbol.name}</span>
-        <span className={`archboard-lang lang-${language.toLowerCase()}`}>{language}</span>
-      </button>
+      {showFlow === undefined ? (
+        <button
+          type="button"
+          className="archboard-card-head"
+          title={headTitle}
+          aria-label={headLabel}
+          aria-pressed={selected}
+          onClick={onSelect}
+        >
+          {headInner}
+        </button>
+      ) : (
+        <div className="archboard-card-head">
+          <button
+            type="button"
+            className="archboard-card-head"
+            title={headTitle}
+            aria-label={headLabel}
+            aria-pressed={selected}
+            onClick={onSelect}
+            style={{ width: "auto", flex: "1 1 auto", minWidth: 0 }}
+          >
+            {headInner}
+          </button>
+          <button
+            type="button"
+            className="secondary small"
+            title={`Show flow of ${symbol.name}`}
+            aria-label={`Show flow of ${symbol.name}`}
+            onClick={() => showFlow(null)}
+          >
+            Show flow
+          </button>
+        </div>
+      )}
       <div className="archboard-card-sub" title={`${node.rel}\n${role}: ${node.layerReason}`}>
         {projectLabel !== null && <span className="archboard-chip project">{projectLabel}</span>}
         {decorators !== "" && <span className="archboard-decorator">{decorators}</span>}

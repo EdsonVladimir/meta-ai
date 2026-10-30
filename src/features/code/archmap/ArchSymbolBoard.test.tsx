@@ -106,6 +106,7 @@ function renderBoard(options: {
   referenceNote?: string | null;
   onToggleMembers?: (id: string) => void;
   onSelect?: (id: string | null) => void;
+  onShowFlow?: (symbolId: string, member: string | null) => void;
   selectedMember?: number | null;
   onSelectMember?: (id: string, index: number) => void;
   projectLabel?: string | null;
@@ -124,6 +125,7 @@ function renderBoard(options: {
       collapsed={collapsed}
       referenceIds={referenceIds}
       referenceNote={options.referenceNote}
+      onShowFlow={options.onShowFlow}
       selectedMember={options.selectedMember}
       onSelectMember={options.onSelectMember}
       projectLabel={options.projectLabel}
@@ -332,5 +334,11 @@ describe("ArchSymbolBoard", () => {
     expect(tags).toEqual([["vis-private"], ["vis-protected", "mod"], []]);
     // Visibility never tints the card as an error.
     expect(container.querySelector(".archboard-card")?.className).not.toContain("error");
+  });
+
+  it("offers Show flow only where a chain can start", () => {
+    renderBoard({ onShowFlow: () => {} });
+    expect(screen.getByRole("button", { name: "Show flow of SalesService" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show flow of SaleDto" })).toBeNull();
   });
 });

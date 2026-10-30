@@ -365,6 +365,16 @@ describe("ProjectMapView", () => {
     fireEvent.wheel(inspector, { deltaY: -100 });
     expect(onZoomChange).not.toHaveBeenCalled();
   });
+
+  it("enters Flow mode from a card and leaves it", async () => {
+    renderView({ groupBy: "symbols" });
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow of SalesController" }));
+    expect(await screen.findByRole("button", { name: /^Leave flow/ })).toBeTruthy();
+    expect(screen.getByText(/Flow: SalesController/)).toBeTruthy();
+    expect(screen.queryByLabelText("Architecture board")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Leave flow/ }));
+    expect(await screen.findByLabelText("Diagram of backend")).toBeTruthy();
+  });
 });
 
 const FE_CTRL = `export class FeController {
@@ -424,6 +434,33 @@ function nestedDeps(overrides: Partial<ProjectMapDeps> = {}): ProjectMapDeps {
     analyzeTs: (files) => Promise.resolve(analyzeTsFiles(files)),
     ...overrides,
   };
+}
+
+function batchDeps(n: number): ProjectMapDeps {
+  const files: Record<string, string> = {};
+  const entries: Array<{ name: string; rel: string; kind: "file" }> = [
+    { name: "package.json", rel: "big/package.json", kind: "file" },
+  ];
+  for (let i = 0; i < n; i += 1) {
+    const rel = `big/f${i}.ts`;
+    entries.push({ name: `f${i}.ts`, rel, kind: "file" });
+    files[`acme::${rel}`] = `export class C${i} { v = ${i}; }`;
+  }
+  const tree: Record<string, CodeListingDto> = {
+    "acme::": listing([{ name: "big", rel: "big", kind: "dir" }]),
+    "acme::big": listing(entries),
+  };
+  return nestedDeps({
+    listDir: async (rootId, rel) => tree[`${rootId}::${rel}`] ?? { entries: [], truncated: false },
+    readFile: async (rootId, rel) => {
+      if (rel.endsWith("package.json")) {
+        return { text: `{"name":"big"}`, fingerprint: "h", size: 10 };
+      }
+      const text = files[`${rootId}::${rel}`];
+      if (text === undefined) throw { kind: "code_not_found", message: "missing" };
+      return { text, fingerprint: "h", size: text.length };
+    },
+  });
 }
 
 describe("nested project scopes", () => {
@@ -558,30 +595,7 @@ describe("nested project scopes", () => {
   });
 
   it("analyzes the first batch and continues on demand", async () => {
-    const files: Record<string, string> = {};
-    const entries: Array<{ name: string; rel: string; kind: "file" }> = [
-      { name: "package.json", rel: "big/package.json", kind: "file" },
-    ];
-    for (let i = 0; i < 25; i += 1) {
-      const rel = `big/f${i}.ts`;
-      entries.push({ name: `f${i}.ts`, rel, kind: "file" });
-      files[`acme::${rel}`] = `export class C${i} { v = ${i}; }`;
-    }
-    const tree: Record<string, CodeListingDto> = {
-      "acme::": listing([{ name: "big", rel: "big", kind: "dir" }]),
-      "acme::big": listing(entries),
-    };
-    const deps = nestedDeps({
-      listDir: async (rootId, rel) => tree[`${rootId}::${rel}`] ?? { entries: [], truncated: false },
-      readFile: async (rootId, rel) => {
-        if (rel.endsWith("package.json")) {
-          return { text: `{"name":"big"}`, fingerprint: "h", size: 10 };
-        }
-        const text = files[`${rootId}::${rel}`];
-        if (text === undefined) throw { kind: "code_not_found", message: "missing" };
-        return { text, fingerprint: "h", size: text.length };
-      },
-    });
+    const deps = batchDeps(25);
     renderView({ roots: NESTED_ROOTS, deps });
     await screen.findByLabelText("Diagram of big");
     // The analyzer cap (20 files per call) is honored, never silent.
@@ -941,5 +955,29 @@ describe("nested project scopes", () => {
     );
     expect(await within(section).findByRole("heading", { name: "Unassigned (2 files)" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Layers, \d+ hidden/ })).toBeNull();
+  });
+
+  it("enters Flow mode from one member through the inspector", async () => {
+    renderView({ groupBy: "symbols" });
+    fireEvent.click(await screen.findByRole("button", { name: /^Method: all/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow of all" }));
+    expect(await screen.findByText(/Flow: SalesService\.all\(\)/)).toBeTruthy();
+  });
+
+  it("leaves Flow mode when the scope changes", async () => {
+    const { setScope } = renderView({ roots: NESTED_ROOTS, deps: nestedDeps(), groupBy: "symbols" });
+    fireEvent.click(await screen.findByRole("button", { name: /^Show flow of BeController/ }));
+    expect(await screen.findByRole("button", { name: /^Leave flow/ })).toBeTruthy();
+    setScope({ kind: "project", rootId: "acme", rel: "apps/fe" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Leave flow/ })).toBeNull());
+  });
+
+  it("warns about a partial chain and analyzes everything on request", async () => {
+    const deps = batchDeps(25);
+    renderView({ roots: NESTED_ROOTS, deps, groupBy: "symbols" });
+    fireEvent.click(await screen.findByRole("button", { name: /^Show flow of C0/ }));
+    expect(await screen.findByText(/Partial chain: 5 files not analyzed/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Analyze all" }));
+    await waitFor(() => expect(screen.queryByText(/Partial chain/)).toBeNull());
   });
 });

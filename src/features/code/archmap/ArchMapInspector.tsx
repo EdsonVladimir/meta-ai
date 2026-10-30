@@ -58,6 +58,8 @@ interface ArchMapInspectorProps {
   /** Selected member of the selected symbol (index), from the board or here. */
   selectedMember?: number | null;
   onSelectMember?: (index: number | null) => void;
+  /** Opens Flow mode from a selected member. */
+  onShowFlow?: (symbolId: string, member: string | null) => void;
 }
 
 function Section({
@@ -107,6 +109,7 @@ export function ArchMapInspector({
   referenceNote,
   selectedMember,
   onSelectMember,
+  onShowFlow,
 }: ArchMapInspectorProps) {
   if (file === null) {
     return (
@@ -200,6 +203,7 @@ export function ArchMapInspector({
           referenceNote={referenceNote ?? null}
           selectedMember={selectedMember ?? null}
           onSelectMember={onSelectMember}
+          onShowFlow={onShowFlow}
         />
       )}
       <Section id="used-by" title="Used by" count={incoming.length}>
@@ -286,6 +290,7 @@ interface SymbolDetailProps {
   referenceNote: string | null;
   selectedMember: number | null;
   onSelectMember: ((index: number | null) => void) | undefined;
+  onShowFlow: ((symbolId: string, member: string | null) => void) | undefined;
 }
 
 function SymbolDetail({
@@ -302,6 +307,7 @@ function SymbolDetail({
   referenceNote,
   selectedMember,
   onSelectMember,
+  onShowFlow,
 }: SymbolDetailProps) {
   const member =
     selectedMember === null ? null : (symbol.members[selectedMember] ?? null);
@@ -338,6 +344,9 @@ function SymbolDetail({
             symbol={symbol}
             member={member}
             onClose={onSelectMember === undefined ? undefined : () => onSelectMember(null)}
+            onShowFlow={
+              onShowFlow === undefined ? undefined : () => onShowFlow(symbol.id, member.name)
+            }
           />
         </Section>
       )}
@@ -479,10 +488,12 @@ function MemberDetail({
   symbol,
   member,
   onClose,
+  onShowFlow,
 }: {
   symbol: ArchMapSymbol;
   member: ArchMapSymbol["members"][number];
   onClose: (() => void) | undefined;
+  onShowFlow: (() => void) | undefined;
 }) {
   const role = memberRole(member, symbol);
   const hook = symbol.lifecycle?.find((entry) => entry.name === member.name) ?? null;
@@ -537,13 +548,18 @@ function MemberDetail({
         As extracted: long parts are shortened with “…” by the analyzer. Members have no own
         ranges in the analysis.
       </p>
-      {onClose !== undefined && (
-        <div className="button-row">
+      <div className="button-row">
+        {onShowFlow !== undefined && (
+          <button type="button" className="secondary small" onClick={onShowFlow}>
+            {`Show flow of ${member.name}`}
+          </button>
+        )}
+        {onClose !== undefined && (
           <button type="button" className="secondary small" onClick={onClose}>
             Back to members
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   );
 }

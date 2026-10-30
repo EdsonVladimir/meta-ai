@@ -5972,3 +5972,11 @@ button.archboard-member:hover {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   background: rgba(61, 220, 151, 0.08);
 }
+
+.flow-inspector-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
