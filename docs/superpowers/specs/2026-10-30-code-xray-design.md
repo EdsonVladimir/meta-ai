@@ -318,6 +318,12 @@ adjustment.
 - **Stale proposals**: the existing stale state blocks acceptance and is
   shown on the overlay.
 
+- **Verification**: a panel separates what Muse said (explanation,
+  assumptions, questions) from what Ruth verified (syntax, scope, chain,
+  freshness), and shows the model and the context sent.
+- **Demo target**: a public sample app in `examples/reservas`. Client
+  code is never used in the demo or sent to Meta for it.
+
 Cut order if time runs short: Adjust first, then the Pages view.
 
 ## 8. Error handling

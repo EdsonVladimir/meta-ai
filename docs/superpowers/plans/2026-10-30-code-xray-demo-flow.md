@@ -10,7 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-30-code-xray-design.md` (sections 3, 5, 7A, 8, 9).
 
-**Deadline:** video due 2026-11-04. Task order is priority order. Task 9 is the first to cut.
+**Deadline:** submission closes 2026-11-04 21:00 ET (22:00 Bolivia); internal target 18:00 Bolivia, features frozen on 2026-11-03. Run tasks in this order: 0, 2, 3, 4, 5, 6, 7, 7B, 8, 10, 9. Task 1 is deferred until after the demo. Task 9 is the first to cut.
+
+**Demo project:** the public sample in `examples/reservas`. Client code is never used for the demo and never sent to Meta.
 
 ## Global Constraints
 
@@ -23,6 +25,7 @@
 - No new npm or crate dependency.
 - English only in code, comments, tests and docs.
 - No network in tests. Tests must not read outside this repository.
+- No client names, code or paths in anything published. Use `examples/reservas` for demo fixtures.
 - Do not commit or push unless the task prompt says so.
 - Done means `npm test` and `npx tsc --noEmit` pass, plus `cargo test --workspace` from `src-tauri/` when Rust changes.
 
@@ -80,7 +83,36 @@ not cover. Claim only what you ran.
 
 ---
 
-### Task 1: Gateway hops
+### Task 0: Public sample project
+
+**Files:**
+- Create: `examples/reservas/README.md`, `examples/reservas/backend/src/**`, `examples/reservas/frontend/src/**`, `examples/reservas/backend/package.json`, `examples/reservas/frontend/package.json`
+- Test: `src/features/code/archmap/sampleProject.test.ts`
+
+**Interfaces:**
+- Produces: a small room-booking app written for this repository. Backend (NestJS, TypeORM): `ReservasController` with `GET /reservas`, `POST /reservas`, `ReservasService`, `Reserva` entity, `CreateReservaDto`. Frontend (Angular signals): `ReservasPageComponent`, `ReservaFormComponent`, `ReservasStore` (`signal`, `computed`), `ReservasService` using `HttpClient` with `environment.apiUrl + 'reservas'`, `authInterceptor`, `authGuard`.
+- No `setGlobalPrefix` and no gateway. No third-party assets. Under 25 TypeScript files in total. Contains no user-registration feature: the demo asks Muse to add it.
+
+- [ ] **Step 1: Write the failing test**, which loads the sample's `.ts` files with `node:fs`, runs `analyzeTsFiles` in groups of `STRUCTURE_LIMITS.maxFiles`, and asserts:
+
+```ts
+it("yields every link the demo needs", () => {
+  const result = analyzeSample();
+  const flow = (name: string) => result.symbols.find((s) => s.name === name)!.flow!;
+  expect(flow("ReservasService").httpCalls.map((c) => c.verb).sort()).toEqual(["GET", "POST"]);
+  expect(flow("ReservasController").routes.map((r) => r.path)).toEqual(["/reservas", "/reservas"]);
+  expect(flow("ReservasStore").signals.length).toBeGreaterThan(0);
+  expect(result.symbols.some((s) => s.decorators?.includes("Entity"))).toBe(true);
+});
+```
+
+- [ ] **Step 2: Run** `npx vitest run src/features/code/archmap/sampleProject.test.ts`. Expected: FAIL.
+
+- [ ] **Step 3: Write the sample.** Plain, idiomatic code; both sides must be real source that a reader can follow. `examples/reservas/README.md` says it is a demo target for Ruth.
+
+- [ ] **Step 4: Run** the test, `npm test` and `npx tsc --noEmit`. Expected: PASS, and the root `tsc` does not compile `examples/`.
+
+### Task 1: Gateway hops (deferred until after the demo)
 
 **Files:**
 - Modify: `src/features/code/structure/structureTypes.ts`, `src/features/code/structure/tsFlowFacts.ts`, `src/features/code/structure/tsNestFacts.ts`, `src/features/code/structure/tsAnalyze.ts`, `src/features/code/structure/structureMerge.ts`
@@ -268,18 +300,6 @@ it("reports HTTP calls with no route as no destination", () => {
   expect(graph.pending.map((p) => p.kind)).toEqual(["no-destination"]);
 });
 
-it("matches literal calls with the global prefix and base calls without it", () => {
-  const be = project("be", {
-    "main.ts": `async function boot(app: App) { app.setGlobalPrefix('api'); }`,
-    "c.controller.ts": `@Controller('auditoria') export class C { @Get() a() {} }`,
-  });
-  const gw = project("gw", { "s.ts": `const BASE = '/api/auditoria';
-export class S { constructor(private proxy: XProxyService) {}
-  go() { return this.proxy.forward('get', BASE); } }` });
-  const graph = buildFlowGraph([gw, be], startAt(gw, "S", "go"));
-  expect(graph.nodes.map((n) => n.symbol.name)).toEqual(["S", "C"]);
-});
-
 it("cuts cycles and marks them", () => {
   const cyc = project("p", { "a.ts": `export class A {
   a() { this.b(); }
@@ -307,7 +327,7 @@ it("stops at the node cap and says so", () => {
 
 - [ ] **Step 2: Run:** `npx vitest run src/features/code/archmap/flowModel.test.ts`. Expected: FAIL.
 
-- [ ] **Step 3: Implement `buildFlowGraph`** as a breadth-first walk over `(node, member)` pairs. `this.method()` stays in the same node. An external injected type with no symbol is ignored without a pending entry when the file imports it from a package. Route match: same verb and same `normalizeApi` path, where `{base}` URLs compare to the route path, and base-less URLs compare to the route path with each global prefix of that project added. Only `calls`, `httpCalls`, `repositoryCalls` are followed. Interceptors come from `pipeline` entries with scope `http-client` of the caller's project; guards come from the route and `global-guard` entries.
+- [ ] **Step 3: Implement `buildFlowGraph`** as a breadth-first walk over `(node, member)` pairs. `this.method()` stays in the same node. An external injected type with no symbol is ignored without a pending entry when the file imports it from a package. Route match: same verb and same `normalizeApi` path, comparing the URL without its base token to the route path. Only `calls`, `httpCalls`, `repositoryCalls` are followed. Interceptors come from `pipeline` entries with scope `http-client` of the caller's project; guards come from the route and `global-guard` entries.
 
 - [ ] **Step 4: Run** the test file, then `npm test` and `npx tsc --noEmit`. Expected: PASS.
 
@@ -635,6 +655,73 @@ Add `staleReason: string | null` to the `proposal` prop.
 
 - [ ] **Step 4: Run** the test file, then `npm test` and `npx tsc --noEmit`. Expected: PASS.
 
+### Task 7B: Verification panel
+
+Meta must do a contextual, verifiable task. This panel shows what Muse received and what Ruth verified, separating the model's work from the local analysis.
+
+**Files:**
+- Create: `src/features/code/archmap/proposalChecks.ts`, `proposalChecks.test.ts`
+- Modify: `src/features/code/archmap/FlowInspector.tsx`, `FlowInspector.test.tsx`
+
+**Interfaces:**
+- Consumes: `CodeGenerationDto`, `ProposalOverlay`, `FlowGraph`.
+- Produces:
+
+```ts
+export interface ProposalCheck {
+  id: "syntax" | "scope" | "chain" | "fresh";
+  label: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+}
+export function checkProposal(
+  generation: CodeGenerationDto,
+  overlay: ProposalOverlay,
+  graph: FlowGraph | null,
+): ProposalCheck[];
+```
+
+- [ ] **Step 1: Write the failing tests:**
+
+```ts
+it("passes a clean proposal", () => {
+  const checks = checkProposal(GEN, OVERLAY, CHAIN);
+  expect(checks.map((c) => [c.id, c.status])).toEqual([
+    ["syntax", "pass"], ["scope", "pass"], ["chain", "pass"], ["fresh", "pass"],
+  ]);
+});
+
+it("fails syntax when a proposed file is partial", () => {
+  const checks = checkProposal(GEN, { ...OVERLAY, notes: ["a.ts: partial syntax"] }, CHAIN);
+  expect(checks.find((c) => c.id === "syntax")?.status).toBe("fail");
+});
+
+it("warns when a modified file was not in the scope sent to Meta", () => {
+  const gen = { ...GEN, scope: [] };
+  expect(checkProposal(gen, OVERLAY, CHAIN).find((c) => c.id === "scope")?.status).toBe("warn");
+});
+
+it("warns about a chain with pending links, naming them", () => {
+  const graph = { ...CHAIN, pending: [PENDING_NO_DESTINATION] };
+  const chain = checkProposal(GEN, OVERLAY, graph).find((c) => c.id === "chain")!;
+  expect(chain.status).toBe("warn");
+  expect(chain.detail).toContain("POST /usuarios");
+});
+
+it("fails freshness on a stale generation", () => {
+  const gen = { ...GEN, stale: true, staleReason: "the context changed." };
+  expect(checkProposal(gen, OVERLAY, CHAIN).find((c) => c.id === "fresh")?.status).toBe("fail");
+});
+```
+
+In `FlowInspector.test.tsx`: the panel shows the model name, token counts, the number of scope files sent to Meta, and each check with a text status, never color alone. Its heading is "Verification".
+
+- [ ] **Step 2: Run** both test files. Expected: FAIL.
+
+- [ ] **Step 3: Implement `checkProposal`** and the panel. The `scope` check compares `modify` files with `generation.scope`. Show Muse's `explanation`, `assumptions` and `questions` under "Muse says", separate from "Ruth verified".
+
+- [ ] **Step 4: Run** both test files, then `npm test` and `npx tsc --noEmit`. Expected: PASS.
+
 ### Task 8: Stage 2 inspector facts (Task 8 of the Stage 2 plan, reduced)
 
 **Files:**
@@ -702,12 +789,29 @@ it("keeps Send adjustment disabled when empty", async () => {
 
 ---
 
+### Task 10: Public repository readiness
+
+**Files:**
+- Modify: `README.md`, every tracked file naming the client project (tests, `docs/`, `structureTypes.ts`)
+- Create: `.env.example`, `LICENSE` (only after the owner picks a license)
+
+- [ ] **Step 1: Replace client names** in tests and docs with neutral ones (`acme`, `orders`), keeping every assertion's meaning. `git grep -il acme` must print nothing.
+
+- [ ] **Step 2: Rewrite `README.md` in English, under 150 lines:** what Ruth does, how Meta models are used and for what, install, run, tests, the sample project, limits, and a statement separating the earlier exploratory prototype from work done during the event. Move the milestone history to `docs/`.
+
+- [ ] **Step 3: Add `.env.example`** listing `META_API_KEY` and `META_MODEL` without values, with a comment that Ruth reads the process environment only.
+
+- [ ] **Step 4: Run** `npm test`, `npx tsc --noEmit`, `npm run build` and `cargo test --workspace`. Expected: all pass. Install from a clean clone following the README.
+
+---
+
 ## Demo exit check (auditor)
 
-On ACME, in the desktop app, confirm:
+On `examples/reservas`, in the desktop app, confirm:
 
-- A chain runs from a frontend component through the gateway controller and proxy to the backend service and TypeORM entity.
+- A chain runs from `ReservasPageComponent` through the store and service, across HTTP, to the controller, service and `Reserva` entity.
 - A requirement sent to Muse draws dashed fuchsia cards before any file changes on disk (`git status` stays clean).
+- The Verification panel shows the model, the context sent, and Ruth's checks.
 - Viewing the code shows the diff; Accept writes the file and the card turns solid.
 - Discard and closing the dialog remove all fuchsia.
 - Nothing in the demo path shows an error or an empty board.
