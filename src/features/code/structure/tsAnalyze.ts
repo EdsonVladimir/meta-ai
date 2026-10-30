@@ -48,6 +48,7 @@
 import ts from "ts-compiler";
 import { fnv1aHex } from "../model";
 import { STRUCTURE_LIMITS } from "./structureTypes";
+import { collectFlowFacts } from "./tsFlowFacts";
 import type {
   ApiCall,
   ApiEndpoint,
@@ -641,6 +642,7 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
       membersTruncated: collected.truncated,
       heuristic: node.name === undefined ? "anonymous class with a default export" : null,
       decorators,
+      flow: collectFlowFacts(source, node, (target, what) => evidenceOf(source, target, what)),
       ...(moduleMeta !== null && moduleMeta.refs.length > 0
         ? { moduleRefs: moduleMeta.refs }
         : {}),
