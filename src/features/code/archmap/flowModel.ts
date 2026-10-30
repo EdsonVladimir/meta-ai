@@ -4,6 +4,7 @@
 // HTTP links cross projects, matched by verb and normalized path.
 import { classifySymbol } from "./archLayers";
 import type { ArchLayer } from "./archLayers";
+import { SIGNAL_WRITERS } from "../structure/tsFlowFacts";
 import { normalizeApi } from "../structure/apiLinks";
 import type {
   StructureHttpCall,
@@ -18,6 +19,8 @@ import type {
 
 export const FLOW_MAX_DEPTH = 12;
 export const FLOW_MAX_NODES = 60;
+/** Chain step of a component's template; not a class member. */
+export const TEMPLATE_MEMBER = "(template)";
 
 export interface FlowProject { key: string; label: string; result: StructureResult }
 export interface FlowStart { projectKey: string; symbolId: string; member: string | null }
@@ -49,7 +52,7 @@ export interface FlowHttpNode {
   interceptors: string[];
   guards: string[];
 }
-export type FlowEdgeKind = "call" | "http" | "route" | "entity";
+export type FlowEdgeKind = "call" | "http" | "route" | "entity" | "template";
 export interface FlowEdge {
   id: string;
   kind: FlowEdgeKind;
@@ -131,6 +134,20 @@ function sequenceEdges(edges: FlowEdge[]): void {
         edge.order = index;
       });
   }
+}
+
+function hasTemplateFacts(symbol: StructureSymbol): boolean {
+  const template = symbol.component?.template ?? null;
+  return (
+    template !== null &&
+    (template.calls.length > 0 || template.uses.some((use) => use.kind === "element"))
+  );
+}
+
+function selectsElement(symbol: StructureSymbol, tag: string): boolean {
+  const { component } = symbol;
+  if (component?.kind !== "component" || component.selector === null) return false;
+  return component.selector.split(",").some((entry) => entry.trim() === tag);
 }
 
 /** Members a walk starts from: methods, plus fields that hold chain facts. */
@@ -308,6 +325,70 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
     });
   };
 
+  /** Expressions and child tags of a component's template, one chain step. */
+  const expandTemplate = (project: FlowProject, node: FlowNode): void => {
+    const template = node.symbol.component?.template ?? null;
+    const flow = node.symbol.flow;
+    if (template === null || flow === undefined) return;
+    const member = TEMPLATE_MEMBER;
+    const own = flow.signalFields ?? [];
+    const injected = (field: string): boolean =>
+      flow.injections.some((entry) => entry.field === field);
+    template.calls.forEach((call, order) => {
+      const evidence = `${template.rel}:${call.line} (template ${call.path.join(".")})`;
+      const [head, next, last] = call.path;
+      if (next === undefined) {
+        if (own.includes(head)) {
+          noteForeignSignal(node, { member, signal: head, access: "read", evidence });
+        } else if (node.symbol.members.some((entry) => entry.name === head)) {
+          followCall(flow, project, node, member, { member, receiver: null, method: head, order, evidence });
+        }
+      } else if (last === undefined) {
+        if (own.includes(head)) {
+          if (SIGNAL_WRITERS.has(next)) {
+            noteForeignSignal(node, { member, signal: head, access: "write", evidence });
+          }
+        } else if (injected(head)) {
+          followCall(flow, project, node, member, { member, receiver: head, method: next, order, evidence });
+        }
+      } else if (injected(head) && SIGNAL_WRITERS.has(last)) {
+        const access = { member, signal: next, access: "write" as const, via: head, evidence };
+        followForeignWrite(flow, project, node, member, access, order);
+      }
+    });
+    template.uses.forEach((use, order) => {
+      if (use.kind !== "element") return;
+      const evidence = `${template.rel}:${use.line} (template ${use.name})`;
+      const matches = project.result.symbols.filter((symbol) => selectsElement(symbol, use.name));
+      const imports = node.symbol.component?.imports ?? [];
+      const imported = matches.filter((symbol) => imports.includes(symbol.name));
+      const found = matches.length === 1 ? matches : imported;
+      if (matches.length === 0) return; // A library tag: no chain link, no gap.
+      if (found.length !== 1) {
+        graph.pending.push({
+          kind: "ambiguous",
+          label: use.name,
+          fromNode: node.id,
+          fromMember: member,
+          evidence,
+        });
+        return;
+      }
+      const target = ensureNode(project, found[0], node.depth + 1);
+      if (target === null) return;
+      const toMember = hasTemplateFacts(found[0]) ? TEMPLATE_MEMBER : null;
+      arrive(project, target, toMember, {
+        kind: "template",
+        fromNode: node.id,
+        fromMember: member,
+        toNode: target.id,
+        toMember,
+        order,
+        evidence,
+      });
+    });
+  };
+
   const followCall = (
     flow: SymbolFlowFacts,
     project: FlowProject,
@@ -481,6 +562,10 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
   };
 
   const expand = (project: FlowProject, node: FlowNode, member: string): void => {
+    if (member === TEMPLATE_MEMBER) {
+      expandTemplate(project, node);
+      return;
+    }
     const flow = node.symbol.flow;
     if (flow === undefined) return;
     for (const call of flow.calls) {
@@ -509,7 +594,10 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
 
   const startNode = ensureNode(startProject, startSymbol, 0);
   if (startNode === null) return graph;
-  const first = start.member === null ? startMembers(startSymbol) : [start.member];
+  const first =
+    start.member !== null
+      ? [start.member]
+      : [...(hasTemplateFacts(startSymbol) ? [TEMPLATE_MEMBER] : []), ...startMembers(startSymbol)];
   for (const member of first) {
     startNode.members.push(member);
     visited.add(`${startNode.id}\n${member}`);

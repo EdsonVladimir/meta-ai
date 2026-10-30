@@ -424,6 +424,29 @@ describe("ProjectMapView", () => {
     expect(screen.getByRole("complementary", { name: "Board inspector" })).toBeTruthy();
   });
 
+  it("reads what a component names, and survives a file that is gone", async () => {
+    const reads: string[] = [];
+    const deps = makeDeps({
+      listDir: async () => ({
+        entries: [{ name: "a.component.ts", rel: "a.component.ts", kind: "file", size: 1 }],
+        truncated: false,
+      }),
+      readFile: async (_rootId, rel) => {
+        reads.push(rel);
+        if (rel === "gone.css") throw { kind: "code_not_found", message: "missing" };
+        const text =
+          rel === "a.html"
+            ? "<p></p>"
+            : `@Component({ selector: 'app-a', templateUrl: './a.html', styleUrl: './gone.css' })
+export class AComponent {}`;
+        return { text, fingerprint: "h", size: text.length };
+      },
+    });
+    renderView({ deps });
+    await waitFor(() => expect(reads).toEqual(expect.arrayContaining(["a.html", "gone.css"])));
+    await waitFor(() => expect(statusBar().textContent).not.toMatch(/failed/));
+  });
+
   it("never hijacks wheel scroll outside the board", async () => {
     const onZoomChange = vi.fn();
     renderView({ onZoomChange });

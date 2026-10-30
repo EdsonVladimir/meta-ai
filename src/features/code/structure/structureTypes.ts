@@ -154,9 +154,18 @@ export interface TemplateUse {
   kind: "element" | "attribute" | "pipe";
   line: number;
 }
+/** A call in a template expression: `store.items()`, `guardar($event)`. */
+export interface TemplateCall {
+  /** Up to three segments, without `this`. */
+  path: string[];
+  /** Written in an `(event)` binding. */
+  event: boolean;
+  line: number;
+}
 export interface TemplateFacts {
   rel: string;
   uses: TemplateUse[];
+  calls: TemplateCall[];
 }
 export interface ComponentFacts {
   kind: "component" | "directive" | "pipe";

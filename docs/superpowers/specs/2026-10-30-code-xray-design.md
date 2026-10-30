@@ -162,6 +162,13 @@ The collector still walks TypeScript only. Files named by `templateUrl`,
 read on demand: HTML is scanned; style files are only checked for
 existence. A missing file is reported, never guessed.
 
+Built so far: inline `template:` strings are scanned too, and the scanner
+also returns the calls in template expressions. Flow mode walks them as a
+`(template)` step: event handlers, signal reads and writes, and child
+components by selector (a shared selector needs the standalone `imports`
+to settle it, otherwise it stays ambiguous; library tags are no link).
+Attribute directives and pipes are collected but not linked.
+
 ### 4.6 Declared limits
 
 Not followed, and shown as unresolved: dynamic calls (`obj[name]()`),

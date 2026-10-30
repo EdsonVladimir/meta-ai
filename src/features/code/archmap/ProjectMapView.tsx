@@ -67,6 +67,7 @@ import {
 import { ArchMapBoard, countLabel } from "./ArchMapBoard";
 import { ArchSymbolBoard } from "./ArchSymbolBoard";
 import { BoardViewport } from "./BoardViewport";
+import { attachComponentAssets } from "../structure/componentAssets";
 import { ArchMapInspector, LibraryInspector, type SymbolRef } from "./ArchMapInspector";
 import { collectLibraries, type ExternalFolder, type ExternalLibrary } from "./externalLibraries";
 import { FlowBoard } from "./FlowBoard";
@@ -817,7 +818,10 @@ export function ProjectMapView({
           for (let batch = done + 1; batch <= totalBatches; batch += 1) {
             const slice = inputs.slice((batch - 1) * MAP_ANALYZE_BATCH, batch * MAP_ANALYZE_BATCH);
             if (!live()) return;
-            const part = await depsRef.current.analyzeTs(slice);
+            const part = await attachComponentAssets(
+              await depsRef.current.analyzeTs(slice),
+              (rootId, rel) => depsRef.current.readFile(rootId, rel),
+            );
             if (!live()) return;
             base = combineResults([base, part]);
             done = batch;

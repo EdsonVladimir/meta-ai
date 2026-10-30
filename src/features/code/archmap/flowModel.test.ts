@@ -5,7 +5,7 @@ import { analyzeTsFiles } from "../structure/tsAnalyze";
 import { combineResults } from "../structure/structureMerge";
 import { STRUCTURE_LIMITS } from "../structure/structureTypes";
 import type { StructureInput } from "../structure/structureTypes";
-import { buildFlowGraph, FLOW_MAX_NODES } from "./flowModel";
+import { buildFlowGraph, FLOW_MAX_NODES, TEMPLATE_MEMBER } from "./flowModel";
 import type { FlowProject, FlowStart } from "./flowModel";
 import { memberSignalLines } from "./flowLayout";
 
@@ -243,5 +243,86 @@ it("shows a write it cannot prove as pending, not as a signal", () => {
   expect(graph.pending.map((entry) => [entry.kind, entry.label])).toEqual([
     ["unresolved", "MissingStore"],
   ]);
+});
+
+const PAGE = project("fe", {
+  "page.component.ts": `@Component({
+  selector: 'app-page',
+  imports: [ChildComponent],
+  template: \`
+<p>{{ store.items() }} {{ local() }}</p>
+<button (click)="save()">Save</button>
+<button (click)="open.set(true); store.items.set([])">Open</button>
+<app-child></app-child>
+<p-table></p-table>
+{{ r.total() }}
+\`,
+}) export class PageComponent {
+  store = inject(ItemsStore);
+  readonly local = signal(0);
+  readonly open = signal(false);
+  save() { this.store.load(); }
+}`,
+  "child.component.ts": `@Component({ selector: 'app-child', template: '<app-leaf></app-leaf>' })
+export class ChildComponent {}`,
+  "leaf.component.ts": `@Component({ selector: 'app-leaf', template: '<b>{{ 1 }}</b>' })
+export class LeafComponent {}`,
+  "store.ts": SIGNAL_STORE,
+});
+
+it("walks a component from its template", () => {
+  const graph = buildFlowGraph([PAGE], startAt(PAGE, "PageComponent", null));
+  const page = graph.nodes.find((node) => node.symbol.name === "PageComponent")!;
+  expect(page.members[0]).toBe(TEMPLATE_MEMBER);
+  expect(memberSignalLines(page, TEMPLATE_MEMBER)).toEqual([
+    "reads store.items",
+    "reads local",
+    "writes open",
+    "writes store.items",
+  ]);
+  const links = graph.edges
+    .filter((edge) => edge.fromMember === TEMPLATE_MEMBER)
+    .map((edge) => `${edge.kind}:${edge.toMember}`);
+  expect(links).toContain("call:save");
+  expect(links).toContain("call:items");
+  expect(graph.pending).toEqual([]);
+});
+
+it("reaches child components by selector, ignoring library tags", () => {
+  const graph = buildFlowGraph([PAGE], startAt(PAGE, "PageComponent", null));
+  expect(graph.nodes.map((node) => node.symbol.name)).toEqual(
+    expect.arrayContaining(["ChildComponent", "LeafComponent", "ItemsStore"]),
+  );
+  const child = graph.edges.filter((edge) => edge.kind === "template");
+  expect(child).toHaveLength(2);
+  expect(child[0].evidence).toContain("page.component.ts:8 (template app-child)");
+});
+
+it("does not guess between two components with one selector", () => {
+  const p = project("fe", {
+    "a.ts": `@Component({ selector: 'app-a', template: '<app-dup></app-dup>' }) export class A {}`,
+    "b.ts": `@Component({ selector: 'app-dup' }) export class B {}`,
+    "c.ts": `@Component({ selector: 'app-dup' }) export class C {}`,
+  });
+  const graph = buildFlowGraph([p], startAt(p, "A", null));
+  expect(graph.nodes.map((node) => node.symbol.name)).toEqual(["A"]);
+  expect(graph.pending.map((entry) => [entry.kind, entry.label])).toEqual([
+    ["ambiguous", "app-dup"],
+  ]);
+});
+
+it("settles a shared selector with the standalone imports", () => {
+  const p = project("fe", {
+    "a.ts": `@Component({ selector: 'app-a', imports: [C], template: '<app-dup></app-dup>' }) export class A {}`,
+    "b.ts": `@Component({ selector: 'app-dup' }) export class B {}`,
+    "c.ts": `@Component({ selector: 'app-dup' }) export class C {}`,
+  });
+  const graph = buildFlowGraph([p], startAt(p, "A", null));
+  expect(graph.nodes.map((node) => node.symbol.name)).toEqual(["A", "C"]);
+});
+
+it("keeps the template out of a walk from one method", () => {
+  const graph = buildFlowGraph([PAGE], startAt(PAGE, "PageComponent", "save"));
+  expect(graph.nodes[0].members).toEqual(["save"]);
 });
 

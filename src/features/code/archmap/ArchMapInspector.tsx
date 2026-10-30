@@ -26,7 +26,7 @@ import {
   type ExternalLibrary,
 } from "./externalLibraries";
 import type { EffectiveLayer } from "./mapFilter";
-import type { StructureRelation } from "../structure/structureTypes";
+import type { ComponentFacts, StructureRelation } from "../structure/structureTypes";
 
 export interface SymbolRef {
   id: string;
@@ -265,6 +265,40 @@ export function ArchMapInspector({
         </Section>
       )}
     </div>
+  );
+}
+
+/** Files of a component; what could not be read is said, not hidden. */
+function ComponentFiles({ component }: { component: ComponentFacts }) {
+  const missing = component.missingAssets ?? [];
+  const template = component.template ?? null;
+  const rels = [
+    ...(component.templateRel !== null ? [component.templateRel] : []),
+    ...component.styleRels,
+  ];
+  if (rels.length === 0 && template === null) return null;
+  return (
+    <Section id="component-files" title="Template and styles" count={null}>
+      {component.selector !== null && (
+        <p className="hint">
+          Selector: <code>{component.selector}</code>
+        </p>
+      )}
+      {rels.length === 0 && <p className="hint">Inline template.</p>}
+      <ul className="archmap-list">
+        {rels.map((rel) => (
+          <li key={rel} title={rel}>
+            <code>{rel.split("/").pop()}</code>
+            {missing.includes(rel) ? " (not found)" : ""}
+          </li>
+        ))}
+      </ul>
+      {template !== null && (
+        <p className="hint">
+          {`Template: ${template.calls.length} calls, ${template.uses.length} tags, directives and pipes.`}
+        </p>
+      )}
+    </Section>
   );
 }
 
@@ -539,6 +573,7 @@ function SymbolDetail({
           </ul>
         </Section>
       )}
+      {symbol.component !== undefined && <ComponentFiles component={symbol.component} />}
       <Section id="symbol-uses" title="Uses" count={outgoing.length}>
         {outgoing.length === 0 ? (
           <p className="hint">No detected relations from this symbol.</p>

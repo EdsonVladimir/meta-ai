@@ -3,6 +3,7 @@
 // map, with explicit truncation flags instead of silent drops (per-file
 // lists are small enough to keep whole, except unresolved refs).
 import type {
+  ComponentFacts,
   FileImport,
   StructureMember,
   StructureRange,
@@ -33,6 +34,8 @@ export type ArchEdgeKind = StructureRelationKind | "imports";
 
 export interface ArchMapSymbol {
   id: string;
+  /** `@Component`-style metadata: selector, template and styles. */
+  component?: ComponentFacts;
   kind: StructureSymbol["kind"];
   name: string;
   rootId: string;
@@ -255,6 +258,7 @@ export function buildArchMap(result: StructureResult): ArchMap {
           unresolvedTruncated: own.length > MAX_UNRESOLVED_PER_FILE,
           range: s.range,
           lifecycle: detectLifecycleHooks(s, mine, [...new Set(externals)]),
+          ...(s.component !== undefined ? { component: s.component } : {}),
         };
       }),
       externals: [...new Set(externals)],

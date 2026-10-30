@@ -4,7 +4,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { combineResults } from "../structure/structureMerge";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
-import { buildFlowGraph, type FlowProject } from "./flowModel";
+import { memberSignalLines } from "./flowLayout";
+import { buildFlowGraph, TEMPLATE_MEMBER, type FlowProject } from "./flowModel";
 import { applyChangesToGraph, buildProposalOverlay } from "./proposalOverlay";
 import { STRUCTURE_LIMITS } from "../structure/structureTypes";
 import type { StructureInput, StructureResult } from "../structure/structureTypes";
@@ -34,14 +35,36 @@ function collectInputs(side: string): StructureInput[] {
   return out;
 }
 
-function analyzeSample(): StructureResult {
-  const inputs = [...collectInputs("frontend"), ...collectInputs("backend")];
+function analyzeSample(sides = ["frontend", "backend"]): StructureResult {
+  const inputs = sides.flatMap(collectInputs);
   const parts: StructureResult[] = [];
   for (let i = 0; i < inputs.length; i += STRUCTURE_LIMITS.maxFiles) {
     parts.push(analyzeTsFiles(inputs.slice(i, i + STRUCTURE_LIMITS.maxFiles)));
   }
   return combineResults(parts);
 }
+
+it("walks the demo page from its template down to the HTTP call", () => {
+  const result = analyzeSample(["frontend"]);
+  const project: FlowProject = { key: "reservas", label: "reservas", result };
+  const page = result.symbols.find((s) => s.name === "ReservasPageComponent")!;
+  const graph = buildFlowGraph([project], {
+    projectKey: "reservas",
+    symbolId: page.id,
+    member: null,
+  });
+  const start = graph.nodes.find((node) => node.symbol.name === "ReservasPageComponent")!;
+  expect(memberSignalLines(start, TEMPLATE_MEMBER)).toEqual([
+    "reads store.count",
+    "reads store.loading",
+    "reads store.reservas",
+  ]);
+  expect(graph.nodes.map((node) => node.symbol.name)).toEqual(
+    expect.arrayContaining(["ReservaFormComponent", "ReservasStore", "ReservasService"]),
+  );
+  expect(graph.httpNodes.length).toBeGreaterThan(0);
+  expect(graph.pending.filter((item) => item.kind === "ambiguous")).toEqual([]);
+});
 
 it("yields every link the demo needs", () => {
   const result = analyzeSample();

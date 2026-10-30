@@ -13,7 +13,7 @@ import type {
 } from "./structureTypes";
 import { collectNestRoutes } from "./tsNestFacts";
 
-const SIGNAL_WRITERS = new Set(["set", "update", "mutate"]);
+export const SIGNAL_WRITERS = new Set(["set", "update", "mutate"]);
 /** Angular calls that create a signal field. */
 const SIGNAL_FACTORIES = new Set(["signal", "computed", "input", "model", "toSignal", "linkedSignal"]);
 /** Factories with a `.required` form: `input.required<T>()`. */
@@ -85,7 +85,7 @@ function signalFieldsOf(source: ts.SourceFile, node: ts.ClassDeclaration): Set<s
   return out;
 }
 
-function decoratorsOf(node: ts.Node): readonly ts.Decorator[] {
+export function decoratorsOf(node: ts.Node): readonly ts.Decorator[] {
   const get = ts.getDecorators as unknown as
     | ((target: ts.Node) => readonly ts.Decorator[] | undefined)
     | undefined;

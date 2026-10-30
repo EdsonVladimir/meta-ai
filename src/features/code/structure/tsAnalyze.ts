@@ -52,7 +52,7 @@ import ts from "ts-compiler";
 import { fnv1aHex } from "../model";
 import { STRUCTURE_LIMITS } from "./structureTypes";
 import { collectFlowFacts, httpClientFieldsOf } from "./tsFlowFacts";
-import { collectHttpInterceptors } from "./tsAngularFacts";
+import { collectComponentFacts, collectHttpInterceptors } from "./tsAngularFacts";
 import { collectNestPipeline } from "./tsNestFacts";
 import type {
   ApiCall,
@@ -649,6 +649,7 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
     const moduleMeta = decorators.some((entry) => MODULE_DECORATORS.has(entry))
       ? moduleMetadataOf(source, node)
       : null;
+    const component = collectComponentFacts(source, node, input.rel);
     symbols.push({
       id,
       language: "ts",
@@ -663,6 +664,7 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
       bodyHash: memberBodyHash(source, node),
       decorators,
       flow: collectFlowFacts(source, node, (target, what) => evidenceOf(source, target, what)),
+      ...(component !== null ? { component } : {}),
       ...(moduleMeta !== null && moduleMeta.refs.length > 0
         ? { moduleRefs: moduleMeta.refs }
         : {}),
