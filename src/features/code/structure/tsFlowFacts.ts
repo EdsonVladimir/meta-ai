@@ -7,9 +7,11 @@ import type {
   StructureHttpCall,
   StructureInjection,
   StructureMemberCall,
+  StructureRepositoryCall,
   StructureSignalAccess,
   SymbolFlowFacts,
 } from "./structureTypes";
+import { collectNestRoutes } from "./tsNestFacts";
 
 const SIGNAL_WRITERS = new Set(["set", "update", "mutate"]);
 /** `HttpClient` methods whose name is the HTTP verb. */
@@ -54,6 +56,32 @@ function signalFieldsOf(source: ts.SourceFile, node: ts.ClassDeclaration): Set<s
   return out;
 }
 
+function decoratorsOf(node: ts.Node): readonly ts.Decorator[] {
+  const get = ts.getDecorators as unknown as
+    | ((target: ts.Node) => readonly ts.Decorator[] | undefined)
+    | undefined;
+  return (
+    get?.(node) ?? (node as { decorators?: readonly ts.Decorator[] }).decorators ?? []
+  );
+}
+
+/** Entity of `@InjectRepository(E)`; null without the decorator or a plain name. */
+function repositoryEntityOf(node: ts.Node): string | null {
+  for (const decorator of decoratorsOf(node)) {
+    const expr = decorator.expression;
+    if (
+      !ts.isCallExpression(expr) ||
+      !ts.isIdentifier(expr.expression) ||
+      expr.expression.text !== "InjectRepository"
+    ) {
+      continue;
+    }
+    const first = expr.arguments[0];
+    if (first !== undefined && ts.isIdentifier(first)) return first.text;
+  }
+  return null;
+}
+
 function collectInjections(
   source: ts.SourceFile,
   node: ts.ClassDeclaration,
@@ -62,6 +90,17 @@ function collectInjections(
   const out: StructureInjection[] = [];
   for (const member of node.members) {
     if (!ts.isPropertyDeclaration(member)) continue;
+    if (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name)) continue;
+    const entity = repositoryEntityOf(member);
+    if (entity !== null) {
+      out.push({
+        field: ts.idText(member.name),
+        typeName: entity,
+        via: "repository",
+        evidence: evidence(member, `repository ${entity}`),
+      });
+      continue;
+    }
     const init = member.initializer;
     if (init === undefined || !ts.isCallExpression(init)) continue;
     if (!ts.isIdentifier(init.expression) || init.expression.text !== "inject") continue;
@@ -80,6 +119,16 @@ function collectInjections(
       if (!ts.isIdentifier(param.name)) continue;
       if (param.type === undefined) continue;
       if (!isInjectionParam(param)) continue;
+      const entity = repositoryEntityOf(param);
+      if (entity !== null) {
+        out.push({
+          field: param.name.text,
+          typeName: entity,
+          via: "repository",
+          evidence: evidence(param, `repository ${entity}`),
+        });
+        continue;
+      }
       out.push({
         field: param.name.text,
         typeName: param.type.getText(source),
@@ -260,6 +309,11 @@ export function collectFlowFacts(
   const injections = collectInjections(source, node, evidence);
   const signals = signalFieldsOf(source, node);
   const httpFields = httpClientFieldsOf(node);
+  const repositories = new Map(
+    injections
+      .filter((injection) => injection.via === "repository")
+      .map((injection) => [injection.field, injection.typeName]),
+  );
   const fieldInits = new Map<string, ts.Expression>();
   for (const member of node.members) {
     if (!ts.isPropertyDeclaration(member) || member.initializer === undefined) continue;
@@ -269,6 +323,7 @@ export function collectFlowFacts(
   const calls: StructureMemberCall[] = [];
   const accesses: StructureSignalAccess[] = [];
   const httpCalls: StructureHttpCall[] = [];
+  const repositoryCalls: StructureRepositoryCall[] = [];
   const unresolved: string[] = [];
 
   // True when the call took a member-call order slot (signals and
@@ -298,6 +353,27 @@ export function collectFlowFacts(
         url: resolveHttpUrl(source, call.arguments[0], fieldInits, new Set()),
         returnType: typeArg === undefined ? null : cutType(typeArg.getText(source)),
         evidence: evidence(call, `http ${verb}`),
+      });
+      return false;
+    }
+    // `this.repo.<method>(...)`: a repository call on its entity.
+    const repoTarget =
+      ts.isPropertyAccessExpression(callee) &&
+      ts.isPropertyAccessExpression(callee.expression) &&
+      isThis(callee.expression.expression) &&
+      (ts.isIdentifier(callee.expression.name) || ts.isPrivateIdentifier(callee.expression.name))
+        ? repositories.get(ts.idText(callee.expression.name))
+        : undefined;
+    if (
+      repoTarget !== undefined &&
+      ts.isPropertyAccessExpression(callee) &&
+      (ts.isIdentifier(callee.name) || ts.isPrivateIdentifier(callee.name))
+    ) {
+      repositoryCalls.push({
+        member,
+        entity: repoTarget,
+        method: ts.idText(callee.name),
+        evidence: evidence(call, `repository ${ts.idText(callee.name)}`),
       });
       return false;
     }
@@ -372,8 +448,8 @@ export function collectFlowFacts(
     calls,
     signals: accesses,
     httpCalls,
-    repositoryCalls: [],
-    routes: [],
+    repositoryCalls,
+    routes: collectNestRoutes(source, node, evidence),
     unresolved,
   };
 }

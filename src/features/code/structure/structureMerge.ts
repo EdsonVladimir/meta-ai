@@ -28,6 +28,8 @@ export function emptyResult(): StructureResult {
 
 export function combineResults(parts: StructureResult[]): StructureResult {
   const nonEmpty = parts.filter((part) => part.files.length > 0);
+  const pipeline = nonEmpty.flatMap((part) => part.pipeline ?? []);
+  const routeRecords = nonEmpty.flatMap((part) => part.routeRecords ?? []);
   return {
     files: nonEmpty.flatMap((part) => part.files),
     symbols: nonEmpty.flatMap((part) => part.symbols),
@@ -39,5 +41,7 @@ export function combineResults(parts: StructureResult[]): StructureResult {
     endpointsTruncated: nonEmpty.some((part) => part.endpointsTruncated),
     callsTruncated: nonEmpty.some((part) => part.callsTruncated),
     limits: nonEmpty[0]?.limits ?? emptyResult().limits,
+    ...(pipeline.length > 0 ? { pipeline } : {}),
+    ...(routeRecords.length > 0 ? { routeRecords } : {}),
   };
 }

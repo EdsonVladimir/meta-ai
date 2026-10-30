@@ -52,9 +52,11 @@ import ts from "ts-compiler";
 import { fnv1aHex } from "../model";
 import { STRUCTURE_LIMITS } from "./structureTypes";
 import { collectFlowFacts, httpClientFieldsOf } from "./tsFlowFacts";
+import { collectNestPipeline } from "./tsNestFacts";
 import type {
   ApiCall,
   ApiEndpoint,
+  PipelineFact,
   StructureInput,
   StructureMember,
   StructureModuleRef,
@@ -85,6 +87,7 @@ interface FileSymbols {
   rawImports: RawImport[];
   partial: boolean;
   message: string | null;
+  pipeline: PipelineFact[];
 }
 
 const HTTP_VERBS = new Set(["get", "post", "put", "patch", "delete", "options", "head"]);
@@ -870,7 +873,10 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
   }
 
   for (const stmt of source.statements) visitCalls(stmt);
-  return { symbols, refs, endpoints, calls, rawImports, partial, message };
+  const pipeline = collectNestPipeline(source, (target, what) =>
+    evidenceOf(source, target, what),
+  );
+  return { symbols, refs, endpoints, calls, rawImports, partial, message, pipeline };
 }
 
 /**
@@ -885,6 +891,7 @@ export function analyzeTsFiles(inputs: StructureInput[]): StructureResult {
   const allRefs: PendingRef[] = [];
   const allEndpoints: ApiEndpoint[] = [];
   const allCalls: ApiCall[] = [];
+  const allPipelines: PipelineFact[] = [];
   // Import resolution scope: rels per root (imports never cross roots).
   const scopeByRoot = new Map<string, Set<string>>();
   for (const input of files) {
@@ -911,6 +918,7 @@ export function analyzeTsFiles(inputs: StructureInput[]): StructureResult {
     allRefs.push(...parsed.refs);
     allEndpoints.push(...parsed.endpoints);
     allCalls.push(...parsed.calls);
+    allPipelines.push(...parsed.pipeline);
     const scopeRels = scopeByRoot.get(input.rootId) ?? new Set<string>();
     const imports = parsed.rawImports.map((found) => {
       const resolvedRel = resolveImportSpec(input.rel, found.raw, scopeRels);
@@ -982,5 +990,6 @@ export function analyzeTsFiles(inputs: StructureInput[]): StructureResult {
     endpointsTruncated: allEndpoints.length > endpoints.length,
     callsTruncated: allCalls.length > calls.length,
     limits: STRUCTURE_LIMITS,
+    ...(allPipelines.length > 0 ? { pipeline: allPipelines } : {}),
   };
 }
