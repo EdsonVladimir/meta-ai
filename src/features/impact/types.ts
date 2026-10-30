@@ -1,5 +1,5 @@
 // Tipos de impacto. Reflejan los DTOs de `ruth-api` (camelCase).
-// Puros: sin React, sin Tauri. El adaptador vive en client.ts.
+// Pure: no React, no Tauri. The adapter lives in client.ts.
 import type { ApprovalDto, ArtifactDto } from "../requirements/types";
 
 export interface ImpactVersionDto {
@@ -39,7 +39,7 @@ export interface ImpactReportDto {
   affected: ImpactedDto[];
 }
 
-/** Clave de consulta: una respuesta solo vale para su consulta exacta. */
+/** Query key: a response only counts for its exact query. */
 export function impactQueryKey(
   projectId: string,
   artifactId: string,

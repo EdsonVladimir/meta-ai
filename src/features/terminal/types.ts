@@ -1,5 +1,5 @@
-// Tipos de la terminal integrada. Las sesiones viven en Rust (`ruth-term`)
-// y la salida viaja por eventos; aquí solo fichas, pestañas y errores.
+// Integrated terminal types. Sessions live in Rust (`ruth-term`) and
+// output travels over events; here only session records, tabs and errors.
 export interface TerminalSessionDto {
   id: string;
   shell: string;
@@ -29,10 +29,10 @@ export interface TerminalError {
   message: string;
 }
 
-/** Pestaña visible: ficha servida por Rust. Sin caché de salida (la guarda xterm). */
+/** Visible tab: record served by Rust. No output cache (xterm keeps it). */
 export interface TerminalTab {
   info: TerminalSessionDto;
 }
 
-/** Límite espejo del de Rust (la autoridad es `MAX_SESSIONS`). */
+/** Mirror of the Rust limit (the authority is `MAX_SESSIONS`). */
 export const MAX_TERMINAL_SESSIONS = 3;

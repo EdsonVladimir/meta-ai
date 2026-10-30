@@ -1,5 +1,5 @@
-// Dominio de la prueba de conexión con Meta.
-// Puro: sin React, sin Tauri, sin proveedores. El adaptador Tauri vive en tauri.ts.
+// Meta connection-test domain.
+// Pure: no React, no Tauri, no providers. The Tauri adapter lives in tauri.ts.
 
 export type ConnectionState =
   | "unknown"
@@ -14,8 +14,8 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
-// Debe coincidir con MetaErrorKind del crate Rust `ruth-meta` (snake_case).
-// `not_tauri` solo existe en el frontend: el navegador no puede invocar comandos nativos.
+// Must match MetaErrorKind from the Rust `ruth-meta` crate (snake_case).
+// `not_tauri` only exists in the frontend: the browser cannot invoke native commands.
 export type MetaErrorKind =
   | "missing_key"
   | "busy"
@@ -44,7 +44,7 @@ export interface MetaTestError {
 export interface ConnectionTestOk {
   text: string;
   model: string;
-  /** La API devolvió estado distinto de `completed` (p. ej. truncado por límite). */
+  /** The API returned a non-`completed` status (e.g. truncated by limit). */
   truncated: boolean;
   usage: TokenUsage | null;
 }
@@ -53,7 +53,7 @@ export type ConnectionTestOutcome =
   | { ok: true; value: ConnectionTestOk }
   | { ok: false; error: MetaTestError };
 
-/** Lectura local del entorno del proceso nativo. No hace llamadas de red. */
+/** Local read of the native process environment. Makes no network calls. */
 export interface MetaStatus {
   configured: boolean;
   model: string;
@@ -87,13 +87,13 @@ export function asErrorKind(raw: unknown): MetaErrorKind {
 export function stateLabel(state: ConnectionState): string {
   switch (state) {
     case "unknown":
-      return "Sin comprobar";
+      return "Not checked";
     case "unconfigured":
-      return "Sin configurar";
+      return "Not configured";
     case "checking":
-      return "Comprobando";
+      return "Checking";
     case "available":
-      return "Disponible";
+      return "Available";
     case "error":
       return "Error";
   }
@@ -102,36 +102,36 @@ export function stateLabel(state: ConnectionState): string {
 export function kindLabel(kind: MetaErrorKind): string {
   switch (kind) {
     case "missing_key":
-      return "Falta META_API_KEY";
+      return "Missing META_API_KEY";
     case "busy":
-      return "Prueba en curso";
+      return "Test in progress";
     case "auth":
-      return "Autenticación";
+      return "Authentication";
     case "billing":
-      return "Facturación";
+      return "Billing";
     case "forbidden":
-      return "Sin permiso";
+      return "Forbidden";
     case "rate_limit":
-      return "Límite de peticiones";
+      return "Rate limited";
     case "model_not_found":
-      return "Modelo no encontrado";
+      return "Model not found";
     case "bad_request":
-      return "Petición inválida";
+      return "Bad request";
     case "server":
-      return "Error del servidor";
+      return "Server error";
     case "network":
-      return "Red";
+      return "Network";
     case "timeout":
-      return "Tiempo agotado";
+      return "Timed out";
     case "incomplete":
-      return "Respuesta incompleta";
+      return "Incomplete response";
     case "refusal":
-      return "Rechazo del modelo";
+      return "Model refusal";
     case "invalid_response":
-      return "Respuesta inválida";
+      return "Invalid response";
     case "unexpected":
-      return "Inesperado";
+      return "Unexpected";
     case "not_tauri":
-      return "Requiere Tauri";
+      return "Requires Tauri";
   }
 }

@@ -1,20 +1,20 @@
-//! Registro de generaciones de diseño y su propuesta (hito 6).
+//! Design-generation log and its proposal (milestone 6).
 //!
-//! Espeja `proposals`: cada generación de flujo o ER conserva identidad,
-//! proyecto y módulo, tipo, modelo, versiones exactas de contexto, versión de
-//! plantilla, uso y preguntas; su propuesta (UNA por generación), el título,
-//! la especificación JSON canónica, la explicación y el estado (pendiente,
-//! aceptada con artefacto y contenido final, o descartada).
+//! Mirrors `proposals`: each flow or ER generation keeps identity,
+//! project and module, kind, model, exact context versions, template
+//! version, usage and questions; its proposal (ONE per generation), the title,
+//! the canonical JSON spec, the explanation and the state (pending,
+//! accepted with artifact and final content, or discarded).
 //!
-//! La caducidad se calcula en `ruth-api`, no se almacena. No se guardan
-//! claves, cabeceras ni respuestas crudas. Mermaid nunca se almacena: se
-//! deriva del JSON autoritativo.
+//! Staleness is computed in `ruth-api`, not stored. No keys, headers or
+//! raw responses are saved. Mermaid is never stored: it is derived from
+//! the authoritative JSON.
 
 use crate::error::StoreError;
 use crate::proposals::ProposalState;
 
-/// Propuesta de diseño validada, con su estado de aceptación. `spec_json` es
-/// el JSON canónico (`kind`, nodos/entidades, explicación, preguntas).
+/// Validated design proposal, with its acceptance state. `spec_json` is
+/// the canonical JSON (`kind`, nodes/entities, explanation, questions).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredDesignProposal {
     pub title: String,
@@ -23,10 +23,10 @@ pub struct StoredDesignProposal {
     pub state: ProposalState,
 }
 
-/// Generación de diseño registrada, vinculada a su contexto original exacto.
-/// `kind` es `"flow"` o `"data_model"`. Las propuestas de actualización
-/// (hito 8) fijan además el artefacto objetivo y su versión en el momento
-/// del snapshot; las de creación dejan ambos a nulo.
+/// Registered design generation, linked to its exact original context.
+/// `kind` is `"flow"` or `"data_model"`. Update proposals
+/// (milestone 8) also pin the target artifact and its version at snapshot
+/// time; creation ones leave both null.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredDesignGeneration {
     pub id: String,
@@ -46,7 +46,7 @@ pub struct StoredDesignGeneration {
     pub target_version_id: Option<String>,
 }
 
-/// Registro en memoria, espejo del último commit confirmado.
+/// In-memory log, mirror of the last confirmed commit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DesignLog {
     generations: Vec<StoredDesignGeneration>,
@@ -63,28 +63,25 @@ impl DesignLog {
         Self::default()
     }
 
-    /// Registra una generación de diseño (recién validada o rehidratada).
-    /// Exige identidad única, tipo conocido y propuesta con contenido.
+    /// Records a design generation (newly validated or rehydrated).
+    /// Requires a unique identity, a known kind and a proposal with content.
     pub fn record(&mut self, generation: StoredDesignGeneration) -> Result<(), StoreError> {
         if generation.id.trim().is_empty() {
-            return Err(invalid("la generación de diseño no tiene identidad"));
+            return Err(invalid("the design generation has no identity"));
         }
         if self.generations.iter().any(|g| g.id == generation.id) {
             return Err(invalid(format!(
-                "generación de diseño duplicada: {}",
+                "duplicate design generation: {}",
                 generation.id
             )));
         }
         if generation.kind != "flow" && generation.kind != "data_model" {
-            return Err(invalid(format!(
-                "tipo de diseño desconocido: {}",
-                generation.kind
-            )));
+            return Err(invalid(format!("unknown design kind: {}", generation.kind)));
         }
         if generation.proposal.title.trim().is_empty()
             || generation.proposal.spec_json.trim().is_empty()
         {
-            return Err(invalid("la propuesta de diseño no trae contenido"));
+            return Err(invalid("the design proposal brings no content"));
         }
         match (
             generation.target_artifact_id.as_deref(),
@@ -94,16 +91,14 @@ impl DesignLog {
             (Some(artifact), Some(version))
                 if !artifact.trim().is_empty() && !version.trim().is_empty() => {}
             _ => {
-                return Err(invalid(
-                    "la propuesta de actualización no fija objetivo y versión",
-                ));
+                return Err(invalid("the update proposal pins no target and version"));
             }
         }
         self.generations.push(generation);
         Ok(())
     }
 
-    /// Todas las generaciones, en orden de registro. Solo lectura.
+    /// All generations, in registration order. Read-only.
     pub fn all(&self) -> &[StoredDesignGeneration] {
         &self.generations
     }
@@ -116,10 +111,10 @@ impl DesignLog {
         self.generations
             .iter_mut()
             .find(|g| g.id == id)
-            .ok_or_else(|| invalid(format!("generación de diseño desconocida: {id}")))
+            .ok_or_else(|| invalid(format!("unknown design generation: {id}")))
     }
 
-    /// Generaciones de diseño de un módulo, en orden de registro.
+    /// A module design generations, in registration order.
     pub fn designs_of(&self, module_id: &str) -> Vec<&StoredDesignGeneration> {
         self.generations
             .iter()
@@ -127,8 +122,8 @@ impl DesignLog {
             .collect()
     }
 
-    /// Marca la propuesta como aceptada. Solo desde pendiente; si ya estaba
-    /// aceptada con el mismo artefacto es idempotente (reintento seguro).
+    /// Marks the proposal accepted. Only from pending; if already accepted
+    /// with the same artifact it is idempotent (safe retry).
     pub fn mark_accepted(
         &mut self,
         generation_id: &str,
@@ -148,15 +143,15 @@ impl DesignLog {
                 artifact_id: known, ..
             } if known == artifact_id => Ok(()),
             ProposalState::Accepted { .. } => Err(invalid(format!(
-                "la propuesta de {generation_id} ya se aceptó con otro artefacto"
+                "proposal of {generation_id} was already accepted with another artifact"
             ))),
             ProposalState::Discarded => Err(invalid(format!(
-                "la propuesta de {generation_id} está descartada y no puede aceptarse"
+                "proposal of {generation_id} is discarded and cannot be accepted"
             ))),
         }
     }
 
-    /// Marca la propuesta como descartada. Idempotente.
+    /// Marks the proposal discarded. Idempotent.
     pub fn mark_discarded(&mut self, generation_id: &str) -> Result<(), StoreError> {
         let proposal = &mut self.design_mut(generation_id)?.proposal;
         match &proposal.state {
@@ -165,12 +160,12 @@ impl DesignLog {
                 Ok(())
             }
             ProposalState::Accepted { .. } => Err(invalid(format!(
-                "la propuesta de {generation_id} ya se aceptó y no puede descartarse"
+                "proposal of {generation_id} was already accepted and cannot be discarded"
             ))),
         }
     }
 
-    /// ¿Ya se aceptó esta propuesta? (Para no crear duplicados al reintentar.)
+    /// Was this proposal already accepted? (To avoid duplicates on retry.)
     pub fn accepted_artifact(&self, generation_id: &str) -> Option<String> {
         let generation = self.design(generation_id)?;
         match &generation.proposal.state {
@@ -212,7 +207,7 @@ mod tests {
     #[test]
     fn records_and_lists_by_module() {
         let mut log = DesignLog::new();
-        log.record(generation("gen-1")).expect("registra");
+        log.record(generation("gen-1")).expect("records");
         assert_eq!(log.designs_of("mod-2").len(), 1);
         assert!(log.designs_of("mod-9").is_empty());
         assert_eq!(log.design("gen-1").expect("id").kind, "flow");
@@ -221,7 +216,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_ids_unknown_kind_and_empty_proposal() {
         let mut log = DesignLog::new();
-        log.record(generation("gen-1")).expect("registra");
+        log.record(generation("gen-1")).expect("records");
         assert!(log.record(generation("gen-1")).is_err());
         let mut bad = generation("gen-2");
         bad.kind = "uml".to_string();
@@ -240,7 +235,7 @@ mod tests {
         let mut full = generation("gen-9");
         full.target_artifact_id = Some("flujo-4".to_string());
         full.target_version_id = Some("flujo-4-v1".to_string());
-        log.record(full).expect("objetivo completo");
+        log.record(full).expect("complete target");
         assert_eq!(
             log.design("gen-9")
                 .expect("id")
@@ -253,11 +248,12 @@ mod tests {
     #[test]
     fn accept_is_idempotent_but_discard_after_accept_fails() {
         let mut log = DesignLog::new();
-        log.record(generation("gen-1")).expect("registra");
-        log.mark_accepted("gen-1", "flujo-9", "{}").expect("acepta");
+        log.record(generation("gen-1")).expect("records");
+        log.mark_accepted("gen-1", "flujo-9", "{}")
+            .expect("accepts");
         assert_eq!(log.accepted_artifact("gen-1").as_deref(), Some("flujo-9"));
         log.mark_accepted("gen-1", "flujo-9", "{}")
-            .expect("reintento idempotente");
+            .expect("idempotent retry");
         assert!(log.mark_accepted("gen-1", "flujo-10", "{}").is_err());
         assert!(log.mark_discarded("gen-1").is_err());
         assert!(log.mark_discarded("gen-9").is_err());

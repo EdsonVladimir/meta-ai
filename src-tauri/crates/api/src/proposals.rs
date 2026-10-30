@@ -1,21 +1,21 @@
-//! Lógica de generaciones asistidas: contexto, registro, caducidad,
-//! aceptación y descarte.
+//! Assisted-generation logic: context, recording, staleness,
+//! acceptance and discard.
 //!
-//! Sin Tauri ni red: recibe el `Store`, el `ProposalLog`, el `IdGen` y el
-//! resultado ya validado de Meta como entradas, así que todo es testeable
-//! con un generador falso (los tests construyen la salida a mano). El
-//! comando Tauri solo orquesta: foto del contexto, red fuera de bloqueos y
-//! registro posterior.
+//! No Tauri or network: takes the `Store`, the `ProposalLog`, the `IdGen`
+//! and Meta's already validated result as inputs, so everything is testable
+//! with a fake generator (tests build the output by hand). The
+//! Tauri command only orchestrates: context snapshot, network off locks and
+//! later recording.
 //!
-//! Reglas:
-//! - El contexto consultado NO crea dependencias de negocio: aceptar una
-//!   propuesta crea un requisito sin fuentes. Convertir el contexto en
-//!   dependencias inventaría relaciones y podría introducir ciclos.
-//! - La caducidad se calcula, no se almacena: una generación está
-//!   desactualizada si alguna versión de su contexto ya no es la actual.
-//!   Aceptar una propuesta desactualizada está bloqueado.
-//! - Aceptar es atómico e idempotente: dominio y estado en una transacción;
-//!   reintentar devuelve el detalle existente sin duplicar nada.
+//! Rules:
+//! - The consulted context creates NO business dependencies: accepting
+//!   a proposal creates a sourceless requirement. Turning context into
+//!   dependencies would invent relations and could introduce cycles.
+//! - Staleness computes, never stores: a generation is stale when
+//!   any context version is no longer current. Accepting a stale
+//!   proposal is blocked.
+//! - Accepting is atomic and idempotent: domain and state in one transaction;
+//!   retrying returns the existing detail without duplicating anything.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{
@@ -36,32 +36,32 @@ use crate::error::ApiError;
 use crate::ids::IdGen;
 use crate::logic::get_requirement;
 
-/// Agente registrado como procedencia de lo aceptado desde una generación.
+/// Agent recorded as provenance of what a generation accepts.
 fn agent_for(model: &str) -> Result<AgentId, ApiError> {
     AgentId::new(format!("ruth-gen/{model}")).map_err(ApiError::from)
 }
 
-/// Valida la descripción del módulo antes de generar.
+/// Validates the module description before generating.
 pub fn validate_description(description: &str) -> Result<String, ApiError> {
     let trimmed = description.trim();
     if trimmed.is_empty() {
         return Err(ApiError::coded(
             "empty_description",
-            "Describe el módulo antes de proponer requisitos.",
+            "Describe the module before proposing requirements.",
         ));
     }
     if trimmed.chars().count() > MAX_DESCRIPTION_CHARS {
         return Err(ApiError::coded(
             "description_too_long",
-            format!("la descripción supera {MAX_DESCRIPTION_CHARS} caracteres"),
+            format!("the description exceeds {MAX_DESCRIPTION_CHARS} characters"),
         ));
     }
     Ok(trimmed.to_string())
 }
 
-/// Foto del contexto: versión actual exacta de cada requisito del módulo,
-/// ordenada por artefacto. Se toma antes de la red y se registra con la
-/// generación para detectar caducidad después.
+/// Context snapshot: exact current version of each module requirement,
+/// ordered by artifact. Taken before the network call and recorded with
+/// the generation to detect staleness later.
 pub fn snapshot_context(
     store: &Store,
     project_id: &str,
@@ -83,7 +83,7 @@ pub fn snapshot_context(
         if artifact.artifact_type() != ArtifactType::Requirement {
             continue;
         }
-        // Los archivados no se envían como contexto: están fuera del trabajo.
+        // Archived ones are not sent as context: they are out of the work.
         if artifact.archived() {
             continue;
         }
@@ -100,7 +100,7 @@ pub fn snapshot_context(
     Ok(items)
 }
 
-/// Vista previa del contexto para la interfaz: qué se enviará, sin enviarlo.
+/// Context preview for the UI: what would be sent, without sending it.
 pub fn context_preview(
     store: &Store,
     input: GenerationContextInput,
@@ -110,8 +110,8 @@ pub fn context_preview(
             .into_iter()
             .map(|item| {
                 let chars = item.content.chars().count();
-                // El título vigente es solo presentación de la vista previa;
-                // la foto registrada (versiones exactas) no cambia.
+                // The current title is only preview presentation;
+                // the recorded snapshot (exact versions) does not change.
                 let title = ArtifactId::new(item.artifact_id.clone())
                     .ok()
                     .and_then(|id| store.artifact(&id))
@@ -142,7 +142,7 @@ fn excerpt(content: &str) -> String {
     format!("{}…", &flat[..end])
 }
 
-/// Entrada para registrar una generación recién validada.
+/// Input for recording a newly validated generation.
 pub struct RecordInput {
     pub project_id: String,
     pub module_id: String,
@@ -156,8 +156,8 @@ pub struct RecordInput {
     pub created_at: String,
 }
 
-/// Registra la generación en disco y memoria. El identificador definitivo
-/// (`gen-N`) lo crea la app; los temporales del modelo no salen de su ámbito.
+/// Records the generation on disk and memory. The definitive identifier
+/// (`gen-N`) is created by the app; the model's temp ones never leave their scope.
 pub fn record_generation(
     store: &Store,
     ids: &mut IdGen,
@@ -165,7 +165,7 @@ pub fn record_generation(
     db: &DbActor,
     input: RecordInput,
 ) -> Result<GenerationDto, ApiError> {
-    // El módulo pudo archivarse durante la red: revalidar antes de registrar.
+    // The module may have archived during the network call: revalidate before recording.
     let module = ModuleId::new(input.module_id.clone())?;
     if store.module(&module).is_some_and(|m| m.archived()) {
         return Err(CoreError::ArchivedModule { module }.into());
@@ -199,19 +199,19 @@ pub fn record_generation(
             })
             .collect(),
     };
-    // Validar en una copia antes de tocar disco o memoria publicados.
+    // Validate on a copy before touching published disk or memory.
     let mut log_draft = log.clone();
     log_draft
         .record(generation.clone())
         .map_err(ApiError::storage)?;
-    db.record_generation(&generation)
+    db.record_generation(&generation, ids_draft.checkpoint())
         .map_err(ApiError::storage)?;
     *log = log_draft;
     *ids = ids_draft;
     Ok(to_dto(store, &generation))
 }
 
-/// Generaciones de un módulo con su caducidad calculada.
+/// A module's generations with their computed staleness.
 pub fn list_generations(
     store: &Store,
     log: &ProposalLog,
@@ -233,8 +233,8 @@ pub fn list_generations(
         .collect())
 }
 
-/// ¿Cambió alguna fuente desde la generación? Conservadora: versión
-/// desconocida o ausente también cuenta como desactualizada.
+/// Did any source change since the generation? Conservative: an
+/// unknown or missing version also counts as stale.
 pub fn generation_is_stale(store: &Store, generation: &StoredGeneration) -> bool {
     for version_id in &generation.context_version_ids {
         let Ok(id) = VersionId::new(version_id.clone()) else {
@@ -293,7 +293,7 @@ fn to_dto(store: &Store, generation: &StoredGeneration) -> GenerationDto {
     }
 }
 
-/// Campos de una propuesta ya validados, listos para componer.
+/// A proposal's already validated fields, ready to compose.
 pub struct AcceptedFields {
     pub title: String,
     pub description: String,
@@ -301,21 +301,20 @@ pub struct AcceptedFields {
     pub assumptions: Vec<String>,
 }
 
-/// Valida los campos editados por la persona con los mismos límites de la
-/// salida del modelo: la interfaz no es de fiar para estos topes.
+/// Validates the person-edited fields with the same limits as the
+/// model output: the UI is not trusted for these caps.
 fn validate_accepted(input: &AcceptProposalInput) -> Result<AcceptedFields, ApiError> {
-    let bad =
-        |what: &str| ApiError::coded("invalid_proposal", format!("propuesta inválida: {what}"));
+    let bad = |what: &str| ApiError::coded("invalid_proposal", format!("invalid proposal: {what}"));
     let title = input.title.trim();
     if title.is_empty() || title.chars().count() > MAX_TITLE_CHARS {
-        return Err(bad("título vacío o excesivo"));
+        return Err(bad("empty or oversized title"));
     }
     let description = input.description.trim();
     if description.is_empty() || description.chars().count() > MAX_PROPOSAL_CHARS {
-        return Err(bad("descripción vacía o excesiva"));
+        return Err(bad("empty or oversized description"));
     }
-    let acceptance = validate_items(&input.acceptance, "criterios", 1, MAX_ACCEPTANCE_ITEMS)?;
-    let assumptions = validate_items(&input.assumptions, "supuestos", 0, MAX_ASSUMPTION_ITEMS)?;
+    let acceptance = validate_items(&input.acceptance, "criteria", 1, MAX_ACCEPTANCE_ITEMS)?;
+    let assumptions = validate_items(&input.assumptions, "assumptions", 0, MAX_ASSUMPTION_ITEMS)?;
     Ok(AcceptedFields {
         title: title.to_string(),
         description: description.to_string(),
@@ -333,7 +332,7 @@ fn validate_items(
     if items.len() < min || items.len() > max {
         return Err(ApiError::coded(
             "invalid_proposal",
-            format!("propuesta inválida: {what} debe tener entre {min} y {max} elementos"),
+            format!("invalid proposal: {what} must have between {min} and {max} items"),
         ));
     }
     let mut out = Vec::with_capacity(items.len());
@@ -342,7 +341,7 @@ fn validate_items(
         if trimmed.is_empty() || trimmed.chars().count() > MAX_ITEM_CHARS {
             return Err(ApiError::coded(
                 "invalid_proposal",
-                format!("propuesta inválida: {what} con elemento vacío o excesivo"),
+                format!("invalid proposal: {what} with an empty or oversized item"),
             ));
         }
         out.push(trimmed.to_string());
@@ -350,16 +349,16 @@ fn validate_items(
     Ok(out)
 }
 
-/// Composición determinista del contenido del requisito desde los campos.
-/// Una sola forma canónica: título, descripción, criterios y supuestos.
+/// Deterministic composition of the requirement content from the fields.
+/// A single canonical shape: title, description, criteria and assumptions.
 pub fn compose_content(fields: &AcceptedFields) -> String {
     let mut content = format!("{}\n\n{}", fields.title, fields.description);
-    content.push_str("\n\nCriterios de aceptación:");
+    content.push_str("\n\nAcceptance criteria:");
     for criterion in &fields.acceptance {
         content.push_str(&format!("\n- {criterion}"));
     }
     if !fields.assumptions.is_empty() {
-        content.push_str("\n\nSupuestos:");
+        content.push_str("\n\nAssumptions:");
         for assumption in &fields.assumptions {
             content.push_str(&format!("\n- {assumption}"));
         }
@@ -367,10 +366,10 @@ pub fn compose_content(fields: &AcceptedFields) -> String {
     content
 }
 
-/// Acepta una propuesta como borrador con procedencia IA, sin aprobarla.
-/// Atómica (dominio + estado en una transacción) e idempotente: reintentar
-/// devuelve el detalle existente sin crear duplicados. Bloqueada si la
-/// generación está desactualizada o la propuesta no está pendiente.
+/// Accepts a proposal as an AI-provenance draft, without approving it.
+/// Atomic (domain + state in one transaction) and idempotent: retrying
+/// returns the existing detail without creating duplicates. Blocked when
+/// the generation is stale or the proposal is not pending.
 pub fn accept_proposal(
     store: &mut Store,
     ids: &mut IdGen,
@@ -378,7 +377,7 @@ pub fn accept_proposal(
     db: &DbActor,
     input: AcceptProposalInput,
 ) -> Result<RequirementDetail, ApiError> {
-    // Idempotencia primero: si ya se aceptó, devolver lo existente.
+    // Idempotency first: when already accepted, return the existing one.
     if let Some(artifact) = log.accepted_artifact(&input.generation_id, &input.temp_id) {
         return get_requirement(
             store,
@@ -392,7 +391,7 @@ pub fn accept_proposal(
         .ok_or_else(|| {
             ApiError::coded(
                 "generation_not_found",
-                format!("generación desconocida: {}", input.generation_id),
+                format!("unknown generation: {}", input.generation_id),
             )
         })?
         .clone();
@@ -403,21 +402,21 @@ pub fn accept_proposal(
         .ok_or_else(|| {
             ApiError::coded(
                 "proposal_not_found",
-                format!("propuesta desconocida: {}", input.temp_id),
+                format!("unknown proposal: {}", input.temp_id),
             )
         })?;
     match proposal.state {
         ProposalState::Discarded => {
             return Err(ApiError::coded(
                 "proposal_discarded",
-                "La propuesta está descartada y no puede aceptarse.",
+                "The proposal is discarded and cannot be accepted.",
             ));
         }
         ProposalState::Accepted { .. } => {
-            // Defensa: el registro y la memoria discrepan; no duplicar.
+            // Defense: log and memory disagree; do not duplicate.
             return Err(ApiError::coded(
                 "proposal_accepted",
-                "La propuesta ya se aceptó.",
+                "The proposal was already accepted.",
             ));
         }
         ProposalState::Pending => {}
@@ -425,8 +424,8 @@ pub fn accept_proposal(
     if generation_is_stale(store, &generation) {
         return Err(ApiError::coded(
             "generation_stale",
-            "La generación está desactualizada: cambió un requisito usado como \
-             contexto. Genera de nuevo con el contexto actual.",
+            "The generation is stale: a requirement used as context changed. \
+             Generate again with the current context.",
         ));
     }
     let fields = validate_accepted(&input)?;
@@ -445,7 +444,7 @@ pub fn accept_proposal(
         ArtifactType::Requirement,
     )?;
     let version_id = IdGen::version(&artifact_id, 1);
-    // Sin fuentes: el contexto consultado no es dependencia de negocio.
+    // No sources: the consulted context is not a business dependency.
     store_draft.accept_ai_draft(
         &project,
         &artifact_id,
@@ -481,7 +480,7 @@ pub fn accept_proposal(
     )
 }
 
-/// Descarta una propuesta pendiente. Idempotente; rechaza si ya se aceptó.
+/// Discards a pending proposal. Idempotent; rejects when already accepted.
 pub fn discard_proposal(
     log: &mut ProposalLog,
     db: &DbActor,
@@ -490,7 +489,7 @@ pub fn discard_proposal(
     if log.generation(&input.generation_id).is_none() {
         return Err(ApiError::coded(
             "generation_not_found",
-            format!("generación desconocida: {}", input.generation_id),
+            format!("unknown generation: {}", input.generation_id),
         ));
     }
     db.discard_proposal(&input.generation_id, &input.temp_id)

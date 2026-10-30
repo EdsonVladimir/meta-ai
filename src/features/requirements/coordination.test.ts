@@ -13,19 +13,19 @@ import {
 import { approvalsForVersion, currentVersion, normalizeCoreError } from "./types";
 
 describe("shouldApplyResponse", () => {
-  it("aplica la última respuesta de la selección actual", () => {
+  it("applies the latest response of the current selection", () => {
     expect(
       shouldApplyResponse({ key: "req-1", epoch: 3 }, { key: "req-1", epoch: 3 }),
     ).toBe(true);
   });
 
-  it("descarta respuestas de otro requisito", () => {
+  it("discards responses from another requirement", () => {
     expect(
       shouldApplyResponse({ key: "req-2", epoch: 3 }, { key: "req-1", epoch: 3 }),
     ).toBe(false);
   });
 
-  it("descarta respuestas obsoletas del mismo requisito", () => {
+  it("discards stale responses from the same requirement", () => {
     expect(
       shouldApplyResponse({ key: "req-1", epoch: 4 }, { key: "req-1", epoch: 3 }),
     ).toBe(false);
@@ -33,22 +33,22 @@ describe("shouldApplyResponse", () => {
 });
 
 describe("needsConfirm", () => {
-  it("permite navegar sin borrador sucio", () => {
+  it("allows navigating without a dirty draft", () => {
     expect(needsConfirm(false, "req-1", "req-2")).toBe(false);
   });
 
-  it("permite re-seleccionar el mismo requisito", () => {
+  it("allows re-selecting the same requirement", () => {
     expect(needsConfirm(true, "req-1", "req-1")).toBe(false);
   });
 
-  it("pide confirmación al cambiar con borrador sucio", () => {
+  it("asks for confirmation when switching with a dirty draft", () => {
     expect(needsConfirm(true, "req-1", "req-2")).toBe(true);
     expect(needsConfirm(true, "req-1", null)).toBe(true);
   });
 });
 
 describe("draftReducer", () => {
-  it("editar marca el borrador como sucio", () => {
+  it("editing marks the draft as dirty", () => {
     const next = draftReducer(
       { requirementId: "req-1", content: "a", base: "a", rev: 0, dirty: false },
       { type: "edit", content: "b" },
@@ -56,7 +56,7 @@ describe("draftReducer", () => {
     expect(next).toEqual({ requirementId: "req-1", content: "b", base: "a", rev: 1, dirty: true });
   });
 
-  it("reescribir el contenido guardado elimina lo pendiente", () => {
+  it("rewriting the saved content clears what is pending", () => {
     const dirty = { requirementId: "req-1", content: "b", base: "a", rev: 1, dirty: true };
     expect(draftReducer(dirty, { type: "edit", content: "a" })).toEqual({
       requirementId: "req-1",
@@ -67,14 +67,14 @@ describe("draftReducer", () => {
     });
   });
 
-  it("un refresco no sobrescribe el borrador sucio", () => {
-    const dirty = { requirementId: "req-1", content: "mío", base: "v1", rev: 1, dirty: true };
+  it("a refresh does not overwrite the dirty draft", () => {
+    const dirty = { requirementId: "req-1", content: "mine", base: "v1", rev: 1, dirty: true };
     expect(
       draftReducer(dirty, { type: "snapshot", requirementId: "req-1", content: "otro" }),
     ).toBe(dirty);
   });
 
-  it("un refresco adopta contenido con borrador limpio", () => {
+  it("a refresh adopts content with a clean draft", () => {
     expect(
       draftReducer(EMPTY_DRAFT, {
         type: "snapshot",
@@ -84,39 +84,39 @@ describe("draftReducer", () => {
     ).toEqual({ requirementId: "req-1", content: "v3", base: "v3", rev: 0, dirty: false });
   });
 
-  it("un guardado fallido conserva el borrador", () => {
-    const dirty = { requirementId: "req-1", content: "mío", base: "v1", rev: 1, dirty: true };
+  it("a failed save keeps the draft", () => {
+    const dirty = { requirementId: "req-1", content: "mine", base: "v1", rev: 1, dirty: true };
     expect(draftReducer(dirty, { type: "saveFailed" })).toBe(dirty);
   });
 
-  it("el resultado solo limpia su propia petición", () => {
+  it("the result only clears its own request", () => {
     const dirty = { requirementId: "req-1", content: "b", base: "a", rev: 1, dirty: true };
     expect(
       draftReducer(dirty, { type: "saved", requirementId: "req-1", content: "b", rev: 1 }),
     ).toEqual({ requirementId: "req-1", content: "b", base: "b", rev: 1, dirty: false });
   });
 
-  it("lo editado durante el guardado sobrevive al resultado anterior", () => {
+  it("edits made during the save survive the earlier result", () => {
     const edited = { requirementId: "req-1", content: "c", base: "a", rev: 2, dirty: true };
-    // El `saved` era del rev 1: no toca el contenido nuevo.
+    // The `saved` belonged to rev 1: it never touches the new content.
     expect(
       draftReducer(edited, { type: "saved", requirementId: "req-1", content: "b", rev: 1 }),
     ).toBe(edited);
-    // Ni el de otro requisito.
+    // Nor another requirement's.
     expect(
       draftReducer(edited, { type: "saved", requirementId: "req-9", content: "c", rev: 2 }),
     ).toBe(edited);
   });
 
-  it("el descarte explícito resincroniza sin condiciones", () => {
-    const dirty = { requirementId: "req-1", content: "mío", base: "v1", rev: 4, dirty: true };
+  it("explicit discard resyncs unconditionally", () => {
+    const dirty = { requirementId: "req-1", content: "mine", base: "v1", rev: 4, dirty: true };
     expect(
       draftReducer(dirty, { type: "discard", requirementId: "req-1", content: "v1" }),
     ).toEqual({ requirementId: "req-1", content: "v1", base: "v1", rev: 4, dirty: false });
   });
 
-  it("cambiar de selección limpia el borrador", () => {
-    const dirty = { requirementId: "req-1", content: "mío", base: "v1", rev: 3, dirty: true };
+  it("changing selection clears the draft", () => {
+    const dirty = { requirementId: "req-1", content: "mine", base: "v1", rev: 3, dirty: true };
     expect(draftReducer(dirty, { type: "select", requirementId: "req-2" })).toEqual({
       requirementId: "req-2",
       content: "",
@@ -128,7 +128,7 @@ describe("draftReducer", () => {
 });
 
 describe("reviewReducer", () => {
-  it("confirmar fija la versión revisada y desmarcar la limpia", () => {
+  it("checking pins the reviewed version and unchecking clears it", () => {
     const on = reviewReducer(
       EMPTY_REVIEW,
       { type: "toggle", versionId: "req-1-v2", checked: true },
@@ -139,7 +139,7 @@ describe("reviewReducer", () => {
     ).toEqual(EMPTY_REVIEW);
   });
 
-  it("reset limpia la confirmación", () => {
+  it("reset clears the confirmation", () => {
     expect(reviewReducer({ reviewedVersionId: "req-1-v2" }, { type: "reset" })).toEqual(
       EMPTY_REVIEW,
     );
@@ -155,45 +155,45 @@ describe("canApprove", () => {
     busy: false,
   };
 
-  it("permite aprobar con confirmación vigente y borrador limpio", () => {
+  it("allows approving with a current confirmation and a clean draft", () => {
     expect(canApprove(base)).toBe(true);
   });
 
-  it("impide aprobar con cambios sin guardar", () => {
+  it("forbids approving with unsaved changes", () => {
     expect(canApprove({ ...base, dirty: true })).toBe(false);
   });
 
-  it("impide aprobar otra versión distinta de la confirmada", () => {
+  it("forbids approving a version other than the confirmed one", () => {
     expect(canApprove({ ...base, currentVersionId: "req-1-v3" })).toBe(false);
   });
 
-  it("impide aprobar sin autor o mientras hay operación en curso", () => {
+  it("forbids approving without an author or while an operation runs", () => {
     expect(canApprove({ ...base, approver: "  " })).toBe(false);
     expect(canApprove({ ...base, busy: true })).toBe(false);
   });
 });
 
 describe("normalizeCoreError", () => {
-  it("conserva kind estable y mensaje", () => {
-    expect(normalizeCoreError({ kind: "stale_version", message: "cambió" })).toEqual({
+  it("keeps a stable kind and message", () => {
+    expect(normalizeCoreError({ kind: "stale_version", message: "changed" })).toEqual({
       kind: "stale_version",
-      message: "cambió",
+      message: "changed",
     });
   });
 
-  it("degrada formas desconocidas a unexpected", () => {
+  it("degrades unknown shapes to unexpected", () => {
     expect(normalizeCoreError("boom")).toEqual({
       kind: "unexpected",
-      message: "Error inesperado en la operación.",
+      message: "Unexpected operation error.",
     });
     expect(normalizeCoreError({ kind: 7 })).toEqual({
       kind: "unexpected",
-      message: "Error inesperado en la operación.",
+      message: "Unexpected operation error.",
     });
   });
 });
 
-describe("selectores de detalle", () => {
+describe("detail selectors", () => {
   const detail = {
     artifact: { id: "req-1", projectId: "proy-1", moduleId: "mod-1", kind: "requirement", title: null, archived: false },
     versions: [
@@ -204,24 +204,24 @@ describe("selectores de detalle", () => {
     currentVersionId: "req-1-v2",
   };
 
-  it("localiza la versión actual", () => {
+  it("finds the current version", () => {
     expect(currentVersion(detail)?.id).toBe("req-1-v2");
   });
 
-  it("deriva aprobaciones por versión sin flags", () => {
+  it("derives approvals per version without flags", () => {
     expect(approvalsForVersion(detail, "req-1-v1")).toHaveLength(1);
     expect(approvalsForVersion(detail, "req-1-v2")).toHaveLength(0);
   });
 });
 
 describe("saveState", () => {
-  it("reposa sin selección", () => {
+  it("idles without a selection", () => {
     expect(
       saveState({ hasSelection: false, saving: false, error: null, dirty: false }),
     ).toBe("idle");
   });
 
-  it("distingue borrador local y guardado", () => {
+  it("tells local draft and saved apart", () => {
     expect(
       saveState({ hasSelection: true, saving: false, error: null, dirty: true }),
     ).toBe("draft");
@@ -230,15 +230,15 @@ describe("saveState", () => {
     ).toBe("saved");
   });
 
-  it("guardando tiene prioridad sobre borrador y error", () => {
+  it("saving takes priority over draft and error", () => {
     expect(
       saveState({ hasSelection: true, saving: true, error: "x", dirty: true }),
     ).toBe("saving");
   });
 
-  it("el error se muestra hasta el próximo intento", () => {
+  it("the error shows until the next attempt", () => {
     expect(
-      saveState({ hasSelection: true, saving: false, error: "fallo", dirty: true }),
+      saveState({ hasSelection: true, saving: false, error: "failure", dirty: true }),
     ).toBe("error");
   });
 });
@@ -255,7 +255,7 @@ describe("resolveSaveTarget", () => {
     mockupKeyOk: true,
   };
 
-  it("dirige a cada editor con cambios y a ninguno sin cambios", () => {
+  it("routes to each dirty editor and to none when clean", () => {
     expect(
       resolveSaveTarget({ ...base, centerView: "requirements", requirementDirty: true }),
     ).toBe("requirement");
@@ -268,9 +268,13 @@ describe("resolveSaveTarget", () => {
     expect(resolveSaveTarget({ ...base, centerView: "requirements" })).toBeNull();
     expect(resolveSaveTarget({ ...base, centerView: "design" })).toBeNull();
     expect(resolveSaveTarget({ ...base, centerView: "impact" })).toBeNull();
+    expect(resolveSaveTarget({ ...base, centerView: "traceability" })).toBeNull();
+    expect(resolveSaveTarget({ ...base, centerView: "overview" })).toBeNull();
+    expect(resolveSaveTarget({ ...base, centerView: "architecture" })).toBeNull();
+    expect(resolveSaveTarget({ ...base, centerView: "welcome" })).toBeNull();
   });
 
-  it("no guarda diseños separados ni sin selección", () => {
+  it("never saves detached designs or without a selection", () => {
     expect(
       resolveSaveTarget({ ...base, centerView: "design", designDirty: true, designKeyOk: false }),
     ).toBeNull();

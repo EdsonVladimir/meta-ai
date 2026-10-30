@@ -1,11 +1,11 @@
-//! Errores estables de la frontera: tipo legible por máquina más mensaje.
+//! Stable boundary errors: machine-readable kind plus message.
 
 use serde::Serialize;
 
 use ruth_core::domain::CoreError;
 
-/// Error serializable hacia la interfaz. `kind` es estable (la interfaz
-/// ramifica con él, p. ej. `stale_version`); `message` es para personas.
+/// Serializable error for the UI. `kind` is stable (the UI
+/// branches on it, e.g. `stale_version`); `message` is for people.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ApiError {
     pub kind: String,
@@ -20,12 +20,12 @@ impl ApiError {
         }
     }
 
-    /// Fallo de persistencia local (SQLite), con mensaje recuperable.
+    /// Local persistence (SQLite) failure, with a recoverable message.
     pub fn storage(err: ruth_store::StoreError) -> Self {
         Self::storage_message(err.to_string())
     }
 
-    /// Error de almacenamiento con mensaje ya construido (arranque degradado).
+    /// Storage error with a prebuilt message (degraded startup).
     pub fn storage_message(message: impl Into<String>) -> Self {
         Self {
             kind: "storage_error".to_string(),
@@ -33,7 +33,7 @@ impl ApiError {
         }
     }
 
-    /// Error de propuestas/generación con kind estable propio.
+    /// Proposal/generation error with its own stable kind.
     pub fn coded(kind: &str, message: impl Into<String>) -> Self {
         Self {
             kind: kind.to_string(),
@@ -41,9 +41,9 @@ impl ApiError {
         }
     }
 
-    /// Traduce un fallo de Meta al kind estable de la frontera, conservando
-    /// su mensaje (ya saneado en origen). La interfaz distingue clave,
-    /// facturación, rate limit, timeout, salida incompleta e inválida.
+    /// Translates a Meta failure to the stable boundary kind, keeping
+    /// its message (already sanitized at origin). The UI distinguishes key,
+    /// billing, rate limit, timeout, incomplete and invalid output.
     pub fn from_meta(err: ruth_meta::MetaError) -> Self {
         use ruth_meta::MetaErrorKind as K;
         let kind = match err.kind {
@@ -113,6 +113,7 @@ impl ApiError {
             CoreError::DeleteInBaseline { .. } => "delete_in_baseline",
             CoreError::DeleteInDelivery { .. } => "delete_in_delivery",
             CoreError::DeleteModuleNotEmpty { .. } => "delete_module_not_empty",
+            CoreError::DeleteProjectNotEmpty { .. } => "delete_project_not_empty",
             CoreError::EmptyName => "empty_name",
             CoreError::NameTooLong { .. } => "name_too_long",
             CoreError::StaleName { .. } => "stale_name",
@@ -146,7 +147,7 @@ mod tests {
 
     #[test]
     fn internal_errors_use_internal_kind() {
-        let err = ApiError::internal("bloqueo envenenado");
+        let err = ApiError::internal("poisoned lock");
         assert_eq!(err.kind, "internal");
     }
 }

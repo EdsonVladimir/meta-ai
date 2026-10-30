@@ -1,45 +1,54 @@
-//! Archivo reversible y borrado seguro de módulos y requisitos.
+//! Reversible archiving and safe deletion of modules and requirements.
 //!
-//! Sin Tauri ni E/S: recibe el `Store` y los registros como entradas. El
-//! resumen previo es consultivo (no muta); la ejecución revalida las
-//! condiciones en Rust dentro de la transacción. Las reglas del dominio
-//! (archivado, dependencias, aprobaciones, baselines) las aplica
-//! `ruth-core`; aquí solo se inspeccionan además los registros de
-//! generaciones y metadatos, que viven fuera del núcleo.
+//! No Tauri or I/O: takes the `Store` and logs as inputs. The
+//! advance summary is advisory (mutates nothing); execution revalidates
+//! the conditions in Rust inside the transaction. The domain rules
+//! (archiving, dependencies, approvals, baselines) are applied by
+//! `ruth-core`; here the generation and metadata logs, which live
+//! outside the core, are additionally inspected.
 //!
-//! Política:
-//! - Archivar siempre está permitido y conserva todo (versiones,
-//!   aprobaciones, dependencias, baselines, generaciones). Sus consecuencias
-//!   aparecen al aprobar, generar o entregar: el núcleo bloquea entonces.
-//! - Eliminar solo cuando nada lo mencione: sin aprobaciones, sin
-//!   dependientes, sin presencia en baselines y sin referencias en
-//!   generaciones (propias, de contexto, de aceptación o de objetivo). Sin
-//!   cascadas silenciosas: si algo lo referencia, se bloquea y se recomienda
-//!   archivar.
+//! Policy:
+//! - Archiving is always allowed and preserves everything (versions,
+//!   approvals, dependencies, baselines, generations, code
+//!   links). Its consequences appear on approve, generate or deliver:
+//!   the core then blocks. Archiving knowledge invalidates no sources
+//!   and removes no dependencies: links persist and show in their
+//!   archived context.
+//! - Delete only when nothing mentions it: no approvals, no
+//!   dependents, no baseline presence, no references in
+//!   generations (own, context, acceptance or target ones) and no
+//!   code links. No silent cascades: when something references it,
+//!   it blocks and archiving is recommended.
 
 use std::collections::HashSet;
 
 use ruth_core::application::Store;
-use ruth_core::domain::{ArtifactId, ArtifactType, CoreError, ModuleId, ProjectId};
-use ruth_store::{BaselineMetaLog, DesignLog, ProposalLog, ProposalState};
+use ruth_core::domain::{ArtifactId, ArtifactType, CoreError, Module, ModuleId, ProjectId};
+use ruth_store::{
+    BaselineMetaLog, CodeLinkLog, CodeRootLog, DesignLog, LinkScope, ProposalLog, ProposalState,
+};
 
+use crate::code_links::{check_artifact_deletable, check_module_deletable};
 use crate::dto::{
-    ArchiveBaselineDto, ArchiveBlockerDto, ArchiveDependentDto, ArchiveGenerationDto,
-    ArchiveModuleInput, ArchivePreviewDto, ArchivePreviewInput, ArchiveRequirementInput,
-    ArtifactDto, DeleteModuleInput, DeleteRequirementInput, GetRequirementInput, ModuleDto,
-    RequirementDetail,
+    ArchiveBaselineDto, ArchiveBlockerDto, ArchiveCodeLinkDto, ArchiveDependentDto,
+    ArchiveGenerationDto, ArchiveModuleInput, ArchivePreviewDto, ArchivePreviewInput,
+    ArchiveRequirementInput, ArtifactDto, DeleteModuleInput, DeleteProjectInput,
+    DeleteRequirementInput, GetRequirementInput, ModuleDto, RequirementDetail,
 };
 use crate::error::ApiError;
 use crate::impact::artifact_dto;
 use crate::logic::get_requirement;
 
-/// Resumen consultivo del objetivo: contenido, dependientes (con su módulo),
-/// baselines, generaciones y si el borrado es seguro. No muta nada.
+/// Advisory target summary: content, dependents (with their module),
+/// baselines, generations, code links and whether deleting is safe.
+/// Mutates nothing.
 pub fn archive_preview(
     store: &Store,
     proposals: &ProposalLog,
     designs: &DesignLog,
     metalog: &BaselineMetaLog,
+    links: &CodeLinkLog,
+    roots: &CodeRootLog,
     input: ArchivePreviewInput,
 ) -> Result<ArchivePreviewDto, ApiError> {
     let project = ProjectId::new(input.project_id.clone())?;
@@ -47,15 +56,33 @@ pub fn archive_preview(
         return Err(CoreError::ProjectNotFound { project }.into());
     }
     match input.kind.as_str() {
-        "module" => preview_module(store, proposals, designs, metalog, &project, &input.id),
-        "requirement" => {
-            preview_requirement(store, proposals, designs, metalog, &project, &input.id)
-        }
+        "module" => preview_module(
+            store, proposals, designs, metalog, links, &project, &input.id,
+        ),
+        "requirement" => preview_requirement(
+            store, proposals, designs, metalog, links, &project, &input.id,
+        ),
+        "project" => preview_project(store, proposals, designs, metalog, roots, &project),
         other => Err(ApiError::coded(
             "unknown_archive_target",
-            format!("objetivo desconocido: {other} (usa module o requirement)"),
+            format!("unknown target: {other} (use project, module or requirement)"),
         )),
     }
+}
+
+/// An owner's links in summary form, ordered by id.
+fn link_dtos(links: &CodeLinkLog, scope: LinkScope, owner_id: &str) -> Vec<ArchiveCodeLinkDto> {
+    links
+        .by_owner(scope, owner_id)
+        .into_iter()
+        .map(|link| ArchiveCodeLinkDto {
+            id: link.id.clone(),
+            root_id: link.root_id.clone(),
+            rel: link.rel.clone(),
+            symbol_name: link.symbol.as_ref().map(|s| s.name.clone()),
+            kind: link.kind.as_str().to_string(),
+        })
+        .collect()
 }
 
 fn preview_module(
@@ -63,6 +90,7 @@ fn preview_module(
     proposals: &ProposalLog,
     designs: &DesignLog,
     metalog: &BaselineMetaLog,
+    links: &CodeLinkLog,
     project: &ProjectId,
     module_id: &str,
 ) -> Result<ArchivePreviewDto, ApiError> {
@@ -82,8 +110,8 @@ fn preview_module(
         .iter()
         .map(|a| artifact_dto(store, a.id()))
         .collect::<Result<_, _>>()?;
-    // Dependientes, baselines y entregas agregados del contenido, sin
-    // duplicados.
+    // Dependents, baselines and deliveries aggregated from the content,
+    // deduplicated.
     let mut dependent_ids = HashSet::new();
     let mut baseline_ids = HashSet::new();
     let mut delivery_ids = HashSet::new();
@@ -115,7 +143,7 @@ fn preview_module(
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_module_not_empty".to_string(),
             message: format!(
-                "El módulo {} contiene {} elemento(s): vacíalo primero, uno a uno.",
+                "Module {} holds {} item(s): empty it first, one by one.",
                 module.as_str(),
                 contents.len()
             ),
@@ -127,7 +155,7 @@ fn preview_module(
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_has_generations".to_string(),
             message: format!(
-                "El módulo {} tiene {} generación(es) registrada(s): archívalo.",
+                "Module {} has {} recorded generation(s): archive it.",
                 module.as_str(),
                 owned.len()
             ),
@@ -143,7 +171,7 @@ fn preview_module(
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_baseline_scope".to_string(),
             message: format!(
-                "El módulo {} es el alcance de {}: archívalo.",
+                "Module {} is the scope of {}: archive it.",
                 module.as_str(),
                 scoped.join(", ")
             ),
@@ -161,9 +189,20 @@ fn preview_module(
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_delivery_scope".to_string(),
             message: format!(
-                "El módulo {} es el alcance de {}: archívalo.",
+                "Module {} is the scope of {}: archive it.",
                 module.as_str(),
                 delivery_scoped.join(", ")
+            ),
+        });
+    }
+    let code_links = link_dtos(links, LinkScope::Module, module.as_str());
+    if !code_links.is_empty() {
+        delete_blockers.push(ArchiveBlockerDto {
+            code: "delete_has_code_links".to_string(),
+            message: format!(
+                "Module {} has {} link(s) with code: unlink them or archive it.",
+                module.as_str(),
+                code_links.len()
             ),
         });
     }
@@ -173,10 +212,12 @@ fn preview_module(
         id: module.as_str().to_string(),
         archived: known.archived(),
         contents,
+        modules: Vec::new(),
         dependents,
         baselines,
         deliveries,
         generations,
+        code_links,
         approvals,
         versions,
         can_delete: delete_blockers.is_empty(),
@@ -189,6 +230,7 @@ fn preview_requirement(
     proposals: &ProposalLog,
     designs: &DesignLog,
     metalog: &BaselineMetaLog,
+    links: &CodeLinkLog,
     project: &ProjectId,
     artifact_id: &str,
 ) -> Result<ArchivePreviewDto, ApiError> {
@@ -207,7 +249,7 @@ fn preview_requirement(
         return Err(ApiError::coded(
             "not_a_requirement",
             format!(
-                "{} no es un requisito: este diálogo solo archiva módulos y requisitos.",
+                "{} is not a requirement: this dialog only archives modules and requirements.",
                 artifact_id
             ),
         ));
@@ -239,7 +281,7 @@ fn preview_requirement(
     if refs.approvals > 0 {
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_has_approvals".to_string(),
-            message: format!("{artifact_id} tiene aprobaciones y no puede eliminarse: archívalo."),
+            message: format!("{artifact_id} has approvals and cannot be deleted: archive it."),
         });
     }
     if !dependents.is_empty() {
@@ -247,7 +289,7 @@ fn preview_requirement(
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_has_dependents".to_string(),
             message: format!(
-                "{artifact_id} no puede eliminarse: dependen de él {}. Archívalo.",
+                "{artifact_id} cannot be deleted: {} depend on it. Archive it.",
                 who.join(", ")
             ),
         });
@@ -256,7 +298,7 @@ fn preview_requirement(
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_in_baseline".to_string(),
             message: format!(
-                "{artifact_id} no puede eliminarse: la baseline {} lo incluye. Archívalo.",
+                "{artifact_id} cannot be deleted: baseline {} includes it. Archive it.",
                 baselines[0].name
             ),
         });
@@ -265,7 +307,7 @@ fn preview_requirement(
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_in_delivery".to_string(),
             message: format!(
-                "{artifact_id} no puede eliminarse: la entrega {} lo incluye. Archívalo.",
+                "{artifact_id} cannot be deleted: delivery {} includes it. Archive it.",
                 deliveries[0].name
             ),
         });
@@ -274,8 +316,18 @@ fn preview_requirement(
         delete_blockers.push(ArchiveBlockerDto {
             code: "delete_has_generations".to_string(),
             message: format!(
-                "{artifact_id} aparece en {} generación(es) registrada(s): archívalo.",
+                "{artifact_id} appears in {} recorded generation(s): archive it.",
                 generations.len()
+            ),
+        });
+    }
+    let code_links = link_dtos(links, LinkScope::Artifact, artifact.as_str());
+    if !code_links.is_empty() {
+        delete_blockers.push(ArchiveBlockerDto {
+            code: "delete_has_code_links".to_string(),
+            message: format!(
+                "{artifact_id} has {} linked symbol(s): unlink them or archive it.",
+                code_links.len()
             ),
         });
     }
@@ -285,15 +337,170 @@ fn preview_requirement(
         id: artifact.as_str().to_string(),
         archived: known.archived(),
         contents: Vec::new(),
+        modules: Vec::new(),
         dependents,
         baselines,
         deliveries,
         generations,
+        code_links,
         approvals: refs.approvals,
         versions: refs.versions,
         can_delete: delete_blockers.is_empty(),
         delete_blockers,
     })
+}
+
+/// Advisory project summary: its modules, baselines and deliveries,
+/// generations mentioning it and bound roots. A project is not a
+/// dependency node (no own dependents, never archived): it can only
+/// be deleted empty, rootless and unreferenced.
+fn preview_project(
+    store: &Store,
+    proposals: &ProposalLog,
+    designs: &DesignLog,
+    metalog: &BaselineMetaLog,
+    roots: &CodeRootLog,
+    project: &ProjectId,
+) -> Result<ArchivePreviewDto, ApiError> {
+    let modules: Vec<ModuleDto> = store
+        .modules_of(project)
+        .iter()
+        .map(|m| module_dto(m))
+        .collect();
+    let baseline_ids: HashSet<ruth_core::domain::BaselineId> = store
+        .baselines()
+        .iter()
+        .filter(|b| b.project() == project)
+        .map(|b| b.id().clone())
+        .collect();
+    let delivery_ids: HashSet<ruth_core::domain::DeliveryId> = store
+        .deliveries()
+        .iter()
+        .filter(|d| d.project() == project)
+        .map(|d| d.id().clone())
+        .collect();
+    let generations = project_generations(store, proposals, designs, project);
+    let bound: Vec<String> = roots
+        .roots()
+        .iter()
+        .filter(|r| r.project_id.as_deref() == Some(project.as_str()))
+        .map(|r| r.name.clone())
+        .collect();
+    let mut approvals = 0;
+    let mut versions = 0;
+    for module in store.modules_of(project) {
+        for content in store.artifacts_of(project, module.id()) {
+            let refs = store.artifact_references(project, content.id())?;
+            approvals += refs.approvals;
+            versions += refs.versions;
+        }
+    }
+    let mut delete_blockers = Vec::new();
+    if !modules.is_empty() {
+        delete_blockers.push(ArchiveBlockerDto {
+            code: "delete_project_not_empty".to_string(),
+            message: format!(
+                "Project {} still holds {} module(s): delete them first, one by one.",
+                project.as_str(),
+                modules.len()
+            ),
+        });
+    }
+    if !bound.is_empty() {
+        delete_blockers.push(ArchiveBlockerDto {
+            code: "delete_has_roots".to_string(),
+            message: format!(
+                "Project {} has {} bound folder(s) ({}): unlink first.",
+                project.as_str(),
+                bound.len(),
+                bound.join(", ")
+            ),
+        });
+    }
+    if !baseline_ids.is_empty() {
+        delete_blockers.push(ArchiveBlockerDto {
+            code: "delete_has_baselines".to_string(),
+            message: format!(
+                "Project {} has {} historic baseline(s): it cannot be deleted.",
+                project.as_str(),
+                baseline_ids.len()
+            ),
+        });
+    }
+    if !delivery_ids.is_empty() {
+        delete_blockers.push(ArchiveBlockerDto {
+            code: "delete_has_deliveries".to_string(),
+            message: format!(
+                "Project {} has {} work deliveries: it cannot be deleted.",
+                project.as_str(),
+                delivery_ids.len()
+            ),
+        });
+    }
+    if !generations.is_empty() {
+        delete_blockers.push(ArchiveBlockerDto {
+            code: "delete_has_generations".to_string(),
+            message: format!(
+                "Project {} appears in {} recorded generation(s): it cannot be deleted.",
+                project.as_str(),
+                generations.len()
+            ),
+        });
+    }
+    // Note: code links belong to modules or artifacts; with modules
+    // present the first blocker already covers them, and without modules none remain.
+    Ok(ArchivePreviewDto {
+        project_id: project.as_str().to_string(),
+        kind: "project".to_string(),
+        id: project.as_str().to_string(),
+        archived: false,
+        contents: Vec::new(),
+        modules,
+        dependents: Vec::new(),
+        baselines: baseline_dtos(metalog, baseline_ids),
+        deliveries: delivery_dtos(store, delivery_ids),
+        generations,
+        code_links: Vec::new(),
+        approvals,
+        versions,
+        can_delete: delete_blockers.is_empty(),
+        delete_blockers,
+    })
+}
+
+/// Generations mentioning any project module, ordered and
+/// deduplicated. Shared by the summary and the execution.
+fn project_generations(
+    store: &Store,
+    proposals: &ProposalLog,
+    designs: &DesignLog,
+    project: &ProjectId,
+) -> Vec<ArchiveGenerationDto> {
+    let mut generations: Vec<ArchiveGenerationDto> = Vec::new();
+    for module in store.modules_of(project) {
+        generations.extend(generation_refs(
+            project,
+            proposals,
+            designs,
+            GenerationTarget::Module(module.id().as_str()),
+        ));
+    }
+    generations.sort_by(|a, b| {
+        a.id.cmp(&b.id)
+            .then(a.log.cmp(&b.log))
+            .then(a.role.cmp(&b.role))
+    });
+    generations.dedup_by(|a, b| a.id == b.id && a.log == b.log && a.role == b.role);
+    generations
+}
+
+fn module_dto(module: &Module) -> ModuleDto {
+    ModuleDto {
+        id: module.id().as_str().to_string(),
+        project_id: module.project().as_str().to_string(),
+        name: module.name().to_string(),
+        archived: module.archived(),
+    }
 }
 
 fn dependent_dto(
@@ -313,9 +520,9 @@ fn dependent_dto(
     })
 }
 
-/// Entregas de trabajo que incluyen al objetivo, con su nombre propio
-/// (las entregas lo llevan dentro, sin metalog). Reutiliza la forma
-/// `{id, name}` de las baselines.
+/// Work deliveries including the target, with their own name
+/// (deliveries carry it inside, no metalog). Reuses the
+/// baselines' `{id, name}` shape.
 fn delivery_dtos(
     store: &Store,
     ids: HashSet<ruth_core::domain::DeliveryId>,
@@ -363,9 +570,9 @@ enum GenerationTarget<'a> {
     Artifact { id: &'a str, versions: &'a [String] },
 }
 
-/// Generaciones del proyecto que mencionan al objetivo, ordenadas por id.
-/// Para módulos: las propias (`owns`) y las que citan su contenido. Para
-/// requisitos: contexto, aceptación y objetivo de actualización.
+/// The project's generations mentioning the target, ordered by id.
+/// For modules: the own ones (`owns`) and those citing their content. For
+/// requirements: context, acceptance and update target.
 fn generation_refs(
     project: &ProjectId,
     proposals: &ProposalLog,
@@ -443,12 +650,12 @@ fn generation_refs(
     out
 }
 
-/// Archiva un módulo. Siempre permitido; el contenido se oculta por contexto.
+/// Archives a module. Always allowed; content hides by context.
 pub fn archive_module(store: &mut Store, input: ArchiveModuleInput) -> Result<ModuleDto, ApiError> {
     set_module_archived(store, input, true)
 }
 
-/// Restaura un módulo archivado. No restaura archivos individuales.
+/// Restores an archived module. Restores no individual files.
 pub fn restore_module(store: &mut Store, input: ArchiveModuleInput) -> Result<ModuleDto, ApiError> {
     set_module_archived(store, input, false)
 }
@@ -469,7 +676,7 @@ fn set_module_archived(
     })
 }
 
-/// Archiva un requisito y devuelve su detalle autoritativo actualizado.
+/// Archives a requirement and returns its updated authoritative detail.
 pub fn archive_requirement(
     store: &mut Store,
     input: ArchiveRequirementInput,
@@ -477,7 +684,7 @@ pub fn archive_requirement(
     set_requirement_archived(store, input, true)
 }
 
-/// Restaura un requisito archivado individualmente.
+/// Restores an individually archived requirement.
 pub fn restore_requirement(
     store: &mut Store,
     input: ArchiveRequirementInput,
@@ -502,23 +709,25 @@ fn set_requirement_archived(
     )
 }
 
-/// Elimina un módulo revalidando las condiciones: vacío, sin generaciones
-/// propias y sin ser alcance de baselines. Devuelve el id eliminado.
+/// Deletes a module revalidating the conditions: empty, no own
+/// generations and no baseline scope. Returns the deleted id.
 pub fn delete_module_checked(
     store: &mut Store,
     proposals: &ProposalLog,
     designs: &DesignLog,
     metalog: &BaselineMetaLog,
+    links: &CodeLinkLog,
     input: DeleteModuleInput,
 ) -> Result<String, ApiError> {
     let project = ProjectId::new(input.project_id)?;
     let module = ModuleId::new(input.module_id.clone())?;
+    check_module_deletable(links, module.as_str())?;
     let owned = owned_generations(&project, proposals, designs, module.as_str());
     if !owned.is_empty() {
         return Err(ApiError::coded(
             "delete_has_generations",
             format!(
-                "El módulo {} tiene {} generación(es) registrada(s): archívalo.",
+                "Module {} has {} recorded generation(s): archive it.",
                 module.as_str(),
                 owned.len()
             ),
@@ -534,7 +743,7 @@ pub fn delete_module_checked(
         return Err(ApiError::coded(
             "delete_baseline_scope",
             format!(
-                "El módulo {} es el alcance de {}: archívalo.",
+                "Module {} is the scope of {}: archive it.",
                 module.as_str(),
                 scoped.join(", ")
             ),
@@ -543,18 +752,20 @@ pub fn delete_module_checked(
     Ok(store.delete_module(&project, &module)?.as_str().to_string())
 }
 
-/// Elimina un requisito revalidando las condiciones: el núcleo exige que sea
-/// borrador sin dependientes ni baselines; aquí se exigen además cero
-/// referencias en generaciones. Devuelve el id eliminado.
+/// Deletes a requirement revalidating the conditions: the core requires a
+/// draft without dependents or baselines; zero generation references
+/// are additionally required here. Returns the deleted id.
 pub fn delete_requirement_checked(
     store: &mut Store,
     proposals: &ProposalLog,
     designs: &DesignLog,
+    links: &CodeLinkLog,
     input: DeleteRequirementInput,
 ) -> Result<String, ApiError> {
     let project = ProjectId::new(input.project_id)?;
     let artifact = ArtifactId::new(input.artifact_id)?;
     require_requirement(store, &project, &artifact)?;
+    check_artifact_deletable(links, artifact.as_str())?;
     let versions: Vec<String> = store
         .versions_of(&artifact)
         .iter()
@@ -573,7 +784,7 @@ pub fn delete_requirement_checked(
         return Err(ApiError::coded(
             "delete_has_generations",
             format!(
-                "{} aparece en {} generación(es) registrada(s): archívalo.",
+                "{} appears in {} recorded generation(s): archive it.",
                 artifact.as_str(),
                 refs.len()
             ),
@@ -583,6 +794,77 @@ pub fn delete_requirement_checked(
         .delete_artifact(&project, &artifact)?
         .as_str()
         .to_string())
+}
+
+/// Deletes a project revalidating the conditions: empty, no bound
+/// folders, no baselines or deliveries and no generation mentions.
+/// Projects never archive: they either exist or get deleted. No cascades.
+/// Returns the deleted id.
+pub fn delete_project_checked(
+    store: &mut Store,
+    proposals: &ProposalLog,
+    designs: &DesignLog,
+    roots: &CodeRootLog,
+    input: DeleteProjectInput,
+) -> Result<String, ApiError> {
+    let project = ProjectId::new(input.project_id)?;
+    let bound: Vec<String> = roots
+        .roots()
+        .iter()
+        .filter(|r| r.project_id.as_deref() == Some(project.as_str()))
+        .map(|r| r.name.clone())
+        .collect();
+    if !bound.is_empty() {
+        return Err(ApiError::coded(
+            "delete_has_roots",
+            format!(
+                "Project {} has {} bound folder(s) ({}): unlink first.",
+                project.as_str(),
+                bound.len(),
+                bound.join(", ")
+            ),
+        ));
+    }
+    let baselines = store
+        .baselines()
+        .iter()
+        .filter(|b| b.project() == &project)
+        .count();
+    if baselines > 0 {
+        return Err(ApiError::coded(
+            "delete_has_baselines",
+            format!(
+                "Project {} has {baselines} historic baseline(s): it cannot be deleted.",
+                project.as_str(),
+            ),
+        ));
+    }
+    let deliveries = store
+        .deliveries()
+        .iter()
+        .filter(|d| d.project() == &project)
+        .count();
+    if deliveries > 0 {
+        return Err(ApiError::coded(
+            "delete_has_deliveries",
+            format!(
+                "Project {} has {deliveries} work deliveries: it cannot be deleted.",
+                project.as_str(),
+            ),
+        ));
+    }
+    let generations = project_generations(store, proposals, designs, &project);
+    if !generations.is_empty() {
+        return Err(ApiError::coded(
+            "delete_has_generations",
+            format!(
+                "Project {} appears in {} recorded generation(s): it cannot be deleted.",
+                project.as_str(),
+                generations.len()
+            ),
+        ));
+    }
+    Ok(store.delete_project(&project)?.as_str().to_string())
 }
 
 pub(crate) fn require_requirement(
@@ -607,7 +889,7 @@ pub(crate) fn require_requirement(
         return Err(ApiError::coded(
             "not_a_requirement",
             format!(
-                "{} no es un requisito: esta acción solo admite módulos y requisitos.",
+                "{} is not a requirement: this action only accepts modules and requirements.",
                 artifact.as_str()
             ),
         ));
@@ -615,7 +897,7 @@ pub(crate) fn require_requirement(
     Ok(())
 }
 
-/// Generaciones cuyo módulo es el indicado (mismo proyecto).
+/// Generations whose module is the given one (same project).
 fn owned_generations(
     project: &ProjectId,
     proposals: &ProposalLog,

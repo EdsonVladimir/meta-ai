@@ -1,6 +1,6 @@
-// Índice de diseños del módulo: todos los diseños con estado y acceso,
-// más generación desde múltiples requisitos. La creación vive en el
-// diálogo «Generar diseño».
+// Module design index: every design with state and access, plus
+// generation from multiple requirements. Creation lives in the
+// "Generate design" dialog.
 import type { ArtifactMeta } from "../explorer/explorerModel";
 import type { ModuleGraph } from "../explorer/useExplorerData";
 import { artifactLabel } from "../requirements/names";
@@ -11,11 +11,11 @@ interface ModuleDesignsProps {
   designs: ArtifactDto[];
   graph: ModuleGraph | null;
   meta: Record<string, ArtifactMeta>;
-  /** Módulo archivado: índice consultable, sin generar. */
+  /** Archived module: browsable index, no generation. */
   moduleArchived: boolean;
   onOpenDesign: (designId: string) => void;
   onGenerate: () => void;
-  /** Actualización IA automática del módulo (sesión, desactivada). */
+  /** Module automatic AI update (session, off). */
   moduleName: string;
   autoEnabled: boolean;
   autoStatus: AutoStatus | null;
@@ -23,8 +23,8 @@ interface ModuleDesignsProps {
 }
 
 function kindLabel(kind: string): string {
-  if (kind === "flow") return "flujo";
-  if (kind === "data_model") return "datos";
+  if (kind === "flow") return "flow";
+  if (kind === "data_model") return "data";
   return kind;
 }
 
@@ -40,13 +40,13 @@ export function ModuleDesigns({
   autoStatus,
   onToggleAuto,
 }: ModuleDesignsProps) {
-  const generateTitle = moduleArchived ? "Módulo archivado: restaúralo para generar" : undefined;
+  const generateTitle = moduleArchived ? "Archived module: restore it to generate" : undefined;
   const autoToggle = (
     <AutoUpdateToggle
       moduleName={moduleName}
       enabled={autoEnabled}
       disabled={moduleArchived}
-      disabledTitle="Módulo archivado: restaúralo para automatizar"
+      disabledTitle="Archived module: restore it to automate"
       status={autoStatus}
       onToggle={onToggleAuto}
     />
@@ -54,14 +54,14 @@ export function ModuleDesigns({
   if (designs.length === 0) {
     return (
       <div>
-        <p className="hint">Este módulo aún no tiene diseños.</p>
+        <p className="hint">This module has no designs yet.</p>
         {moduleArchived && (
           <p className="notice" role="note">
-            Módulo archivado: restaúralo para generar diseños.
+            Archived module: restore it to generate designs.
           </p>
         )}
         <button type="button" className="primary" onClick={onGenerate} disabled={moduleArchived} title={generateTitle}>
-          Generar diseño
+          Generate design
         </button>
         {autoToggle}
       </div>
@@ -71,13 +71,13 @@ export function ModuleDesigns({
     <div className="module-designs">
       <div className="modal-actions" style={{ marginTop: 0, marginBottom: "0.75rem" }}>
         <button type="button" className="primary" onClick={onGenerate} disabled={moduleArchived} title={generateTitle}>
-          Generar diseño
+          Generate design
         </button>
       </div>
       {autoToggle}
       {moduleArchived && (
         <p className="notice" role="note">
-          Módulo archivado: los diseños se consultan, pero no se generan ni editan.
+          Archived module: designs can be browsed, but not generated or edited.
         </p>
       )}
       <ul className="pick-list">
@@ -96,10 +96,10 @@ export function ModuleDesigns({
                     </span>
                   )}
                   <span className="kind-badge">{kindLabel(design.kind)}</span>
-                  {stale === true && <span className="stale-badge">desactualizado</span>}
+                  {stale === true && <span className="stale-badge">stale</span>}
                   {stale === false && sources !== null && (
                     <span className="hint">
-                      {sources} {sources === 1 ? "fuente" : "fuentes"}
+                      {sources} {sources === 1 ? "source" : "sources"}
                     </span>
                   )}
                 </span>

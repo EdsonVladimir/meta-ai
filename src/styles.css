@@ -1,5 +1,5 @@
-/* Tema oscuro inspirado en el mockup: fondo azulado, acento menta y
-   ámbar para revisión. Un solo tema para mantener el contraste estable. */
+/* Dark theme inspired by the mockup: bluish background, mint accent and
+   amber for review. A single theme to keep contrast stable. */
 :root {
   color-scheme: dark;
   --bg: #0f1216;
@@ -15,8 +15,8 @@
   --warn: #e8a33d;
   --err: #f27a72;
   --idle: #8b95a1;
-  /* Densidad compacta: radios y espaciados ya reducidos al 50 %. Los
-     valores funcionales (lienzos, nodos, handles, zoom) no usan esto. */
+  /* Compact density: radii and spacing already cut to 50%. Functional
+     values (canvases, nodes, handles, zoom) never use this. */
   --r-xs: 2px;
   --r-sm: 3px;
   --r-md: 4px;
@@ -49,6 +49,8 @@ body {
 .page.app {
   padding: 0 0.5rem 0.375rem;
   min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -60,7 +62,7 @@ body {
   min-height: 0;
 }
 
-/* Encabezado compacto: marca, ubicación y conexión plegable. */
+/* Compact header: brand, location and collapsible connection. */
 
 .topbar {
   display: flex;
@@ -107,24 +109,6 @@ body {
 .topbar-right {
   margin-left: auto;
   position: relative;
-}
-
-.conn-details summary {
-  cursor: pointer;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 0.2rem 0.4rem;
-  font-size: 0.775rem;
-  list-style: none;
-  background: var(--surface);
-}
-
-.conn-details summary::-webkit-details-marker {
-  display: none;
-}
-
-.conn-details summary:hover {
-  border-color: var(--accent);
 }
 
 .conn-popover {
@@ -286,12 +270,7 @@ footer {
   max-width: none;
 }
 
-.active-project {
-  margin-top: 0.375rem;
-  font-weight: 600;
-}
-
-/* Espacio de trabajo: raíl + navegador + centro + revisión. */
+/* Workspace: rail + navigator + center + review. */
 
 .workbench {
   flex: 1;
@@ -323,6 +302,10 @@ footer {
   min-height: 0;
   display: grid;
   grid-template-columns: 2.75rem var(--nav-width, 17rem) minmax(0, 1fr) var(--right-width, 21rem);
+  /* Row capped at the visible height: without this the implicit
+     `auto` row grows with the content (long tree) and the whole page
+     scrolls, sinking the rail and the terminal below the fold. */
+  grid-template-rows: minmax(0, 1fr);
   gap: 0.375rem;
   align-items: stretch;
 }
@@ -378,6 +361,30 @@ footer {
   overflow-y: auto;
 }
 
+/* Contextual left slot: projects or folders. Both stay
+   mounted (one hidden) to preserve expansion and caches. */
+/* The .nav-resize handle lives here (child of the slot, outside the navs):
+   inside a scrolling nav, overflow would clip the overhang
+   and the classic bar would cover it when expanding long lists. The slot
+   neither clips nor scrolls: the line stays visible and draggable in
+   both perspectives, with short or long lists. */
+.nav-slot {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.nav-slot > [hidden] {
+  display: none;
+}
+
+.nav-slot > nav {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .workbench-center {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -386,11 +393,26 @@ footer {
   overflow-y: auto;
 }
 
+/* In Code the center is a flexible column: fixed tabs on top
+   and the editor filling the rest (Monaco brings its own inner scroll). */
+.workbench-center.code-view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .center-tabs {
   display: flex;
+  flex: none;
   gap: 0.125rem;
   margin-bottom: 0.45rem;
   border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.center-tabs button {
+  flex: none;
 }
 
 .center-tabs button {
@@ -411,6 +433,15 @@ footer {
   color: var(--accent);
   border-bottom-color: var(--accent);
   font-weight: 600;
+}
+
+.center-tabs button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.center-tabs button:disabled:hover {
+  color: var(--muted);
 }
 
 .statusbar {
@@ -463,6 +494,12 @@ footer {
 }
 
 @media (max-width: 60rem) {
+  /* Mobile stacking: the page does grow (panels carry
+     visible overflow); the desktop capping releases. */
+  .page.app {
+    height: auto;
+  }
+
   .workbench-grid {
     grid-template-columns: 1fr;
   }
@@ -479,6 +516,37 @@ footer {
   }
 
   .right-column {
+    max-height: 32rem;
+  }
+
+  /* Narrow desktop window: stacked sections stay toggleable from the
+     rail (no illegible squeezing); the editor keeps a usable height
+     because Monaco cannot size itself from an auto-height parent. */
+  .workbench-center.code-view {
+    min-height: 24rem;
+  }
+
+  .workspace-bar {
+    flex-wrap: wrap;
+  }
+
+  .workspace-current {
+    max-width: 100%;
+  }
+
+  .brand-mini h1 {
+    display: none;
+  }
+
+  .project-map-boards {
+    grid-template-columns: 1fr;
+  }
+
+  .project-map-inspector {
+    position: static;
+    /* Beats the persisted inline width: narrow windows stack. */
+    width: auto !important;
+    max-width: none;
     max-height: 32rem;
   }
 }
@@ -498,7 +566,6 @@ footer {
   border-top: 1px solid var(--line);
 }
 
-.nav-head,
 .editor-head {
   display: flex;
   justify-content: space-between;
@@ -507,7 +574,6 @@ footer {
   margin-bottom: 0.375rem;
 }
 
-.nav-head h3,
 .editor-head h3,
 .review h3 {
   margin: 0;
@@ -721,7 +787,7 @@ footer {
   grid-template-columns: 6rem 1fr;
 }
 
-/* Diálogo modal de borrador sin guardar. */
+/* Unsaved-draft modal dialog. */
 
 .modal-backdrop {
   position: fixed;
@@ -762,7 +828,7 @@ footer {
   }
 }
 
-/* Panel de generación asistida. */
+/* Assisted-generation panel. */
 .generation .context-preview {
   margin: 0.5rem 0;
   padding: 0.375rem;
@@ -828,7 +894,7 @@ footer {
   color: var(--muted);
 }
 
-/* Diseño: insignia de tipo, selector de flujo/ER y diagrama. */
+/* Design: type badge, flow/ER selector and diagram. */
 
 .kind-badge {
   display: inline-block;
@@ -892,17 +958,6 @@ footer {
   margin: 0 auto;
 }
 
-.diagram-error,
-.diagram-empty {
-  margin: 0;
-  padding: 0.5rem;
-  font-size: 0.775rem;
-}
-
-.diagram-error {
-  color: var(--err);
-}
-
 .diagram summary {
   cursor: pointer;
   padding: 0.25rem 0.375rem;
@@ -960,16 +1015,7 @@ footer {
   font-size: 0.775rem;
 }
 
-.meta-row {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  color: var(--muted);
-  font-size: 0.75rem;
-  margin: 0.25rem 0 0;
-}
-
-/* Insignias de estado, enlaces discretos y utilidades. */
+/* Status badges, discreet links and utilities. */
 
 .badge.warn {
   border-color: var(--warn);
@@ -1015,7 +1061,7 @@ footer {
   font-size: 0.85em;
 }
 
-/* Pestaña Impacto: encabezado, Antes/Ahora, mapa y tabla. */
+/* Impact tab: header, Before/Now, map and table. */
 
 .impact-tab {
   display: flex;
@@ -1101,7 +1147,7 @@ footer {
   background: var(--surface);
 }
 
-/* Grafo de impacto: lienzo, nodos por estado y leyenda. */
+/* Impact graph: canvas, per-state nodes and legend. */
 
 .impact-graph {
   border: 1px solid var(--line);
@@ -1280,7 +1326,7 @@ footer {
   margin-left: 0.2rem;
 }
 
-/* Propuesta de actualización: instantánea, comparación y diff. */
+/* Update proposal: snapshot, comparison and diff. */
 
 .update-proposal h4 {
   margin: 0.375rem 0 0.175rem;
@@ -1334,7 +1380,7 @@ footer {
   margin-top: 0.375rem;
 }
 
-/* Diálogo de entregas: panel amplio con pestañas y tablas. */
+/* Deliveries dialog: wide panel with tabs and tables. */
 
 .modal.wide {
   max-width: 64rem;
@@ -1488,7 +1534,7 @@ footer {
   }
 }
 
-/* Explorador en árbol: filas compactas, indentación y selección tenue. */
+/* Tree explorer: compact rows, indentation and dim selection. */
 
 .navigator.explorer {
   overflow-x: hidden;
@@ -1689,7 +1735,7 @@ button.tree-action:disabled {
   cursor: default;
 }
 
-/* Archivados: filas atenuadas con insignia, sin perder legibilidad. */
+/* Archived: dimmed rows with a badge, keeping readability. */
 .tree-row.archived > .tree-main {
   opacity: 0.62;
 }
@@ -1719,7 +1765,7 @@ button.tree-action:disabled {
   accent-color: var(--accent);
 }
 
-/* Menú contextual de fila (módulos y requisitos). */
+/* Row context menu (modules and requirements). */
 .tree-menu-wrap {
   position: relative;
   flex: 0 0 auto;
@@ -1765,7 +1811,7 @@ button.tree-action:disabled {
   color: #ffb4ae;
 }
 
-/* Diálogo de archivo: listas del resumen y cajas de consecuencias. */
+/* Archive dialog: summary lists and consequence boxes. */
 .archive-list {
   margin: 0.125rem 0 0.375rem;
   padding-left: 0.55rem;
@@ -1815,7 +1861,7 @@ button.tree-action:disabled {
   color: var(--muted);
 }
 
-/* Navegación contextual: badges de vínculo, tirador lateral y vistas. */
+/* Contextual navigation: link badges, side handle and views. */
 
 .link-badge {
   flex: 0 0 auto;
@@ -1826,14 +1872,52 @@ button.tree-action:disabled {
   padding: 0 0.2rem;
 }
 
+/* Linked folder in module rows: truncated, full in tooltip. */
+.code-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 0.2rem;
+}
+
+/* Replica-dialog folder list: compact with scroll. */
+.replicate-list {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm);
+  margin: 0;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.replicate-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.replicate-list label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  min-width: 0;
+}
+
 .stale-badge {
   flex: 0 0 auto;
   font-size: 0.75rem;
   color: var(--warn);
-}
-
-.navigator.explorer {
-  position: relative;
 }
 
 .nav-resize {
@@ -1913,7 +1997,7 @@ button.tree-action:disabled {
   margin-right: 0;
 }
 
-/* Solo para lectores de pantalla (información ya visible por otros medios). */
+/* Screen readers only (information already visible otherwise). */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1926,7 +2010,7 @@ button.tree-action:disabled {
   border: 0;
 }
 
-/* Pestañas locales (detalle de diseño: Diagrama/Editor). */
+/* Local tabs (design detail: Diagram/Editor). */
 .tabs {
   display: flex;
   gap: 0.125rem;
@@ -1958,7 +2042,7 @@ button.tree-action:disabled {
   outline-offset: -2px;
 }
 
-/* Botón destructivo (borrados con confirmación previa). */
+/* Destructive button (deletions with prior confirmation). */
 button.danger {
   font: inherit;
   color: #ffd9d6;
@@ -1988,7 +2072,7 @@ button.danger:focus-visible {
   outline-offset: 2px;
 }
 
-/* Filas de acción compactas (inspector y confirmaciones). */
+/* Compact action rows (inspector and confirmations). */
 .add-row,
 .row-actions {
   display: flex;
@@ -2003,7 +2087,7 @@ button.danger:focus-visible {
   min-width: 0;
 }
 
-/* Editor visual: barra, lienzo e inspector. */
+/* Visual editor: bar, canvas and inspector. */
 .design-editor {
   display: flex;
   flex-direction: column;
@@ -2106,7 +2190,7 @@ button.danger:focus-visible {
   gap: 0.25rem;
 }
 
-/* Lienzo React Flow adaptado al tema. */
+/* Theme-adapted React Flow canvas. */
 .design-canvas {
   position: relative;
   height: 32rem;
@@ -2197,7 +2281,7 @@ button.danger:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* Nodos del lienzo: etiquetas legibles con ancho mínimo. */
+/* Canvas nodes: readable labels with a minimum width. */
 .canvas-node {
   position: relative;
   min-width: 9.5rem;
@@ -2224,8 +2308,8 @@ button.danger:focus-visible {
   text-align: center;
 }
 
-/* Decisión: rombo SVG real dentro de un contenedor sin fondo ni borde.
-   Nada de rotate(): la tarjeta no se gira, solo se dibuja el rombo. */
+/* Decision: real SVG diamond inside a container with no background or border.
+   No rotate(): the card never turns, only the diamond draws. */
 .decision-node {
   position: relative;
   display: flex;
@@ -2285,7 +2369,7 @@ button.danger:focus-visible {
   overflow-wrap: break-word;
 }
 
-/* Citas fuera del rombo, separadas de la pregunta principal. */
+/* Quotes outside the diamond, apart from the main question. */
 .decision-refs {
   margin-top: 0.15rem;
   max-width: 15rem;
@@ -2472,9 +2556,9 @@ button.danger:focus-visible {
   align-items: flex-start;
 }
 
-/* Mockups: pantallas, nodos dibujados e inspector. Los nodos son tarjetas
-   declarativas (sin HTML/JS de terceros): el tamaño viene del layout y la
-   tarjeta lo rellena; la selección usa el acento menta del mockup. */
+/* Mockups: screens, drawn nodes and inspector. Nodes are declarative cards
+   (no third-party HTML/JS): the size comes from the layout and the
+   card fills it; selection uses the mockup's mint accent. */
 .mockup-screens-bar {
   display: flex;
   flex-wrap: wrap;
@@ -2649,8 +2733,128 @@ button.danger:focus-visible {
   padding: 0 0.175rem;
 }
 
-/* Terminal integrada: panel inferior con pestañas y vistas xterm. El icono
-   vive al pie del rail; ocultar conserva sesiones y scrollback. */
+.mockup-button.state-disabled {
+  opacity: 0.55;
+}
+
+.mockup-button.state-loading,
+.mockup-button.state-error {
+  background: var(--warn);
+}
+
+.mockup-state {
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-left: 0.25rem;
+}
+
+.mockup-node.kind-container {
+  border-style: dashed;
+  background: transparent;
+}
+
+.mockup-container {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.mockup-count {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mockup-node.kind-icon {
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.mockup-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+}
+
+.mockup-glyph {
+  display: block;
+  width: 1.6rem;
+  height: 1.6rem;
+  color: var(--fg);
+}
+
+.mockup-glyph.small {
+  width: 1rem;
+  height: 1rem;
+}
+
+.icon-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.icon-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.icon-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+}
+
+.icon-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  color: var(--fg);
+}
+
+.icon-grid button.active {
+  border-color: var(--accent);
+}
+
+.icon-name {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.preview-row {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.preview-row input {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Integrated terminal: bottom panel with tabs and xterm views. The icon
+   lives at the rail foot; hiding preserves sessions and scrollback. */
 .rail-bottom {
   margin-top: auto;
 }
@@ -2671,6 +2875,22 @@ button.danger:focus-visible {
   display: none;
 }
 
+/* Maximized terminal: fills the workbench column while the grid hides
+   (restore brings the previous distribution back untouched). xterm
+   re-fits through its ResizeObserver; no session is touched. */
+.terminal-panel.maximized {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.terminal-panel.maximized .terminal-resize {
+  display: none;
+}
+
+.workbench.terminal-max .workbench-grid {
+  display: none;
+}
+
 .terminal-resize {
   height: 0.45rem;
   cursor: ns-resize;
@@ -2681,6 +2901,11 @@ button.danger:focus-visible {
 .terminal-resize:hover,
 .terminal-resize:active {
   background: var(--surface);
+}
+
+.terminal-resize:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .terminal-head {
@@ -2825,12 +3050,12 @@ button.danger:focus-visible {
   flex: none;
 }
 
-/* En paralelo: mismas sesiones lado a lado, con separadores
-   redimensionables. Mínimo útil por panel y scroll horizontal si no
-   cabe todo: el texto nunca se comprime hasta ilegible. En pestañas
-   la misma estructura muestra solo la activa a ancho completo (las
-   inactivas llevan `display:none` en línea y sus cabeceras no se
-   renderizan); el panel activo va plano porque la tira ya lo nombra. */
+/* Side by side: same sessions next to each other, with resizable
+   splitters. Useful minimum per panel and horizontal scroll when not
+   everything fits: text never compresses to illegible. In tabs
+   the same structure shows only the active one full-width (the
+   inactive ones carry inline `display:none` and their headers never
+   render); the active panel stays flat because the strip already names it. */
 .terminal-panes {
   flex: 1 1 auto;
   min-height: 0;
@@ -2888,6 +3113,11 @@ button.danger:focus-visible {
   background: var(--surface);
 }
 
+.terminal-sep:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .terminal-pane.flat {
   border: none;
 }
@@ -2924,8 +3154,8 @@ button.danger:focus-visible {
   flex: none;
 }
 
-/* Encabezado: marca + contexto a la izquierda; estado, Exportar y menú a
-   la derecha. Sin anchos fijos: el contexto cede con elipsis. */
+/* Header: brand + context on the left; state, Export and menu on
+   the right. No fixed widths: the context yields with ellipsis. */
 .topbar-right {
   margin-left: auto;
   position: relative;
@@ -3068,8 +3298,8 @@ button.danger:focus-visible {
   }
 }
 
-/* Columna derecha: pestañas Revisión/Asistente, redimensionable. Sin ella,
-   el centro aprovecha el ancho (no-right). */
+/* Right column: Review/Assistant tabs, resizable. Without it,
+   the center takes the width (no-right). */
 .right-column {
   position: relative;
   min-height: 0;
@@ -3132,7 +3362,7 @@ button.danger:focus-visible {
   outline-offset: -2px;
 }
 
-/* La caja la pone la columna: las vistas interiores van planas. */
+/* The column provides the box: inner views stay flat. */
 .right-column .review {
   background: transparent;
   border: none;
@@ -3142,8 +3372,8 @@ button.danger:focus-visible {
   min-height: 0;
 }
 
-/* Asistente Meta: cabecera, acciones, cuerpo con scroll, historial y
-   compositor siempre visible abajo (el terminal queda debajo, sin tapar). */
+/* Meta Assistant: header, actions, scrolling body, history and
+   always-visible composer at the bottom (the terminal stays below, never covering). */
 .assistant {
   display: flex;
   flex-direction: column;
@@ -3225,8 +3455,8 @@ button.danger:focus-visible {
   outline-offset: 1px;
 }
 
-/* Controles de ventana propios (sin decoración nativa): compactos, con
-   nombres accesibles. Cerrar solo se tiñe de rojo al interactuar. */
+/* Own window controls (no native decoration): compact, with
+   accessible names. Close only tints red on hover. */
 .window-controls {
   display: flex;
   align-items: center;
@@ -3263,11 +3493,2433 @@ button.danger:focus-visible {
   background: #c42b1c;
 }
 
-/* Zona de arrastre: el espacio libre del contexto. Botones, campos y
-   menús quedan fuera y nunca arrastran. */
+/* Drag zone: the context's free space. Buttons, fields and
+   menus stay out and never drag. */
 .breadcrumb {
   align-self: stretch;
   display: flex;
   align-items: center;
   user-select: none;
+}
+
+/* Shared text utilities (several views use them). */
+.warn-text {
+  color: var(--warn);
+}
+
+.error-text {
+  color: var(--err);
+}
+
+.ok-text {
+  color: var(--ok);
+}
+
+/* Compact icon button (tree and row … menus). */
+.icon-button {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--r-sm);
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: var(--fg);
+  background: var(--raised);
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Code area: folder sidebar + tab center. */
+.code-workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  gap: var(--sp-md);
+  padding: var(--sp-md);
+  overflow: hidden;
+}
+
+.code-side {
+  width: 17rem;
+  min-width: 12rem;
+  max-width: 32rem;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-md);
+}
+
+.code-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+/* In the center slot: no duplicated chrome (the center is already a panel). */
+.code-main.bare {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+}
+
+.code-empty {
+  margin: auto;
+  max-width: 28rem;
+  text-align: center;
+}
+
+.code-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.code-root {
+  margin-bottom: var(--sp-sm);
+}
+
+/* Project-linked-to-a-root badge (unified perspectives). */
+.code-root-project {
+  flex-shrink: 0;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-xs);
+}
+
+.code-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  min-height: 1.75rem;
+}
+
+/* Minimal indent per level (≈ one space): the chevron and icon already
+   mark the hierarchy; deep levels must never eat the panel. */
+.code-node {
+  padding-left: calc(var(--code-depth, 0) * 0.25rem);
+}
+
+.code-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  cursor: pointer;
+  padding: var(--sp-xs) var(--sp-sm);
+}
+
+button.code-name:hover {
+  background: var(--raised);
+}
+
+button.code-name:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Split chevron: expands without touching the Architecture scope. */
+.code-chevron-button {
+  flex: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  cursor: pointer;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  line-height: 1;
+}
+
+.code-chevron-button:hover {
+  color: var(--fg);
+  background: var(--raised);
+}
+
+.code-chevron-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Active Architecture project: accent border like the active tab. */
+button.code-name.code-scope-active {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Folder picked for exploring: subtle, never a scope. */
+button.code-name.code-folder-selected {
+  background: var(--raised);
+}
+
+/* Detected project kind (Angular, NestJS, TS, Java, Rust, Python). */
+.code-project-badge {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-xs);
+  white-space: nowrap;
+}
+
+/* Breadcrumb segment matching the active Architecture project. */
+.code-crumb.code-crumb-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.secondary.small.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Overview: one line per analyzed scope, grouped by root. */
+.overview-scopes {
+  list-style: none;
+  margin: var(--sp-xs) 0;
+  padding: 0;
+}
+
+.code-file {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.code-missing {
+  padding: var(--sp-xs) 0 var(--sp-xs) 1rem;
+}
+
+.code-policy {
+  margin-top: var(--sp-md);
+}
+
+/* File tabs: root + path identify, no duplicates. */
+.code-tabs {
+  display: flex;
+  gap: var(--sp-xs);
+  overflow-x: auto;
+  padding: var(--sp-sm);
+  border-bottom: 1px solid var(--line);
+}
+
+.code-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  padding: 0 var(--sp-xs);
+  white-space: nowrap;
+  max-width: 18rem;
+}
+
+.code-tab.active {
+  border-color: var(--accent);
+}
+
+.code-tab-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: var(--sp-xs) 0;
+}
+
+.code-tab-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.code-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.code-tab-qual {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-button.dirty {
+  color: var(--warn);
+}
+
+/* Own file and folder icons (decorative). */
+.code-file-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+  vertical-align: -0.125rem;
+  color: var(--muted);
+}
+
+.code-tab.active .code-file-icon,
+.code-crumb.current .code-file-icon {
+  color: var(--accent);
+}
+
+button.code-name,
+span.code-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+}
+
+/* Real ellipsis: the button is flex (ellipsis never applies to
+   flex containers), so it truncates the inner label, which is
+   the only thing shrinking; chevron and icon stay fixed. */
+.code-name > .code-chevron {
+  flex: none;
+}
+
+.code-name > .code-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Module↔code links and snapshots (unified perspectives). */
+.module-links,
+.project-code-panel section {
+  border-top: 1px solid var(--line);
+  margin-top: var(--sp-sm);
+  padding-top: var(--sp-sm);
+}
+
+.module-links h3,
+.project-code-panel h2 {
+  font-size: 0.8rem;
+  margin: 0 0 var(--sp-xs);
+}
+
+/* Requirement↔code traceability (explicit links only). */
+.trace-view section {
+  border-top: 1px solid var(--line);
+  margin-top: var(--sp-sm);
+  padding-top: var(--sp-sm);
+}
+
+.trace-view h3 {
+  font-size: 0.8rem;
+  margin: 0 0 var(--sp-xs);
+}
+
+.project-code-panel .button-row {
+  flex-wrap: wrap;
+}
+
+.project-code-panel select,
+.project-code-panel input[type="text"] {
+  max-width: 100%;
+}
+
+/* Active-file breadcrumb. */
+.code-crumbs {
+  flex: 1;
+  min-width: 0;
+}
+
+.code-crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.code-crumbs li {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  flex: none;
+}
+
+.code-crumbs li:last-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.code-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  padding: 0 var(--sp-xs);
+  cursor: pointer;
+  min-width: 0;
+}
+
+button.code-crumb:hover {
+  color: var(--fg);
+  background: var(--raised);
+}
+
+button.code-crumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.code-crumb.current {
+  color: var(--fg);
+  cursor: default;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-width: 0;
+}
+
+.code-crumb-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.code-crumb-sep {
+  color: var(--muted);
+}
+
+/* Active-file status bar. */
+.code-statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-xs) var(--sp-md);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.code-status-cursor {
+  font-variant-numeric: tabular-nums;
+}
+
+.code-status-language {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+}
+
+.code-status-label {
+  white-space: nowrap;
+}
+
+.code-status-language select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-xs);
+  max-width: 10rem;
+}
+
+/* Editor presentation: local dropdown, visual only. */
+.code-prefs {
+  position: relative;
+}
+
+.code-prefs summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-sm);
+  white-space: nowrap;
+}
+
+.code-prefs summary::-webkit-details-marker {
+  display: none;
+}
+
+.code-prefs summary:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.code-prefs summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.code-prefs-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  display: grid;
+  gap: var(--sp-xs);
+  min-width: 15rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: var(--sp-sm);
+}
+
+.code-prefs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  font-size: 0.75rem;
+  color: var(--fg);
+}
+
+.code-prefs-row input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.code-prefs-row input[type="number"] {
+  width: 4rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-xs);
+}
+
+.code-prefs-row select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-xs);
+  max-width: 9rem;
+}
+
+/* Visor de lectura (etapa A). */
+.code-viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.code-viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px solid var(--line);
+}
+
+.code-pre {
+  flex: 1;
+  margin: 0;
+  padding: var(--sp-md);
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  background: var(--surface);
+  tab-size: 4;
+}
+
+.code-pre.small {
+  flex: none;
+  max-height: 16rem;
+  font-size: 0.75rem;
+}
+
+/* Editor Monaco (etapa B) y su alternativa honesta. */
+.code-viewer-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.code-editor-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The Monaco mount must shrink (min-height: 0) and clip
+   inward: with the automatic minimum, the pixel height
+   Monaco sets on its DOM blocked shrinking and pushed the
+   status bar out of the panel. Monaco brings its own inner scroll. */
+.code-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.code-fallback {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--sp-md);
+  gap: var(--sp-sm);
+}
+
+.code-textarea {
+  flex: 1;
+  resize: none;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  padding: var(--sp-md);
+  tab-size: 4;
+}
+
+/* Disk/draft comparison on conflicts. */
+.modal.code-conflict {
+  max-width: 64rem;
+  width: min(64rem, 96vw);
+}
+
+.code-diff-wrap {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.code-diff {
+  height: 22rem;
+  min-height: 14rem;
+  margin: var(--sp-md) 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.code-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-md);
+  margin: var(--sp-md) 0;
+}
+
+.code-compare h4 {
+  margin: 0 0 var(--sp-xs);
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.secondary.small.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.structure-view {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  gap: var(--sp-md);
+  padding: var(--sp-md);
+  overflow: hidden;
+}
+
+.structure-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--sp-sm);
+  overflow-y: auto;
+}
+
+.structure-side {
+  width: 16rem;
+  min-width: 12rem;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.structure-toolbar {
+  display: flex;
+  gap: var(--sp-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.structure-filters {
+  display: flex;
+  gap: var(--sp-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.structure-filters input[type="search"] {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--sp-xs) var(--sp-sm);
+}
+
+.struct-kind-filters {
+  display: flex;
+  gap: var(--sp-sm);
+  flex-wrap: wrap;
+}
+
+.struct-kind-check {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.structure-graph-wrap {
+  min-height: 22rem;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.struct-legend {
+  display: flex;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+}
+
+.legend-extends {
+  color: var(--accent);
+}
+
+.legend-implements {
+  color: var(--accent);
+}
+
+.legend-references {
+  color: var(--muted);
+}
+
+.struct-scope {
+  list-style: none;
+  margin: 0 0 var(--sp-md);
+  padding: 0;
+}
+
+.struct-guide {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.struct-scope-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  min-height: 1.75rem;
+}
+
+.struct-scope-row > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.struct-inspector {
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-sm);
+}
+
+/* Classes/Data/APIs tabs: same language as the center ones. */
+.struct-tabs {
+  display: flex;
+  flex: none;
+  gap: 0.125rem;
+  margin-bottom: 0.45rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.struct-tabs button {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  padding: 0.25rem 0.45rem;
+  cursor: pointer;
+}
+
+.struct-tabs button:hover {
+  color: var(--fg);
+}
+
+.struct-tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Data tab: type cards with members. */
+.data-list {
+  list-style: none;
+  margin: var(--sp-sm) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+
+.data-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm);
+}
+
+.data-head {
+  overflow-wrap: anywhere;
+}
+
+.data-members {
+  list-style: none;
+  margin: var(--sp-xs) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  font-size: 0.75rem;
+}
+
+/* APIs tab: unions and lists by state. */
+.api-list {
+  list-style: none;
+  margin: var(--sp-xs) 0 var(--sp-md);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.api-row {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-xs) var(--sp-sm);
+}
+
+.api-key {
+  font-weight: 600;
+}
+
+.api-side {
+  color: var(--muted);
+  font-size: 0.75rem;
+  min-width: 4.5rem;
+  display: inline-block;
+}
+
+/* Propose-code dialog: context, per-file proposal and diff. */
+.code-proposal h4 {
+  margin: var(--sp-md) 0 var(--sp-xs);
+  font-size: 0.85rem;
+}
+
+.code-proposal-pick {
+  display: flex;
+  gap: var(--sp-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.code-proposal-pick select {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--sp-xs) var(--sp-sm);
+  max-width: 100%;
+}
+
+.code-proposal-preview ul,
+.code-proposal-previous ul {
+  margin: var(--sp-xs) 0;
+  padding-left: 1.25rem;
+}
+
+.code-proposal-files {
+  list-style: none;
+  margin: var(--sp-sm) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+
+.code-proposal-file {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm);
+}
+
+.code-proposal-file-head {
+  overflow-wrap: anywhere;
+  margin-bottom: var(--sp-xs);
+}
+
+.code-proposal-diff {
+  margin-top: var(--sp-sm);
+  min-height: 12rem;
+}
+
+.code-proposal-previous,
+.code-proposal-reanalyze {
+  margin-top: var(--sp-md);
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-sm);
+}
+
+.struct-inspector-title {
+  margin: var(--sp-xs) 0;
+  overflow-wrap: anywhere;
+}
+
+.struct-inspector h3 {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: var(--sp-md) 0 var(--sp-xs);
+}
+
+.struct-rel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.rel-kind {
+  font-size: 0.6875rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-xs);
+  color: var(--muted);
+}
+
+.rel-kind.k-extends,
+.rel-kind.k-implements {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.struct-link {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Type card on the canvas (semantic read-only). */
+.struct-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm);
+  min-width: 15rem;
+  max-width: 15rem;
+  font-size: 0.75rem;
+}
+
+.struct-card.selected {
+  border-color: var(--accent);
+}
+
+.struct-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-xs);
+}
+
+.struct-card-kind {
+  color: var(--accent);
+  text-transform: uppercase;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+}
+
+.struct-card-lang {
+  color: var(--muted);
+  font-size: 0.625rem;
+}
+
+.struct-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.struct-card-file {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6875rem;
+  margin-bottom: var(--sp-xs);
+}
+
+.struct-card-toggle {
+  margin-top: var(--sp-xs);
+}
+
+.struct-card-members {
+  list-style: none;
+  margin: var(--sp-xs) 0 0;
+  padding: var(--sp-xs) 0 0;
+  border-top: 1px solid var(--line);
+  max-height: 10rem;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6875rem;
+}
+
+.struct-card-members li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 0;
+}
+
+.struct-member-kind {
+  color: var(--muted);
+  font-size: 0.625rem;
+}
+
+.struct-member-kind.m-method {
+  color: var(--warn);
+}
+
+.struct-member-kind.m-variant {
+  color: var(--accent);
+}
+
+.struct-card-unresolved {
+  margin-top: var(--sp-xs);
+}
+
+/* Architecture board: layer columns with an SVG edge overlay. */
+
+.arch-legend .hint {
+  margin: 0;
+}
+
+/* Board viewport: scroll frame with wheel zoom, drag pan and Fit. */
+.board-viewport-wrap {
+  position: relative;
+}
+
+.board-viewport {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0d1115;
+  max-height: 60vh;
+}
+
+.board-viewport:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.board-viewport.panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* Project boards: stacked sections beside one shared inspector. */
+.project-map-boards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-sm);
+  align-items: start;
+}
+
+.project-map-sections {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.project-map-inspector {
+  position: sticky;
+  top: 0;
+  width: 19rem;
+  min-width: 15rem;
+  max-width: 35rem;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+}
+
+.project-map-inspector-rail {
+  position: sticky;
+  top: 0;
+}
+
+.project-map-inspector-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  padding: var(--sp-xs) var(--sp-sm);
+  border-bottom: 1px solid var(--line);
+}
+
+.project-map-inspector-bar .hint {
+  margin: 0;
+}
+
+.project-map-inspector-scroll {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.project-map-inspector-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  margin-left: -4px;
+  cursor: ew-resize;
+  z-index: 2;
+}
+
+.project-map-inspector-resize:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Top-level project maps: one automatic diagram per root. */
+.project-map-root {
+  border-top: 1px solid var(--line);
+  margin-top: var(--sp-md);
+  padding-top: var(--sp-sm);
+}
+
+/* Column board. Row heights mirror boardLayout.ts exactly: the
+   layout pass sizes cards from these rows, and cards clip on
+   mismatch instead of skewing edges. Surfaces step up in lightness
+   (canvas → column → card → row); mint is reserved for selection,
+   role hues for architectural role, red/orange only for visibility. */
+.archboard {
+  --board-canvas: #0d1115;
+  --board-col: #121820;
+  --board-col-head: #151c25;
+  --board-card: #19202a;
+  --board-row: #141a22;
+  --board-row-hover: #1d2631;
+  --board-line: #29323d;
+  --board-line-strong: #36414e;
+  --board-text-2: #a9b4c0;
+  --board-sel: var(--accent);
+  --role: #6b7785;
+  position: relative;
+  background: var(--board-canvas);
+}
+
+/* Architectural role hues (column tile, card kind tile). */
+.role-ui { --role: #e9a6f5; }
+.role-controllers { --role: #6aaefc; }
+.role-state { --role: #b39dfa; }
+.role-services { --role: #34d1bf; }
+.role-contracts { --role: #f3bf4f; }
+.role-composition { --role: #8f97f9; }
+.role-crosscutting { --role: #a7b4c3; }
+.role-unassigned { --role: #6b7785; }
+
+.archboard-col-bg {
+  position: absolute;
+  top: 0;
+  z-index: 0;
+  background: var(--board-col);
+  border: 1px solid var(--board-line);
+  border-radius: 6px;
+}
+
+.archboard-edges {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.archboard-edges path {
+  pointer-events: stroke;
+}
+
+.arch-edge {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+.arch-edge.kind-imports { stroke: #5fb4ff; }
+.arch-edge.kind-extends { stroke: #3ddc97; }
+.arch-edge.kind-implements { stroke: #3ddc97; stroke-dasharray: 6 3; }
+.arch-edge.kind-instantiates { stroke: var(--warn); stroke-dasharray: 8 3 2 3; }
+.arch-edge.kind-references { stroke: #8fa0b3; stroke-dasharray: 2 4; }
+
+/* Labels ride above the cards (their own layer) with a canvas halo,
+   so a label is never hidden under the card it points at. */
+.archboard-edge-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.arch-edge-label {
+  fill: #cfd8e2;
+  font-size: 0.66rem;
+  paint-order: stroke;
+  stroke: var(--board-canvas);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+/* Stacking (one context, the board): column panels 0, edges 1,
+   cards 2, edge labels 3, sticky column headers 4. */
+.archboard-cols {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.archboard-col {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.archboard-col-head {
+  flex: none;
+  height: 48px;
+  width: 100%;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--board-col-head);
+  border: 1px solid var(--board-line);
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.archboard-col-badge {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--role);
+  background: color-mix(in srgb, var(--role) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--role) 45%, transparent);
+  border-radius: 5px;
+}
+
+.archboard-col-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.archboard-col-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archboard-col-count {
+  font-size: 0.7rem;
+  color: var(--board-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archboard-card {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--board-card);
+  border: 1px solid var(--board-line-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow: hidden;
+}
+
+/* Selection: one mint edge (border + 1px inner ring), no outline
+   stacked outside the border. Independent of the role hue. */
+.archboard-card.selected {
+  border-color: var(--board-sel);
+  box-shadow: inset 0 0 0 1px var(--board-sel), 0 0 0 3px color-mix(in srgb, var(--board-sel) 14%, transparent);
+}
+
+.archboard-card.reference {
+  border-style: dashed;
+}
+
+.archboard-card.hidden { display: none; }
+
+.archboard-card-head {
+  flex: none;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.86rem;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Keyboard focus is a light outline, distinct from the mint selection. */
+.archboard-card-head:focus-visible,
+.archboard-more:focus-visible,
+button.archboard-symbol:focus-visible,
+button.archboard-member:focus-visible {
+  outline: 2px solid #e6edf5;
+  outline-offset: 1px;
+}
+
+.archboard-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archboard-lang {
+  flex: none;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 16px;
+  padding: 0 5px;
+  border-radius: 3px;
+  color: #a9cdfd;
+  background: rgba(74, 144, 245, 0.16);
+  border: 1px solid rgba(74, 144, 245, 0.45);
+}
+
+.archboard-lang.lang-js,
+.archboard-lang.lang-jsx { color: #f5dc7a; background: rgba(240, 210, 80, 0.12); border-color: rgba(240, 210, 80, 0.4); }
+.archboard-lang.lang-rust { color: #f3b48a; background: rgba(222, 120, 60, 0.14); border-color: rgba(222, 120, 60, 0.42); }
+.archboard-lang.lang-html { color: #f5a088; background: rgba(228, 100, 60, 0.14); border-color: rgba(228, 100, 60, 0.42); }
+.archboard-lang.lang-css,
+.archboard-lang.lang-scss { color: #b8b4fb; background: rgba(140, 130, 245, 0.14); border-color: rgba(140, 130, 245, 0.42); }
+
+.archboard-card-sub {
+  flex: none;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: var(--board-text-2);
+}
+
+.archboard-chip {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 15px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 0.66rem;
+}
+
+.archboard-chip.project {
+  color: #8fd9b8;
+  background: rgba(61, 220, 151, 0.08);
+  border: 1px solid rgba(61, 220, 151, 0.3);
+}
+
+.archboard-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archboard-card-meta {
+  flex: none;
+  height: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  color: var(--board-text-2);
+}
+
+/* Wrapped badges fall onto the clipped second line whole: a badge
+   is either fully visible or not drawn, never cut mid-label. */
+.archboard-card-meta > * {
+  line-height: 16px;
+}
+
+.archboard-count + .archboard-count::before {
+  content: "·";
+  margin-right: 8px;
+  color: #6c7a89;
+}
+
+.archboard-badge {
+  flex: none;
+  font-size: 0.66rem;
+  color: var(--board-text-2);
+  border: 1px solid var(--board-line);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.archboard-badge.warn {
+  color: #f1c27a;
+  border-color: rgba(232, 163, 61, 0.45);
+  background: rgba(232, 163, 61, 0.1);
+}
+
+.archboard-symbol {
+  flex: none;
+  height: 22px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--board-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+button.archboard-symbol {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--board-text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+button.archboard-symbol:hover .archboard-symbol-name {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.archboard-symbol-name {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archboard-symbol-count { flex: none; color: var(--board-text-2); }
+
+.archboard-chevron {
+  flex: none;
+  width: 1em;
+  color: var(--muted);
+}
+
+.archboard-kind {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--role);
+  background: color-mix(in srgb, var(--role) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--role) 40%, transparent);
+  border-radius: 4px;
+}
+
+.archboard-decorator {
+  flex: none;
+  max-width: 45%;
+  color: #e7b96d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Member rows: one bordered rectangle per member. The slot is the
+   6px gap plus the 28px row, so layout math stays one constant. */
+.archboard-member-list {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.archboard-member-slot {
+  flex: none;
+  height: 34px;
+  padding-top: 6px;
+}
+
+.archboard-member-slot.indent {
+  padding-left: 18px;
+}
+
+.archboard-member {
+  height: 28px;
+  width: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  background: var(--board-row);
+  border: 1px solid var(--board-line);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--fg);
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+button.archboard-member {
+  cursor: pointer;
+}
+
+button.archboard-member:hover {
+  background: var(--board-row-hover);
+  border-color: var(--board-line-strong);
+}
+
+.archboard-member.selected {
+  border-color: var(--board-sel);
+  box-shadow: inset 0 0 0 1px var(--board-sel);
+  background: color-mix(in srgb, var(--board-sel) 9%, var(--board-row));
+}
+
+.archboard-mem-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-style: normal;
+  border-radius: 3px;
+  color: #b4c0cc;
+  background: rgba(160, 175, 192, 0.1);
+  border: 1px solid rgba(160, 175, 192, 0.28);
+}
+
+.archboard-mem-icon.mrole-method { color: #9fd0ff; border-color: rgba(110, 175, 250, 0.4); background: rgba(110, 175, 250, 0.1); }
+.archboard-mem-icon.mrole-function-property { color: #9fd0ff; border-color: rgba(110, 175, 250, 0.4); background: rgba(110, 175, 250, 0.06); font-style: italic; }
+.archboard-mem-icon.mrole-lifecycle { color: #74e3ad; border-color: rgba(61, 220, 151, 0.45); background: rgba(61, 220, 151, 0.12); }
+.archboard-mem-icon.mrole-constructor { color: #f3c46b; border-color: rgba(243, 191, 79, 0.5); background: rgba(243, 191, 79, 0.13); }
+
+/* Name and signature read as one line ("email: string",
+   "create(dto)"); the signature gives way first when space runs out. */
+.archboard-mem-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  overflow: hidden;
+}
+
+.archboard-mem-name {
+  flex: 0 0 auto;
+  max-width: 85%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.archboard-mem-sig {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: 0.4em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--board-text-2);
+  font-size: 0.7rem;
+}
+
+.archboard-mem-sig.tight {
+  margin-left: 0;
+}
+
+.archboard-mem-tags {
+  flex: none;
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.archboard-tag {
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 14px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--board-text-2);
+  border: 1px solid var(--board-line-strong);
+}
+
+.archboard-tag.hook { color: #74e3ad; border-color: rgba(61, 220, 151, 0.45); background: rgba(61, 220, 151, 0.1); }
+.archboard-tag.vis-private { color: #f4a49d; border-color: rgba(242, 122, 114, 0.42); background: rgba(242, 122, 114, 0.1); }
+.archboard-tag.vis-protected { color: #f6b77f; border-color: rgba(245, 150, 70, 0.42); background: rgba(245, 150, 70, 0.1); }
+.archboard-tag.vis-public { color: #a9cdfd; border-color: rgba(110, 165, 245, 0.38); background: rgba(110, 165, 245, 0.08); }
+
+.archboard-more {
+  flex: none;
+  height: 26px;
+  width: 100%;
+  margin: 0;
+  padding: 6px 0 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.7rem;
+  color: var(--board-text-2);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.archboard-more:hover {
+  color: var(--accent);
+}
+
+.archmap-inspector {
+  padding: 8px;
+}
+
+.archmap-inspector-empty {
+  padding: 8px;
+}
+
+.archmap-inspector h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.archmap-inspector h4 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0 0 4px;
+}
+
+.archmap-inspector > .hint {
+  margin: 2px 0;
+}
+
+.archmap-inspector .hint,
+.archmap-inspector h3 {
+  overflow-wrap: anywhere;
+}
+
+/* Inspector sections: one framed panel each, titled in sentence case. */
+.archmap-section {
+  margin-top: 8px;
+  padding: 7px 10px 9px;
+  background: #161d26;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.archmap-section-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+
+.archmap-section-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.archmap-section-body {
+  margin-top: 6px;
+  font-size: 0.78rem;
+}
+
+.archmap-section-body .hint {
+  margin: 4px 0 0;
+}
+
+.archmap-symbol-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.archmap-symbol-detail h4 {
+  font-size: 0.9rem;
+}
+
+.archmap-symbol-detail > .hint {
+  margin: 2px 0;
+}
+
+.archmap-symbol-detail > .button-row {
+  margin-top: 6px;
+}
+
+.archmap-section[aria-label="symbol-member"] {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.archmap-member-detail h4 code {
+  font-size: 0.85rem;
+}
+
+.archmap-facts {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 6px 0 0;
+}
+
+.archmap-facts dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.archmap-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.archmap-facts code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.archmap-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.archmap-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.archmap-list code,
+.archmap-link {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.archmap-link[aria-pressed="true"] {
+  text-decoration: underline;
+}
+
+/* ---- Workspace: bar, welcome, overview, recents ---- */
+.workspace-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-xs) var(--sp-sm);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  margin-bottom: var(--sp-md);
+}
+
+.workspace-selector {
+  position: relative;
+  min-width: 0;
+}
+
+.workspace-current {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  max-width: 36rem;
+}
+
+.workspace-current:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.workspace-label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 30;
+  min-width: 16rem;
+  max-width: 24rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 0.175rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-menu-head {
+  margin: 0.15rem 0.35rem 0.1rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.workspace-item {
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  padding: 0.25rem 0.35rem;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-item:hover {
+  background: var(--surface);
+}
+
+.welcome {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  max-width: 44rem;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.welcome h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.welcome h3 {
+  margin: var(--sp-lg) 0 0;
+  font-size: 0.95rem;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+}
+
+.recents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-xs) var(--sp-sm);
+}
+
+.recent-open {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: var(--r-sm);
+}
+
+.recent-open:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.recent-open:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.recent-label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-open .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-missing {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-sm);
+  padding: 0 0.3rem;
+}
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.overview-roots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.overview-root {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm) var(--sp-md);
+}
+
+.overview-root p {
+  margin: var(--sp-xs) 0 0;
+}
+
+.overview-root-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.overview-root-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gate-list {
+  margin: var(--sp-xs) 0;
+  padding-left: 1.1rem;
+}
+
+/* ---- Architecture chrome: toolbar, menus, details, board zoom ----
+   One compact bar over the boards; menus and the details panel float
+   above the content instead of pushing it down. */
+.architecture-toolbar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.archmap-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 5px 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.archmap-module {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.archmap-module select,
+.archmap-search {
+  height: 26px;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 8px;
+}
+
+.archmap-module select {
+  min-width: 11rem;
+  max-width: 18rem;
+  cursor: pointer;
+}
+
+.archmap-search {
+  flex: 1 1 14rem;
+  max-width: 24rem;
+  margin-left: auto;
+}
+
+.archmap-search::placeholder {
+  color: #7d8996;
+}
+
+.archmap-module select:focus-visible,
+.archmap-search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.archmap-toolbar > .secondary.small,
+.archmap-menu > .secondary.small,
+.archmap-zoomctl > .secondary.small {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 0.76rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.archmap-toolbar .secondary[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Segmented controls (Symbols/Files, depth 1/2). */
+.archmap-zoomctl {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 0;
+}
+
+.archmap-zoomctl > .secondary.small {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.archmap-zoomctl > .secondary.small:first-child {
+  border-radius: 4px 0 0 4px;
+  margin-left: 0;
+}
+
+.archmap-zoomctl > .secondary.small:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.archmap-zoomctl > .secondary.small.active {
+  position: relative;
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(61, 220, 151, 0.1);
+}
+
+.archmap-toolbar > .archmap-layer {
+  font-size: 0.76rem;
+}
+
+.archmap-module-line {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 0.72rem;
+}
+
+/* Menus: anchored popovers over the content. The backdrop is an
+   invisible full-window layer that closes the menu on outside click. */
+.archmap-menu {
+  position: relative;
+}
+
+.archmap-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+}
+
+.archmap-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 41;
+  min-width: 15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: #19202a;
+  border: 1px solid #36414e;
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.archmap-popover > [role="group"] {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.archmap-popover > [role="group"] + [role="group"],
+.archmap-popover > .arch-legend {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.archmap-layer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.archmap-popover .archmap-layer:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.archmap-layer input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* Depth row inside the Edges menu: label and segmented 1/2 inline. */
+.archmap-popover [aria-label="Shown connections"] > .hint {
+  margin: 6px 6px 2px;
+  font-size: 0.7rem;
+}
+
+.archmap-popover [aria-label="Shown connections"] > .archmap-zoomctl {
+  padding: 0 6px;
+}
+
+.arch-legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+
+.arch-legend > .hint {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 0.7rem;
+}
+
+.arch-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Analysis details: a panel anchored to the right edge of the bar. */
+.archmap-popover.archmap-details {
+  top: 40px;
+  left: auto;
+  right: 0;
+  width: min(30rem, 92vw);
+  max-height: 60vh;
+  overflow: auto;
+  gap: 0;
+  padding: 0;
+}
+
+.archmap-details-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #19202a;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.82rem;
+}
+
+.archmap-details > section {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.78rem;
+}
+
+.archmap-details > section:last-of-type {
+  border-bottom: none;
+}
+
+.archmap-details > section p {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.archmap-details > section .archmap-list .hint {
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.archmap-details > section .button-row {
+  margin-top: 6px;
+}
+
+.archmap-details > section .archmap-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.archmap-details > .hint {
+  margin: 0;
+  padding: 10px;
+}
+
+/* Board zoom: discreet floating control at the canvas' lower left. */
+.board-zoom-float {
+  position: absolute;
+  left: 10px;
+  bottom: 22px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(25, 32, 42, 0.94);
+  border: 1px solid #36414e;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.board-zoom-float > .secondary.small {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 7px;
+  font-size: 0.76rem;
+  background: transparent;
+  border-color: transparent;
+}
+
+.board-zoom-float > .secondary.small:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.board-zoom-float > .board-fit {
+  margin-left: 4px;
+  border-left: 1px solid #36414e;
+  border-radius: 0 4px 4px 0;
+}
+
+.archmap-caption {
+  margin: 10px 0 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* Manual scope analysis: on-demand, below the boards. */
+.architecture-manual-toggle {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+.architecture-manual-toggle[aria-expanded="true"] {
+  color: var(--fg);
+}
+
+.architecture-scope[hidden] {
+  display: none;
+}
+
+/* Analysis status bar: scope chip, coverage and quick actions under
+   the boards. */
+.archmap-statusbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 5px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.74rem;
+}
+
+.archmap-statusbar > .hint {
+  margin: 0;
+}
+
+.archmap-statusbar > .secondary.small {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+}
+
+.archmap-scope-chip {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: rgba(61, 220, 151, 0.08);
 }

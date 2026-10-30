@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { isTauriEnvironment } from "../../lib/env";
+import { createProjectFromFolder } from "./projectFromFolder";
+import { addCodeRoot, setRootProject } from "../code/client";
 import {
   approveVersion,
   archiveModule,
@@ -10,6 +13,7 @@ import {
   createProject,
   createRequirement,
   deleteModule,
+  deleteProject,
   deleteRequirement,
   getRequirement,
   renameModule,
@@ -42,15 +46,18 @@ import {
   type ArchiveTarget,
 } from "./archive";
 import { ExplorerPanel } from "../explorer/ExplorerPanel";
+import { NavResizeHandle } from "../explorer/NavResizeHandle";
 import { firstLine, moduleKey, type ArtifactMeta } from "../explorer/explorerModel";
 import type { ModuleGraph } from "../explorer/useExplorerData";
 import { NewRequirementForm } from "./NewRequirementForm";
+import { PerspectiveTabs } from "./PerspectiveTabs";
+import { TraceView } from "../trace/TraceView";
 import { RequirementEditor } from "./RequirementEditor";
 import { ReviewPanel } from "./ReviewPanel";
 import { UnsavedDialog } from "./UnsavedDialog";
-import { withDesign, withMockup, withRequirement } from "./navigation";
-import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, useRequirementsUi, type CenterView, type DocSaveState, type PanelName, type RightTab, type Selection } from "./uiStore";
-import { docKey } from "./saveStatus";
+import { withDesign, withMockup, withRequirement, withScreen } from "./navigation";
+import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, useRequirementsUi, type CenterView, type DocSaveState, type PanelName, type RightTab, type Selection } from "./uiStore";
+import { dirtyDocKeys, docKey } from "./saveStatus";
 import { GenerationPanel } from "../proposals/GenerationPanel";
 import {
   approveDesign,
@@ -70,6 +77,28 @@ import {
 import { GenerateDesignDialog } from "../design/GenerateDesignDialog";
 import { AssistantPanel } from "../assistant/AssistantPanel";
 import { TerminalPanel } from "../terminal/TerminalPanel";
+import { type CodeSaveApi } from "../code/CodeWorkspace";
+import { ArchitectureView } from "../code/archmap/ArchitectureView";
+import { CodeMainPane } from "../code/CodeMainPane";
+import { CodeTreePane } from "../code/CodeTreePane";
+import { CodeWorkspaceProvider } from "../code/useCodeWorkspace";
+import { listCodeRoots } from "../code/client";
+import type { CodeRootDto } from "../code/types";
+import { listTerminals } from "../terminal/client";
+import { listProjects } from "./client";
+import {
+  listRecents,
+  normalizeWorkspaceError,
+  removeRecent,
+  touchRecent,
+} from "../workspace/client";
+import type { RecentWorkspaceDto } from "../workspace/types";
+import { openProjectFromFolder, samePath } from "../workspace/openProject";
+import { WelcomeScreen } from "../workspace/WelcomeScreen";
+import { WorkspaceSelector } from "../workspace/WorkspaceSelector";
+import { OverviewView } from "../workspace/OverviewView";
+import { WorkspaceCloseDialog } from "../workspace/WorkspaceCloseDialog";
+import { ModuleCodeLinks } from "../code/ModuleCodeLinks";
 import { ModuleDesigns } from "../design/ModuleDesigns";
 import { RequirementDesigns } from "../design/RequirementDesigns";
 import { saveMockupVersion } from "../mockup/client";
@@ -100,10 +129,10 @@ import {
 
 const SAVE_LABELS: Record<SaveState, string | null> = {
   idle: null,
-  draft: "Borrador sin guardar (solo en memoria)",
-  saving: "Guardando…",
-  saved: "Guardado",
-  error: "Error al guardar: el borrador se conserva",
+  draft: "Unsaved draft (memory only)",
+  saving: "Saving…",
+  saved: "Saved",
+  error: "Save failed: the draft is kept",
 };
 
 type Slot = "detail" | "designDetail" | "mockupDetail" | "impact" | "archive" | "rename";
@@ -112,9 +141,9 @@ interface PendingNav {
   selection: Selection;
   showCreateForm: boolean;
   showPropose: boolean;
-  /** Vista explícita (pestañas); null deriva de la selección. */
+  /** Explicit view (tabs); null derives from the selection. */
   view: CenterView | null;
-  /** Qué borrador protege el diálogo: requisito, visual o mockup. */
+  /** Which draft the dialog protects: requirement, visual or mockup. */
   draft: "requirement" | "visual" | "mockup";
 }
 
@@ -125,8 +154,10 @@ export function RequirementsWorkspace() {
   const requirementId = useRequirementsUi((s) => s.selection.requirementId);
   const designId = useRequirementsUi((s) => s.selection.designId);
   const mockupId = useRequirementsUi((s) => s.selection.mockupId);
+  const screenId = useRequirementsUi((s) => s.selection.screenId);
   const navigatorWidth = useRequirementsUi((s) => s.navigatorWidth);
   const centerView = useRequirementsUi((s) => s.centerView);
+  const centerDoc = useRequirementsUi((s) => s.centerDoc);
   const showNavigator = useRequirementsUi((s) => s.panels.navigator);
   const showReview = useRequirementsUi((s) => s.panels.review);
   const showTerminal = useRequirementsUi((s) => s.panels.terminal);
@@ -135,21 +166,30 @@ export function RequirementsWorkspace() {
   const rightWidth = useRequirementsUi((s) => s.rightWidth);
   const showRight = showReview || showAssistant;
 
-  // Artefactos del módulo seleccionado, informados por el explorador
-  // para las vistas centrales. La caché completa vive en el explorador.
+  // Artifacts of the selected module, reported by the explorer for the
+  // center views. The full cache lives in the explorer.
   const [selectedArtifacts, setSelectedArtifacts] = useState<ArtifactDto[]>([]);
-  // Módulos del proyecto seleccionado (mismo informe): determinan el
-  // archivado por contexto de las vistas centrales.
+  // Modules of the selected project (same report): they determine the
+  // contextual archiving of the center views.
   const [selectedModules, setSelectedModules] = useState<ModuleDto[]>([]);
-  // Vínculos del módulo seleccionado (mismo informe del explorador).
+  // Links of the selected module (same explorer report).
   const [selectedGraph, setSelectedGraph] = useState<ModuleGraph | null>(null);
-  // Diálogo «Generar diseño» con preselección de fuentes (null = cerrado).
+  // "Generate design" dialog with source preselection (null = closed).
   const [generateRequest, setGenerateRequest] = useState<{
     preselected: string[] | null;
     preselectedMockups?: string[] | null;
   } | null>(null);
   const [explorerRefresh, setExplorerRefresh] = useState(0);
-  // Etiquetas y estados conocidos de detalles cargados en la sesión.
+  const explorerToken = useRequirementsUi((s) => s.explorerToken);
+  // External tree changes (structure replica): reload
+  // projects and everything already loaded. Only moves forward, never back.
+  const seenExplorerToken = useRef(explorerToken);
+  useEffect(() => {
+    if (explorerToken === seenExplorerToken.current) return;
+    seenExplorerToken.current = explorerToken;
+    setExplorerRefresh((t) => t + 1);
+  }, [explorerToken]);
+  // Known labels and states of details loaded in the session.
   const [artifactMeta, setArtifactMeta] = useState<Record<string, ArtifactMeta>>({});
   const [detail, setDetail] = useState<RequirementDetail | null>(null);
   const [designDetail, setDesignDetail] = useState<RequirementDetail | null>(null);
@@ -174,14 +214,14 @@ export function RequirementsWorkspace() {
   const [createBusy, setCreateBusy] = useState(false);
 
   const [draft, dispatchDraft] = useReducer(draftReducer, EMPTY_DRAFT);
-  // Borrador visual elevado: sobrevive a cambios de pestaña; solo se
-  // reinicia al guardar, descartar o abandonar el diseño.
+  // Lifted visual draft: survives tab switches; only resets on save,
+  // discard or leaving the design.
   const [visual, dispatchVisual] = useReducer(visualDraftReducer, null);
   const [visualSave, setVisualSave] = useState<{ busy: boolean; error: string | null }>({
     busy: false,
     error: null,
   });
-  // Borrador de mockup elevado con las mismas garantías que el visual.
+  // Lifted mockup draft with the same guarantees as the visual one.
   const [mockup, dispatchMockup] = useReducer(mockupDraftReducer, null);
   const [mockupSave, setMockupSave] = useState<{ busy: boolean; error: string | null }>({
     busy: false,
@@ -207,9 +247,9 @@ export function RequirementsWorkspace() {
   const [mockupApprover, setMockupApprover] = useState("");
   const [dialog, setDialog] = useState<PendingNav | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
-  // Archivo y borrado: el resumen previo es consultivo y la ejecución
-  // revalida en Rust. `archiveAfterSave` encadena el diálogo de borrador
-  // (guardar/descartar/cancelar) antes de abrir el resumen.
+  // Archive and delete: the preview summary is advisory and execution
+  // revalidates in Rust. `archiveAfterSave` chains the draft dialog
+  // (save/discard/cancel) before opening the summary.
   const [archiveRequest, setArchiveRequest] = useState<{
     target: ArchiveTarget;
     action: ArchiveAction;
@@ -223,11 +263,11 @@ export function RequirementsWorkspace() {
     action: ArchiveAction;
   } | null>(null);
   const [archiveGuardKind, setArchiveGuardKind] = useState<"requirement" | "visual" | "mockup" | null>(null);
-  // Renombrado: nombre organizativo o título metadato. No toca contenido,
-  // versiones ni borradores; Rust revalida la revisión esperada.
-  // Actualización IA automática: por módulo y por sesión, desactivada por
-  // defecto. Los guardados manuales la programan; las propuestas van a
-  // Impacto y nunca se aceptan solas.
+  // Rename: organizational name or metadata title. Touches no content,
+  // versions or drafts; Rust revalidates the expected revision.
+  // Automatic AI update: per module and per session, off by default.
+  // Manual saves schedule it; proposals go to Impact and are never
+  // accepted alone.
   const [autoUpdate, setAutoUpdate] = useState<Record<string, boolean>>({});
   const [autoStatus, setAutoStatus] = useState<
     ({ moduleKey: string } & AutoStatus) | null
@@ -236,6 +276,8 @@ export function RequirementsWorkspace() {
   const autoInflight = useRef(false);
   const autoRerun = useRef(false);
   const centralSaving = useRef(false);
+  const codeSaveRef = useRef<CodeSaveApi | null>(null);
+  const [codeDocStatus, setCodeDocStatus] = useState<Record<string, DocSaveState>>({});
   const centralSaveRef = useRef<() => void>(() => {});
   const saveAllRef = useRef<() => void>(() => {});
   const saveAllBusy = useRef(false);
@@ -245,8 +287,8 @@ export function RequirementsWorkspace() {
   const [storage, setStorage] = useState<CoreStatus | null>(null);
   const storageReady = storage?.ready === true;
 
-  // Contexto de impacto: vive aquí (no en Zustand ni en el panel) para
-  // conservarlo al salir y volver a la pestaña.
+  // Impact context: lives here (not in Zustand nor in the panel) to
+  // survive leaving and returning to the tab.
   const [impactOrigin, setImpactOrigin] = useState<string | null>(null);
   const [impactFrom, setImpactFrom] = useState<string | null>(null);
   const [impactNode, setImpactNode] = useState<string | null>(null);
@@ -257,8 +299,8 @@ export function RequirementsWorkspace() {
   const [diffSignal, setDiffSignal] = useState(0);
   const bumpImpact = useCallback(() => setRefreshToken((t) => t + 1), []);
 
-  // Ediciones JSON de propuestas de actualización, por generación: viven
-  // aquí para que navegar (nodos, pestañas) no las pierda sin aviso.
+  // JSON edits of update proposals, per generation: they live here so
+  // navigating (nodes, tabs) never loses them silently.
   const [updateEdits, setUpdateEdits] = useState<Record<string, string>>({});
   const handleUpdateEdit = useCallback((generationId: string, text: string | null) => {
     setUpdateEdits((prev) => {
@@ -270,11 +312,11 @@ export function RequirementsWorkspace() {
     });
   }, []);
 
-  // Listas centrales activas: lo archivado (propio o por contexto) se
-  // filtra; sigue accesible desde el árbol con «Mostrar archivados».
+  // Active center lists: archived items (own or by context) are
+  // filtered out; still reachable from the tree with "Show archived".
   const moduleArchived =
     moduleId !== null && selectedModules.some((m) => m.id === moduleId && m.archived);
-  // Auto-actualización del módulo seleccionado (vista de módulo o requisito).
+  // Auto-update of the selected module (module or requirement view).
   const moduleAutoKey =
     projectId !== null && moduleId !== null ? moduleKey(projectId, moduleId) : null;
   const moduleAutoEnabled = moduleAutoKey !== null && (autoUpdate[moduleAutoKey] ?? false);
@@ -304,8 +346,8 @@ export function RequirementsWorkspace() {
   const activeMockups = selectedArtifacts.filter(
     (a) => a.kind === "mockup" && !isEffectivelyArchived(a.archived, moduleArchived),
   );
-  // Datos frescos para la auto-actualización diferida (el temporizador
-  // capturaría el render del guardado, anterior al rederivado).
+  // Fresh data for the deferred auto-update (the timer would capture the
+  // save's render, before re-deriving).
   const autoDataRef = useRef({
     projectId,
     moduleId,
@@ -478,8 +520,8 @@ export function RequirementsWorkspace() {
     };
   }, [isNative]);
 
-  // El explorador carga proyectos, módulos y artefactos bajo demanda; aquí
-  // solo se aprenden etiquetas y estados de los detalles abiertos.
+  // The explorer loads projects, modules and artifacts on demand; here only
+  // labels and states of open details are learned.
   useEffect(() => {
     if (detail === null) return;
     const current = currentVersion(detail);
@@ -544,7 +586,7 @@ export function RequirementsWorkspace() {
     void loadMockupDetail(mockupId);
   }, [storageReady, mockupId, loadMockupDetail]);
 
-  // Cambiar de proyecto/módulo reinicia el contexto de impacto.
+  // Switching projects/modules restarts the impact context.
   useEffect(() => {
     setImpactOrigin(null);
     setImpactFrom(null);
@@ -553,10 +595,10 @@ export function RequirementsWorkspace() {
     setImpactError(null);
   }, [projectId, moduleId]);
 
-  // El requisito seleccionado es el origen inicial del análisis. Al cambiar
-  // de requisito la comparación anterior deja de ser compatible (las
-  // versiones pertenecen a su artefacto) y se reinicia; mientras el origen
-  // no cambia, la comparación elegida se conserva.
+  // The selected requirement is the initial analysis origin. When switching
+  // requirements the previous comparison becomes incompatible (versions
+  // belong to their artifact) and restarts; while the origin stays, the
+  // chosen comparison is kept.
   useEffect(() => {
     if (requirementId === null) return;
     setImpactOrigin(requirementId);
@@ -564,8 +606,8 @@ export function RequirementsWorkspace() {
     setImpactNode(null);
   }, [requirementId]);
 
-  // Origen por defecto al entrar: el requisito seleccionado, si es del
-  // módulo; si no, el primero. Solo cuando aún no hay origen elegido.
+  // Default origin on entering: the selected requirement, when it belongs
+  // to the module; otherwise the first one. Only while no origin is chosen.
   useEffect(() => {
     if (centerView !== "impact" || impactOrigin !== null) return;
     const fallback =
@@ -581,7 +623,7 @@ export function RequirementsWorkspace() {
     void loadImpact(projectId, impactOrigin, impactFrom, refreshToken);
   }, [storageReady, centerView, projectId, impactOrigin, impactFrom, refreshToken, loadImpact]);
 
-  // La selección que ya no está en el informe se limpia sola.
+  // Selections missing from the report clear themselves.
   useEffect(() => {
     if (impactReportData === null || impactNode === null) return;
     const known =
@@ -590,9 +632,9 @@ export function RequirementsWorkspace() {
     if (!known) setImpactNode(null);
   }, [impactReportData, impactNode]);
 
-  // Guardar central: Ctrl+S (siempre evita el diálogo del WebView, incluso
-  // dentro de diálogos donde no dirige a ningún editor) y botón de
-  // cabecera vía `saveSignal`. La ref evita resuscribir por render.
+  // Central Save: Ctrl+S (always avoids the WebView dialog, even inside
+  // dialogs where it targets no editor) and the header button via
+  // `saveSignal`. The ref avoids resubscribing per render.
   centralSaveRef.current = () => void centralSave();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -601,8 +643,8 @@ export function RequirementsWorkspace() {
         event.preventDefault();
         const target = event.target as HTMLElement | null;
         if (target !== null && typeof target.closest === "function") {
-          // Diálogos: no dirige a ningún editor. Terminal: la tecla es del
-          // PTY (XOFF/XON) y jamás dispara el Guardar del editor.
+          // Dialogs: targets no editor. Terminal: the key belongs to the
+          // PTY (XOFF/XON) and never fires the editor Save.
           if (target.closest('[role="dialog"]') !== null) return;
           if (target.closest(".terminal-panel") !== null) return;
         }
@@ -618,7 +660,7 @@ export function RequirementsWorkspace() {
     centralSaveRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveSignal]);
-  // Guardar-todo (puerta de exportación): ref para no re-suscribir.
+  // Save-all (export gate): ref to avoid resubscribing.
   saveAllRef.current = () => void runSaveAll();
   const saveAllSignal = useRequirementsUi((s) => s.saveAllSignal);
   useEffect(() => {
@@ -626,7 +668,7 @@ export function RequirementsWorkspace() {
     saveAllRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveAllSignal]);
-  // Estado por documento para el encabezado: se publica solo si cambió.
+  // Per-document status for the header: only published when changed.
   useEffect(() => {
     const ui = useRequirementsUi.getState();
     const next: Record<string, DocSaveState> = {};
@@ -636,7 +678,7 @@ export function RequirementsWorkspace() {
           ? (detail.artifact.title ?? firstLine(currentVersion(detail)?.content ?? "") ?? requirementId)
           : requirementId;
       next[docKey("req", requirementId)] = {
-        label: `requisito ${title}`,
+        label: `requirement ${title}`,
         dirty: draft.dirty,
         saving: saveBusy,
         error: saveError,
@@ -650,7 +692,7 @@ export function RequirementsWorkspace() {
           ? (designDetail.artifact.title ?? designId)
           : designId;
       next[docKey("design", designId)] = {
-        label: `diseño ${title}${!semantic && layout ? " (solo disposición)" : ""}`,
+        label: `design ${title}${!semantic && layout ? " (layout only)" : ""}`,
         dirty: semantic || layout,
         saving: visualSave.busy,
         error: visualSave.error,
@@ -664,12 +706,13 @@ export function RequirementsWorkspace() {
           ? (mockupDetail.artifact.title ?? mockupId)
           : mockupId;
       next[docKey("mockup", mockupId)] = {
-        label: `mockup ${title}${!semantic && layout ? " (solo disposición)" : ""}`,
+        label: `mockup ${title}${!semantic && layout ? " (layout only)" : ""}`,
         dirty: semantic || layout,
         saving: mockupSave.busy,
         error: mockupSave.error,
       };
     }
+    Object.assign(next, codeDocStatus);
     if (JSON.stringify(ui.docStatus) !== JSON.stringify(next)) {
       ui.setDocStatus(next);
     }
@@ -685,13 +728,18 @@ export function RequirementsWorkspace() {
       const ui = useRequirementsUi.getState();
       const current = ui.selection;
       ui.setSelection(target);
-      // Elegir artefacto cambia de vista; elegir proyecto/módulo la conserva.
-      // Los modos de creación siempre se muestran en Requisitos.
+      // Picking an artifact switches views; picking a project/module keeps it.
+      // Creation modes always show in Requirements.
       const derived: CenterView =
-        view ?? (showCreateForm || showPropose ? "requirements" : ui.centerView);
+        view ??
+        (showCreateForm || showPropose
+          ? "requirements"
+          : ui.centerView === "welcome"
+            ? "overview"
+            : ui.centerView);
       ui.setCenterView(derived);
-      // Solo se reinicia lo del artefacto que cambió: el borrador del
-      // requisito sobrevive al navegar entre diseños y viceversa.
+      // Only what belongs to the changed artifact restarts: the requirement
+      // draft survives navigating across designs and vice versa.
       if (target.requirementId !== current.requirementId) {
         dispatchDraft({ type: "select", requirementId: target.requirementId });
         dispatchReview({ type: "reset" });
@@ -701,8 +749,8 @@ export function RequirementsWorkspace() {
         dispatchDesignReview({ type: "reset" });
         setViewingDesignVersionId(null);
         setDesignValidated(null);
-        // Al abandonar el diseño, su borrador visual ya se guardó o se
-        // descartó en el diálogo: aquí solo se limpia el estado.
+        // When leaving the design, its visual draft was already saved or
+        // discarded in the dialog: here only the state is cleared.
         dispatchVisual({ type: "reset" });
         setVisualSave({ busy: false, error: null });
       }
@@ -748,15 +796,15 @@ export function RequirementsWorkspace() {
     [applySelection, draft.dirty, requirementId, visual, designId, mockup, mockupId],
   );
 
-  // Un error de guardado visual se limpia al retomar la edición del
-  // borrador (especificación o fijaciones), no al mover el lienzo.
+  // A visual save error clears when editing of the draft resumes
+  // (specification or pins), not when moving the canvas.
   const visualPresent = visual?.history.present;
   const visualPinsKey = visual === null ? "" : visual.pins.join(",");
   useEffect(() => {
     setVisualSave((prev) => (prev.error === null ? prev : { ...prev, error: null }));
   }, [visualPresent, visualPinsKey]);
 
-  // Igual para el mockup: el error se limpia al retomar la edición.
+  // Same for mockups: the error clears when editing resumes.
   const mockupPresent = mockup?.history.present;
   const mockupPinsKey = mockup === null ? "" : mockup.pins.join(",");
   useEffect(() => {
@@ -764,11 +812,15 @@ export function RequirementsWorkspace() {
   }, [mockupPresent, mockupPinsKey]);
 
   function requestTab(view: CenterView) {
-    if (view === centerView || projectId === null || moduleId === null) return;
-    // Cambio puro de perspectiva: nunca toca requisito, módulo ni borradores,
-    // así que no necesita diálogo. Solo se abandonan los modos de creación
-    // al salir de Requisitos (su formulario se desmonta igualmente).
-    useRequirementsUi.getState().setCenterView(view);
+    // Overview and Architecture need a project; design views need a
+    // module too. Switching views never touches drafts or terminals.
+    // Welcome has no tab: close flows are the only way back to it.
+    if (view === centerView || view === "welcome") return;
+    if (projectId === null) return;
+    if (view !== "overview" && view !== "architecture" && moduleId === null) return;
+    const ui = useRequirementsUi.getState();
+    ui.setCenterView(view);
+    ui.setCenterDoc(null);
     if (view !== "requirements") {
       setCreating(false);
       setProposing(false);
@@ -786,7 +838,8 @@ export function RequirementsWorkspace() {
       a.moduleId === b.moduleId &&
       a.requirementId === b.requirementId &&
       a.designId === b.designId &&
-      a.mockupId === b.mockupId
+      a.mockupId === b.mockupId &&
+      a.screenId === b.screenId
     );
   }, []);
 
@@ -799,11 +852,407 @@ export function RequirementsWorkspace() {
       setExplorerRefresh((t) => t + 1);
       if (sameSelection(before, selectionSnapshot())) {
         applySelection(
-          { projectId: created.id, moduleId: null, requirementId: null, designId: null, mockupId: null },
+          { projectId: created.id, moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null },
           false,
         );
       }
     } catch (raw) {
+      setNavError(normalizeCoreError(raw).message);
+    } finally {
+      setNavBusy(false);
+    }
+  }
+
+  // ---- Workspace open/close (welcome, recents, close gate) ----
+  const [recents, setRecents] = useState<RecentWorkspaceDto[]>([]);
+  const [recentsLoading, setRecentsLoading] = useState(false);
+  const [recentsError, setRecentsError] = useState<string | null>(null);
+  const [welcomeBusy, setWelcomeBusy] = useState(false);
+  const [welcomeError, setWelcomeError] = useState<string | null>(null);
+  const [busyRecentId, setBusyRecentId] = useState<string | null>(null);
+  const welcomeEpoch = useRef(0);
+
+  const loadRecents = useCallback(async () => {
+    if (!isNative) return;
+    const epoch = ++welcomeEpoch.current;
+    setRecentsLoading(true);
+    setRecentsError(null);
+    try {
+      const entries = await listRecents();
+      if (welcomeEpoch.current === epoch) setRecents(entries);
+    } catch (raw) {
+      if (welcomeEpoch.current === epoch) {
+        setRecentsError(normalizeWorkspaceError(raw).message);
+      }
+    } finally {
+      if (welcomeEpoch.current === epoch) setRecentsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (centerView === "welcome") void loadRecents();
+  }, [centerView, loadRecents]);
+
+  // Records the open workspace in recents. Touches are best-effort after
+  // the workspace is already visible; a failure never blocks the user.
+  async function recordRecent(projectId: string, id?: string) {
+    try {
+      const [projects, roots] = await Promise.all([listProjects(), listCodeRoots()]);
+      const name = projects.find((p) => p.id === projectId)?.name ?? projectId;
+      await touchRecent({
+        id,
+        label: name,
+        projectId,
+        rootPaths: roots.filter((r) => r.projectId === projectId).map((r) => r.path),
+      });
+    } catch (raw) {
+      setWelcomeError(
+        (prev) =>
+          prev ??
+          `Opened, but the workspace was not saved to recents: ${normalizeWorkspaceError(raw).message}`,
+      );
+    }
+    void loadRecents();
+  }
+
+  async function handleOpenProject() {
+    if (!isNative || welcomeBusy) return;
+    setWelcomeBusy(true);
+    setWelcomeError(null);
+    try {
+      const result = await openProjectFromFolder({
+        pickFolder: async () => {
+          const chosen = await open({
+            directory: true,
+            multiple: false,
+            title: "Open project folder",
+          });
+          return typeof chosen === "string" ? chosen : null;
+        },
+        listRoots: listCodeRoots,
+        listProjects,
+        createProject,
+        renameProject: (projectId, expectedName, name) =>
+          renameProject({ projectId, expectedName, name }),
+        addCodeRoot,
+        setRootProject,
+      });
+      if (result.cancelled) return;
+      setExplorerRefresh((token) => token + 1);
+      useRequirementsUi.getState().bumpCodeLibrary();
+      applySelection(
+        { ...EMPTY_SELECTION, projectId: result.projectId },
+        false,
+        false,
+        "overview",
+      );
+      if (result.warnings.length > 0) setWelcomeError(result.warnings.join(" "));
+      await recordRecent(result.projectId);
+    } catch (raw) {
+      setWelcomeError(normalizeWorkspaceError(raw).message);
+    } finally {
+      setWelcomeBusy(false);
+    }
+  }
+
+  async function handleOpenRecent(recent: RecentWorkspaceDto) {
+    if (!isNative || welcomeBusy || busyRecentId !== null) return;
+    setBusyRecentId(recent.id);
+    setWelcomeError(null);
+    try {
+      const roots = await listCodeRoots();
+      const restored = roots.map((root) => root.path);
+      const failed: string[] = [];
+      const restoredCount = { current: 0 };
+      for (const path of recent.rootPaths) {
+        if (restored.some((known) => samePath(known, path))) {
+          restoredCount.current += 1;
+          continue;
+        }
+        try {
+          await addCodeRoot(path);
+          restoredCount.current += 1;
+        } catch {
+          failed.push(path);
+        }
+      }
+      setExplorerRefresh((token) => token + 1);
+      useRequirementsUi.getState().bumpCodeLibrary();
+      let projectId = recent.projectId;
+      if (projectId !== null) {
+        const projects = await listProjects();
+        if (!projects.some((p) => p.id === projectId)) projectId = null;
+      }
+      if (projectId !== null) {
+        applySelection(
+          { ...EMPTY_SELECTION, projectId },
+          false,
+          false,
+          "overview",
+        );
+        await recordRecent(projectId, recent.id);
+      }
+      if (projectId === null) {
+        setWelcomeError(
+          recent.projectId === null
+            ? `Restored ${restoredCount.current} folder(s) without an associated project. Open one as a project to continue.`
+            : "The project for this entry no longer exists; its folders were restored loose. Open one as a project or forget the entry.",
+        );
+      } else if (failed.length > 0) {
+        setWelcomeError(
+          `Opened with ${failed.length} missing folder(s). Re-add them from the explorer or forget the entry.`,
+        );
+      }
+    } catch (raw) {
+      setWelcomeError(normalizeWorkspaceError(raw).message);
+    } finally {
+      setBusyRecentId(null);
+    }
+  }
+
+  async function handleNewProject() {
+    if (!isNative || welcomeBusy) return;
+    setWelcomeBusy(true);
+    setWelcomeError(null);
+    try {
+      await handleCreateProject();
+      const created = useRequirementsUi.getState().selection.projectId;
+      if (created === null) {
+        setWelcomeError("Could not create the project.");
+        return;
+      }
+      useRequirementsUi.getState().setCenterView("overview");
+      await recordRecent(created);
+    } finally {
+      setWelcomeBusy(false);
+    }
+  }
+
+  async function handleRemoveRecent(id: string) {
+    if (!isNative || busyRecentId !== null) return;
+    setBusyRecentId(id);
+    try {
+      await removeRecent(id);
+      setRecents((entries) => entries.filter((entry) => entry.id !== id));
+      void loadRecents();
+    } catch (raw) {
+      setRecentsError(normalizeWorkspaceError(raw).message);
+    } finally {
+      setBusyRecentId(null);
+    }
+  }
+
+  // ---- Close gate ----
+  // Changing or closing the workspace must settle: unsaved documents
+  // (any tab: design, code, mockup) and live terminals survive view
+  // switches but the user must know before the context goes away.
+  const [closeGate, setCloseGate] = useState<{
+    dirtyLabels: string[];
+    terminalCount: number;
+    terminalCwds: string[];
+    terminalsUnknown: boolean;
+    saving: boolean;
+    saveError: string | null;
+  } | null>(null);
+  const pendingAfterClose = useRef<(() => void) | null>(null);
+
+  async function requestWorkspaceAction(afterClose: (() => void) | null) {
+    if (centerView === "welcome") {
+      afterClose?.();
+      return;
+    }
+    const status = useRequirementsUi.getState().docStatus;
+    const dirtyLabels = dirtyDocKeys(status).map((key) => status[key]?.label ?? key);
+    let terminalCount = 0;
+    let terminalCwds: string[] = [];
+    let terminalsUnknown = false;
+    if (isNative) {
+      try {
+        const sessions = await listTerminals();
+        terminalCount = sessions.length;
+        terminalCwds = Array.from(new Set(sessions.map((session) => session.cwd)));
+      } catch {
+        terminalsUnknown = true;
+      }
+    }
+    if (dirtyLabels.length === 0 && terminalCount === 0 && !terminalsUnknown) {
+      if (afterClose !== null) afterClose();
+      else doCloseWorkspace();
+      return;
+    }
+    pendingAfterClose.current = afterClose;
+    setCloseGate({
+      dirtyLabels,
+      terminalCount,
+      terminalCwds,
+      terminalsUnknown,
+      saving: false,
+      saveError: null,
+    });
+  }
+
+  function doCloseWorkspace() {
+    pendingAfterClose.current = null;
+    setCloseGate(null);
+    setCreating(false);
+    setProposing(false);
+    useRequirementsUi.getState().requestDiscard();
+    applySelection({ ...EMPTY_SELECTION }, false, false, "welcome");
+    useRequirementsUi.getState().setCenterDoc(null);
+    setWelcomeError(null);
+    void loadRecents();
+  }
+
+  async function handleSaveAndClose() {
+    if (closeGate?.saving) return;
+    setCloseGate((gate) => (gate === null ? gate : { ...gate, saving: true, saveError: null }));
+    const startedAt = Date.now();
+    await runSaveAll();
+    const result = useRequirementsUi.getState().saveAllResult;
+    if (result !== null && result.at >= startedAt && result.ok) {
+      const afterClose = pendingAfterClose.current;
+      doCloseWorkspace();
+      afterClose?.();
+    } else {
+      setCloseGate((gate) =>
+        gate === null
+          ? gate
+          : {
+              ...gate,
+              saving: false,
+              saveError: result?.message ?? "Could not save everything.",
+            },
+      );
+    }
+  }
+
+  function handleCloseWithoutSaving() {
+    const afterClose = pendingAfterClose.current;
+    doCloseWorkspace();
+    afterClose?.();
+  }
+
+  function handleCancelClose() {
+    pendingAfterClose.current = null;
+    setCloseGate(null);
+  }
+
+  // Open-project/new-project entries: from welcome they run directly;
+  // with a workspace open they first settle the current context.
+  function guardedOpenProject() {
+    if (centerView === "welcome") void handleOpenProject();
+    else void requestWorkspaceAction(() => void handleOpenProject());
+  }
+
+  function guardedNewProject() {
+    if (centerView === "welcome") void handleNewProject();
+    else void requestWorkspaceAction(() => void handleNewProject());
+  }
+
+  function guardedCloseWorkspace() {
+    void requestWorkspaceAction(null);
+  }
+
+  function guardedOpenRecent(recent: RecentWorkspaceDto) {
+    if (centerView === "welcome") void handleOpenRecent(recent);
+    else void requestWorkspaceAction(() => void handleOpenRecent(recent));
+  }
+
+  // Project header data: name and associated roots for the workspace
+  // bar and the Overview. Reloaded with the explorer refresh token so
+  // folder changes are reflected without a dedicated subscription.
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const [codeRoots, setCodeRoots] = useState<CodeRootDto[]>([]);
+
+  useEffect(() => {
+    if (!isNative || projectId === null || centerView === "welcome") {
+      setProjectName(null);
+      setCodeRoots([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [projects, roots] = await Promise.all([listProjects(), listCodeRoots()]);
+        if (cancelled) return;
+        setProjectName(projects.find((p) => p.id === projectId)?.name ?? projectId);
+        setCodeRoots(roots);
+      } catch {
+        if (!cancelled) {
+          setProjectName(projectId);
+          setCodeRoots([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isNative, projectId, centerView, explorerRefresh]);
+
+  async function handleAddFolder() {
+    if (!isNative || projectId === null || navBusy) return;
+    setNavBusy(true);
+    setNavError(null);
+    try {
+      const chosen = await open({
+        directory: true,
+        multiple: false,
+        title: "Add folder to project",
+      });
+      if (typeof chosen !== "string") return;
+      const roots = await listCodeRoots();
+      const existing = roots.find((root) => samePath(root.path, chosen));
+      if (existing !== undefined) {
+        if (existing.projectId !== projectId) await setRootProject(existing.id, projectId);
+      } else {
+        const created = await addCodeRoot(chosen);
+        await setRootProject(created.id, projectId);
+      }
+      setExplorerRefresh((token) => token + 1);
+      useRequirementsUi.getState().bumpCodeLibrary();
+      void recordRecent(projectId);
+    } catch (raw) {
+      setNavError(`Could not add the folder: ${normalizeWorkspaceError(raw).message}`);
+    } finally {
+      setNavBusy(false);
+    }
+  }
+
+  async function handleCreateProjectFromFolder() {
+    if (!isNative) return;
+    const before = selectionSnapshot();
+    setNavBusy(true);
+    setNavError(null);
+    try {
+      const result = await createProjectFromFolder({
+        pickFolder: async () => {
+          const chosen = await open({
+            directory: true,
+            multiple: false,
+            title: "Create a project from a code folder",
+          });
+          return typeof chosen === "string" ? chosen : null;
+        },
+        createProject,
+        renameProject: (projectId, expectedName, name) =>
+          renameProject({ projectId, expectedName, name }),
+        addCodeRoot,
+        setRootProject,
+      });
+      if (result.cancelled) return;
+      setExplorerRefresh((t) => t + 1);
+      useRequirementsUi.getState().bumpCodeLibrary();
+      if (result.warnings.length > 0) {
+        setNavError(result.warnings.join(" "));
+      }
+      if (sameSelection(before, selectionSnapshot())) {
+        applySelection(
+          { projectId: result.projectId, moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null },
+          false,
+        );
+      }
+    } catch (raw) {
+      // Creating the project or the dialog failed: nothing to select.
       setNavError(normalizeCoreError(raw).message);
     } finally {
       setNavBusy(false);
@@ -820,7 +1269,7 @@ export function RequirementsWorkspace() {
       const now = selectionSnapshot();
       if (sameSelection(before, now) && now.projectId === pid) {
         applySelection(
-          { projectId: pid, moduleId: created.id, requirementId: null, designId: null, mockupId: null },
+          { projectId: pid, moduleId: created.id, requirementId: null, designId: null, mockupId: null, screenId: null },
           false,
         );
       }
@@ -851,7 +1300,7 @@ export function RequirementsWorkspace() {
         );
         const current = currentVersion(created);
         if (current) {
-          // La selección ya reenvió `select` (limpio): basta adoptar.
+          // The selection already resent `select` (clean): just adopt.
           dispatchDraft({ type: "snapshot", requirementId: created.artifact.id, content: current.content });
         }
       }
@@ -863,12 +1312,17 @@ export function RequirementsWorkspace() {
   }
 
   function archiveKey(target: ArchiveTarget, action: ArchiveAction): string {
-    const id = target.kind === "module" ? target.moduleId : target.artifactId;
+    const id =
+      target.kind === "project"
+        ? target.projectId
+        : target.kind === "module"
+          ? target.moduleId
+          : target.artifactId;
     return `${target.projectId}/${target.kind}/${id}/${action}`;
   }
 
   function requestArchive(target: ArchiveTarget, action: ArchiveAction) {
-    // Una cosa tras otra: primero se resuelve la navegación pendiente.
+    // One thing after another: the pending navigation resolves first.
     if (dialog !== null || archiveAfterSave !== null) return;
     const guard = archiveDraftGuard({
       target,
@@ -897,7 +1351,12 @@ export function RequirementsWorkspace() {
       const preview = await fetchArchivePreview({
         projectId: request.target.projectId,
         kind: request.target.kind,
-        id: request.target.kind === "module" ? request.target.moduleId : request.target.artifactId,
+        id:
+          request.target.kind === "project"
+            ? request.target.projectId
+            : request.target.kind === "module"
+              ? request.target.moduleId
+              : request.target.artifactId,
       });
       if (!isFresh("archive", key, epoch)) return;
       setArchivePreview(preview);
@@ -910,7 +1369,7 @@ export function RequirementsWorkspace() {
   }
 
   function closeArchive() {
-    // Cerrar invalida las respuestas en vuelo: una tardía no toca nada.
+    // Closing invalidates in-flight responses: a late one touches nothing.
     begin("archive", "");
     setArchiveRequest(null);
     setArchivePreview(null);
@@ -918,12 +1377,12 @@ export function RequirementsWorkspace() {
   }
 
   function requestRename(target: RenameTarget) {
-    // Renombrar no toca borradores ni contenido: abre directo, sin guardias.
+    // Renaming touches no drafts or content: opens directly, no guards.
     setRenameError(null);
     setRenameRequest(target);
   }
 
-  /** Objetivo desde el detalle abierto (título real, nunca etiqueta). */
+  /** Target from the open detail (real title, never a label). */
   function requestRenameDetail(kind: "requirement" | "design" | "mockup") {
     const current = kind === "requirement" ? detail : kind === "mockup" ? mockupDetail : designDetail;
     if (current === null || projectId === null || moduleId === null) return;
@@ -932,7 +1391,7 @@ export function RequirementsWorkspace() {
     const derived =
       title === null && version !== undefined ? firstLine(version.content) || null : null;
     requestRename({
-      // El comando de diagramas admite mockups; la presentación ya dijo «mockup».
+      // The diagrams command accepts mockups; presentation already said "mockup".
       kind: kind === "mockup" ? "design" : kind,
       projectId,
       moduleId,
@@ -944,7 +1403,7 @@ export function RequirementsWorkspace() {
   }
 
   function closeRename() {
-    // Cerrar invalida la respuesta en vuelo: una tardía no toca nada.
+    // Closing invalidates the in-flight response: a late one touches nothing.
     begin("rename", "");
     setRenameRequest(null);
     setRenameError(null);
@@ -986,9 +1445,9 @@ export function RequirementsWorkspace() {
         });
       }
       if (!isFresh("rename", key, epoch)) return;
-      // Éxito confirmado: refrescar el árbol y el detalle visible. El
-      // borrador de contenido queda intacto (el título no es contenido) y
-      // no hay impacto que recalcular (semántica intacta).
+      // Confirmed success: refresh the tree and the visible detail. The
+      // content draft stays intact (the title is not content) and no
+      // impact needs recalculating (semantics intact).
       setExplorerRefresh((t) => t + 1);
       if (updated !== null) {
         if (detail?.artifact.id === updated.artifact.id) setDetail(updated);
@@ -998,13 +1457,13 @@ export function RequirementsWorkspace() {
       setRenameRequest(null);
     } catch (raw) {
       if (!isFresh("rename", key, epoch)) return;
-      // Fallo: el diálogo conserva el nombre anterior y permite reintentar.
+      // Failure: the dialog keeps the previous name and allows retrying.
       const err = normalizeCoreError(raw);
       if (err.kind === STALE_NAME) {
-        // El nombre vigente cambió fuera: refrescar para que al reabrir el
-        // diálogo el `expected` sea fresco, y pedir reintento explícito.
+        // The live name changed elsewhere: refresh so reopening the dialog
+        // gets a fresh `expected`, and ask for an explicit retry.
         setExplorerRefresh((t) => t + 1);
-        setRenameError(`${err.message} Cierra y vuelve a abrir para ver el nombre vigente.`);
+        setRenameError(`${err.message} Close and reopen to see the live name.`);
       } else {
         setRenameError(err.message);
       }
@@ -1014,17 +1473,27 @@ export function RequirementsWorkspace() {
   }
 
   /**
-   * Guardar central (Ctrl+S o botón de cabecera): dirige al editor activo
-   * —requisito, diseño o mockup— por el flujo transaccional existente.
-   * Sin cambios no guarda (nunca versiones idénticas); un fallo conserva
-   * el borrador y muestra el error en su editor. Solo los guardados
-   * manuales programan la auto-actualización (nunca una propuesta).
+   * Central Save (Ctrl+S or header button): routes to the active editor
+   * —requirement, design or mockup— through the existing transactional
+   * flow. Without changes it never saves (never identical versions); a
+   * failure keeps the draft and shows the error in its editor. Only manual
+   * saves schedule the auto-update (never a proposal).
    */
   async function centralSave() {
     if (centralSaving.current || saveBusy || visualSave.busy || mockupSave.busy) return;
+    // With an open document, Ctrl+S saves the active tab (independent path).
+    if (centerDoc !== null) {
+      centralSaving.current = true;
+      try {
+        await codeSaveRef.current?.saveActive();
+      } finally {
+        centralSaving.current = false;
+      }
+      return;
+    }
     if (!isNative) {
       useRequirementsUi.getState().setLastSave({
-        message: "Guardar requiere la aplicación de escritorio.",
+        message: "Saving needs the desktop application.",
         kind: "info",
         at: Date.now(),
       });
@@ -1055,7 +1524,7 @@ export function RequirementsWorkspace() {
     });
     if (target === null) {
       useRequirementsUi.getState().setLastSave({
-        message: "Sin cambios que guardar.",
+        message: "No changes to save.",
         kind: "info",
         at: Date.now(),
       });
@@ -1069,12 +1538,12 @@ export function RequirementsWorkspace() {
         useRequirementsUi.getState().setLastSave(
           ok
             ? {
-                message: `Requisito guardado${saved ? ` (v${saved.number})` : ""}.`,
+                message: `Requirement saved${saved ? ` (v${saved.number})` : ""}.`,
                 kind: "ok",
                 at: Date.now(),
               }
             : {
-                message: "No se pudo guardar el requisito: revisa el error.",
+                message: "Could not save the requirement: check the error.",
                 kind: "error",
                 at: Date.now(),
               },
@@ -1086,10 +1555,10 @@ export function RequirementsWorkspace() {
         if (saveAuthor.trim() === "") {
           setVisualSave({
             busy: false,
-            error: "Indica la autoría para guardar el diseño.",
+            error: "State the authorship to save the design.",
           });
           useRequirementsUi.getState().setLastSave({
-            message: "Falta la autoría para guardar el diseño.",
+            message: "Missing authorship to save the design.",
             kind: "error",
             at: Date.now(),
           });
@@ -1100,12 +1569,12 @@ export function RequirementsWorkspace() {
         useRequirementsUi.getState().setLastSave(
           ok
             ? {
-                message: `Diseño guardado${saved ? ` (v${saved.number})` : ""}.`,
+                message: `Design saved${saved ? ` (v${saved.number})` : ""}.`,
                 kind: "ok",
                 at: Date.now(),
               }
             : {
-                message: "No se pudo guardar el diseño: revisa el error.",
+                message: "Could not save the design: check the error.",
                 kind: "error",
                 at: Date.now(),
               },
@@ -1117,10 +1586,10 @@ export function RequirementsWorkspace() {
         if (saveAuthor.trim() === "") {
           setMockupSave({
             busy: false,
-            error: "Indica la autoría para guardar el mockup.",
+            error: "State the authorship to save the mockup.",
           });
           useRequirementsUi.getState().setLastSave({
-            message: "Falta la autoría para guardar el mockup.",
+            message: "Missing authorship to save the mockup.",
             kind: "error",
             at: Date.now(),
           });
@@ -1131,16 +1600,21 @@ export function RequirementsWorkspace() {
         useRequirementsUi.getState().setLastSave(
           ok
             ? {
-                message: `Mockup guardado${saved ? ` (v${saved.number})` : ""}.`,
+                message: `Mockup saved${saved ? ` (v${saved.number})` : ""}.`,
                 kind: "ok",
                 at: Date.now(),
               }
             : {
-                message: "No se pudo guardar el mockup: revisa el error.",
+                message: "Could not save the mockup: check the error.",
                 kind: "error",
                 at: Date.now(),
               },
         );
+        // Like requirements and designs: the manual save schedules the
+        // module's optional auto-update (batched, no recursion).
+        if (ok && projectId !== null && moduleId !== null) {
+          scheduleAuto(moduleKey(projectId, moduleId));
+        }
       }
     } finally {
       centralSaving.current = false;
@@ -1148,10 +1622,10 @@ export function RequirementsWorkspace() {
   }
 
   /**
-   * Guardar-todo (puerta de exportación): guarda en secuencia cada
-   * documento con borrador, por sus flujos transaccionales. Informa con
-   * `resolveSaveAll`; un fallo no descarta nada y deja su error en el
-   * documento. Nunca inventa autoría: si falta, lo dice.
+   * Save-all (export gate): saves every draft document in sequence,
+   * through its transactional flows. Reports via `resolveSaveAll`; a
+   * failure discards nothing and leaves its error in the document.
+   * Never invents authorship: when missing, it says so.
    */
   async function runSaveAll(): Promise<void> {
     const ui = useRequirementsUi.getState();
@@ -1161,26 +1635,26 @@ export function RequirementsWorkspace() {
       const failures: string[] = [];
       if (requirementId !== null && draft.dirty) {
         const ok = await performSave();
-        if (!ok) failures.push(useRequirementsUi.getState().docStatus[docKey("req", requirementId)]?.label ?? "requisito");
+        if (!ok) failures.push(useRequirementsUi.getState().docStatus[docKey("req", requirementId)]?.label ?? "requirement");
       }
       const designDirty = visual === null ? false : visualSemanticDirty(visual) || visualLayoutDirty(visual);
       if (designId !== null && designDirty) {
         if (saveAuthor.trim() === "") {
-          setVisualSave({ busy: false, error: "Indica la autoría para guardar el diseño." });
-          failures.push("diseño (falta autoría)");
+          setVisualSave({ busy: false, error: "State the authorship to save the design." });
+          failures.push("design (missing authorship)");
         } else {
           const semantic = visual === null ? false : visualSemanticDirty(visual);
           const ok = semantic
             ? await performVisualSave(saveAuthor.trim())
             : await performVisualLayoutSave();
-          if (!ok) failures.push("diseño");
+          if (!ok) failures.push("design");
         }
       }
       const mockupDirty = mockup === null ? false : mockupSemanticDirty(mockup) || mockupLayoutDirty(mockup);
       if (mockupId !== null && mockupDirty) {
         if (saveAuthor.trim() === "") {
-          setMockupSave({ busy: false, error: "Indica la autoría para guardar el mockup." });
-          failures.push("mockup (falta autoría)");
+          setMockupSave({ busy: false, error: "State the authorship to save the mockup." });
+          failures.push("mockup (missing authorship)");
         } else {
           const semantic = mockup === null ? false : mockupSemanticDirty(mockup);
           const ok = semantic
@@ -1189,10 +1663,13 @@ export function RequirementsWorkspace() {
           if (!ok) failures.push("mockup");
         }
       }
+      if (codeSaveRef.current !== null) {
+        failures.push(...(await codeSaveRef.current.saveAll()));
+      }
       ui.resolveSaveAll(
         failures.length === 0
-          ? { ok: true, message: "Todo guardado.", at: Date.now() }
-          : { ok: false, message: `No se pudo guardar: ${failures.join(", ")}.`, at: Date.now() },
+          ? { ok: true, message: "Everything saved.", at: Date.now() }
+          : { ok: false, message: `Could not save: ${failures.join(", ")}.`, at: Date.now() },
       );
     } finally {
       saveAllBusy.current = false;
@@ -1200,9 +1677,9 @@ export function RequirementsWorkspace() {
   }
 
   /**
-   * Programa la auto-actualización del módulo tras un guardado manual.
-   * Agrupa guardados consecutivos: cada nuevo programa sustituye al
-   * anterior y solo el último pendiente sobrevive.
+   * Schedules the module auto-update after a manual save. Batches
+   * consecutive saves: each new schedule replaces the previous one and
+   * only the last pending one survives.
    */
   function scheduleAuto(key: string) {
     if (!autoUpdate[key]) return;
@@ -1214,21 +1691,20 @@ export function RequirementsWorkspace() {
   }
 
   /**
-   * Ejecuta la auto-actualización: propone actualizar (de una en una,
-   * máximo 5 por ciclo) los diseños desactualizados del módulo, desde
-   * versiones ya persistidas. Los resultados van a propuestas separadas;
-   * si falla, el guardado sigue siendo exitoso. Sin recursión: aceptar
-   * o proponer nunca programa otra ejecución.
+   * Runs the auto-update: proposes updating (one by one, 5 per cycle at
+   * most) the module's stale designs, from already persisted versions.
+   * Results go to separate proposals; on failure, the save still stands.
+   * No recursion: accepting or proposing never schedules another run.
    */
   async function runAuto(key: string) {
-    // Una ejecución simultánea por módulo: lo nuevo se fusiona en un
-    // único reintento posterior, nunca en una cola infinita.
+    // One simultaneous run per module: new arrivals merge into a single
+    // later retry, never into an endless queue.
     if (autoInflight.current) {
       autoRerun.current = true;
       return;
     }
-    // Si la persona cambió de módulo, la pendiente se descarta: los datos
-    // visibles ya no son los del guardado que la programó.
+    // When the person switched modules, the pending one is dropped: the
+    // visible data is no longer the scheduling save's.
     const data = autoDataRef.current;
     if (
       data.projectId === null ||
@@ -1238,7 +1714,7 @@ export function RequirementsWorkspace() {
       return;
     }
     autoInflight.current = true;
-    setAutoStatus({ moduleKey: key, message: "Buscando diseños desactualizados…", kind: "working" });
+    setAutoStatus({ moduleKey: key, message: "Looking for stale designs…", kind: "working" });
     try {
       const stale = data.activeDesigns.filter(
         (a) =>
@@ -1246,7 +1722,7 @@ export function RequirementsWorkspace() {
           data.selectedGraph?.index?.freshness[a.id]?.stale === true,
       );
       if (stale.length === 0) {
-        setAutoStatus({ moduleKey: key, message: "Todo al día: nada que proponer.", kind: "ok" });
+        setAutoStatus({ moduleKey: key, message: "Everything current: nothing to propose.", kind: "ok" });
         return;
       }
       const batch = stale.slice(0, 5);
@@ -1275,18 +1751,18 @@ export function RequirementsWorkspace() {
           failed += 1;
         }
       }
-      const extra = stale.length > batch.length ? ` (+${stale.length - batch.length} pendientes)` : "";
+      const extra = stale.length > batch.length ? ` (+${stale.length - batch.length} pending)` : "";
       const tokensText = tokensKnown ? ` · ${tokens} tokens` : "";
       if (failed === 0) {
         setAutoStatus({
           moduleKey: key,
-          message: `Auto-IA: ${done} propuesta${done === 1 ? "" : "s"} lista${done === 1 ? "" : "s"} en Impacto${extra}${tokensText}.`,
+          message: `Auto-AI: ${done} proposal${done === 1 ? "" : "s"} ready in Impact${extra}${tokensText}.`,
           kind: "ok",
         });
       } else {
         setAutoStatus({
           moduleKey: key,
-          message: `Auto-IA: ${done} listas, ${failed} fallidas${extra}. El guardado está a salvo.`,
+          message: `Auto-AI: ${done} ready, ${failed} failed${extra}. The save is safe.`,
           kind: "error",
         });
       }
@@ -1309,7 +1785,14 @@ export function RequirementsWorkspace() {
     setArchiveError(null);
     try {
       let updated: RequirementDetail | null = null;
-      if (target.kind === "module") {
+      if (target.kind === "project") {
+        // Projects are never archived: only deleted when empty and loose.
+        if (action !== "delete") {
+          setArchiveError("Projects are only deleted; never archived or restored.");
+          return;
+        }
+        await deleteProject({ projectId: target.projectId });
+      } else if (target.kind === "module") {
         if (action === "archive") {
           await archiveModule({ projectId: target.projectId, moduleId: target.moduleId });
         } else if (action === "restore") {
@@ -1331,7 +1814,7 @@ export function RequirementsWorkspace() {
         await deleteRequirement({ projectId: target.projectId, artifactId: target.artifactId });
       }
       if (!isFresh("archive", key, epoch)) return;
-      // Éxito confirmado: refrescar, limpiar lo incompatible y cerrar.
+      // Confirmed success: refresh, clear what is incompatible, and close.
       setExplorerRefresh((t) => t + 1);
       bumpImpact();
       if (updated !== null && detail?.artifact.id === updated.artifact.id) {
@@ -1339,8 +1822,12 @@ export function RequirementsWorkspace() {
       }
       if (action === "delete") {
         applySelection(selectionAfterDelete(selectionSnapshot(), target), false, false, null);
-        // El origen de impacto puede haber desaparecido con el requisito.
-        if (target.kind === "requirement" && impactOrigin === target.artifactId) {
+        // The impact origin may have vanished with the requirement;
+        // with the project, it surely did.
+        if (
+          target.kind === "project" ||
+          (target.kind === "requirement" && impactOrigin === target.artifactId)
+        ) {
           setImpactOrigin(null);
           setImpactFrom(null);
           setImpactNode(null);
@@ -1351,7 +1838,7 @@ export function RequirementsWorkspace() {
       setArchivePreview(null);
     } catch (raw) {
       if (!isFresh("archive", key, epoch)) return;
-      // Fallo: el diálogo conserva el resumen; selección y borradores intactos.
+      // Failure: the dialog keeps the summary; selection and drafts intact.
       setArchiveError(normalizeCoreError(raw).message);
     } finally {
       if (isFresh("archive", key, epoch)) setArchiveBusy(false);
@@ -1363,7 +1850,7 @@ export function RequirementsWorkspace() {
     if (archiveGuardKind === "visual") {
       if (visualSemanticDirty(visual)) {
         if (saveAuthor.trim() === "") {
-          setArchiveError("Indica la autoría para guardar la versión.");
+          setArchiveError("State the authorship to save the version.");
           return;
         }
         const ok = await performVisualSave(saveAuthor.trim());
@@ -1375,7 +1862,7 @@ export function RequirementsWorkspace() {
     } else if (archiveGuardKind === "mockup") {
       if (mockupSemanticDirty(mockup)) {
         if (saveAuthor.trim() === "") {
-          setArchiveError("Indica la autoría para guardar la versión.");
+          setArchiveError("State the authorship to save the version.");
           return;
         }
         const ok = await performMockupSave(saveAuthor.trim());
@@ -1386,7 +1873,7 @@ export function RequirementsWorkspace() {
       }
     } else {
       if (saveAuthor.trim() === "") {
-        setArchiveError("Indica la autoría para guardar la versión.");
+        setArchiveError("State the authorship to save the version.");
         return;
       }
       const ok = await performSave();
@@ -1395,8 +1882,8 @@ export function RequirementsWorkspace() {
     proceedAfterArchiveSave();
   }
 
-  // Como en la navegación: tras el requisito, el visual aún puede pedir
-  // turno, y tras el visual, el mockup.
+  // As in navigation: after the requirement, the visual may still ask
+  // for its turn, and after the visual, the mockup.
   function proceedAfterArchiveSave() {
     const next = archiveAfterSave;
     if (next === null || archiveGuardKind === null) return;
@@ -1435,7 +1922,7 @@ export function RequirementsWorkspace() {
       dispatchMockup({ type: "reset" });
       setMockupSave({ busy: false, error: null });
     } else if (detail !== null) {
-      // Descartar sin cambiar de selección: resincronizar con el detalle.
+      // Discard without switching selection: resync with the detail.
       const current = currentVersion(detail);
       dispatchDraft({
         type: "discard",
@@ -1473,7 +1960,7 @@ export function RequirementsWorkspace() {
       });
       dispatchReview({ type: "reset" });
       setViewingVersionId(null);
-      // Nueva versión: los vínculos y la vigencia se rederivan.
+      // New version: links and freshness re-derive.
       setExplorerRefresh((t) => t + 1);
       bumpImpact();
       return true;
@@ -1482,7 +1969,7 @@ export function RequirementsWorkspace() {
       dispatchDraft({ type: "saveFailed" });
       if (err.kind === STALE_VERSION) {
         setSaveError(
-          `${err.message} Se ha actualizado la versión actual: revísala y guarda de nuevo. El borrador se conserva.`,
+          `${err.message} The current version was updated: review it and save again. The draft is kept.`,
         );
         void loadDetail(detail.artifact.id);
       } else {
@@ -1515,7 +2002,7 @@ export function RequirementsWorkspace() {
     } catch (raw) {
       const err = normalizeCoreError(raw);
       if (err.kind === STALE_VERSION) {
-        setApproveError(`${err.message} Se ha actualizado la versión actual: revísala.`);
+        setApproveError(`${err.message} The current version was updated: review it.`);
         void loadDetail(detail.artifact.id);
       } else {
         setApproveError(err.message);
@@ -1525,7 +2012,7 @@ export function RequirementsWorkspace() {
     }
   }
 
-  /** Presentación del diálogo de cambios según el borrador protegido. */
+  /** Changes-dialog presentation for the protected draft. */
   function dialogSubjectId(pending: PendingNav): string | null {
     if (pending.draft === "visual") return designId;
     if (pending.draft === "mockup") return mockupId;
@@ -1533,9 +2020,9 @@ export function RequirementsWorkspace() {
   }
 
   function dialogSubjectLabel(pending: PendingNav): string {
-    if (pending.draft === "visual") return `diseño ${designId}`;
+    if (pending.draft === "visual") return `design ${designId}`;
     if (pending.draft === "mockup") return `mockup ${mockupId}`;
-    return `requisito ${requirementId}`;
+    return `requirement ${requirementId}`;
   }
 
   function dialogLayoutOnly(pending: PendingNav): boolean {
@@ -1563,9 +2050,9 @@ export function RequirementsWorkspace() {
   }
 
   function archiveSubjectLabel(kind: "requirement" | "visual" | "mockup"): string {
-    if (kind === "visual") return `diseño ${designId}`;
+    if (kind === "visual") return `design ${designId}`;
     if (kind === "mockup") return `mockup ${mockupId}`;
-    return `requisito ${requirementId}`;
+    return `requirement ${requirementId}`;
   }
 
   async function handleDialogSave() {
@@ -1579,7 +2066,7 @@ export function RequirementsWorkspace() {
       return;
     }
     if (saveAuthor.trim() === "") {
-      setDialogError("Indica la autoría para guardar la versión.");
+      setDialogError("State the authorship to save the version.");
       return;
     }
     const ok = await performSave();
@@ -1603,9 +2090,9 @@ export function RequirementsWorkspace() {
     proceedAfterDialog(dialog);
   }
 
-  // Tras resolver el requisito, el borrador visual aún puede pedir turno, y
-  // tras el visual, el mockup: nunca se abandona un diseño con cambios sin
-  // ofrecer guardarlos.
+  // After resolving the requirement, the visual draft may still ask for
+  // its turn, and after the visual, the mockup: a changed design is never
+  // left without offering to save it.
   function proceedAfterDialog(resolved: PendingNav) {
     if (
       resolved.draft === "requirement" &&
@@ -1630,7 +2117,7 @@ export function RequirementsWorkspace() {
     if (dialog === null || dialog.draft !== "visual") return;
     if (visualSemanticDirty(visual)) {
       if (saveAuthor.trim() === "") {
-        setDialogError("Indica la autoría para guardar la versión.");
+        setDialogError("State the authorship to save the version.");
         return;
       }
       const ok = await performVisualSave(saveAuthor.trim());
@@ -1647,7 +2134,7 @@ export function RequirementsWorkspace() {
     if (dialog === null || dialog.draft !== "mockup") return;
     if (mockupSemanticDirty(mockup)) {
       if (saveAuthor.trim() === "") {
-        setDialogError("Indica la autoría para guardar la versión.");
+        setDialogError("State the authorship to save the version.");
         return;
       }
       const ok = await performMockupSave(saveAuthor.trim());
@@ -1664,15 +2151,15 @@ export function RequirementsWorkspace() {
     if (designDetail === null || projectId === null || visual === null) return false;
     const current = currentVersion(designDetail);
     if (current === undefined) return false;
-    // Separado (la actual avanzó bajo el borrador): decide el panel de
-    // conflicto del editor, no un guardado a ciegas.
+    // Diverged (current moved under the draft): the editor's conflict
+    // panel decides, not a blind save.
     if (visual.key !== `${designDetail.artifact.id}:${current.id}`) return false;
     if (!visualSemanticDirty(visual)) return false;
     let spec: unknown;
     try {
       spec = JSON.parse(visual.history.present) as unknown;
     } catch {
-      setVisualSave({ busy: false, error: "El borrador no es JSON válido." });
+      setVisualSave({ busy: false, error: "The draft is not valid JSON." });
       return false;
     }
     setVisualSave({ busy: true, error: null });
@@ -1691,8 +2178,8 @@ export function RequirementsWorkspace() {
       });
       begin("designDetail", saved.artifact.id);
       setDesignDetail(saved);
-      // Solo limpia si nada se editó durante la petición (si se editó,
-      // el borrador se conserva y el detalle avanzado lo marca separado).
+      // Only clears when nothing was edited during the request (when edited,
+      // the draft stays and the advanced detail marks it diverged).
       dispatchVisual({ type: "saved", present: sentPresent, pins: sentPins, allowed: sentAllowed });
       dispatchDesignReview({ type: "reset" });
       setViewingDesignVersionId(null);
@@ -1705,7 +2192,7 @@ export function RequirementsWorkspace() {
       if (err.kind === STALE_VERSION) {
         setVisualSave({
           busy: false,
-          error: `${err.message} Se ha actualizado la versión actual: revísala.`,
+          error: `${err.message} The current version was updated: review it.`,
         });
         void loadDesignDetail(designDetail.artifact.id);
       } else {
@@ -1741,15 +2228,15 @@ export function RequirementsWorkspace() {
     if (mockupDetail === null || projectId === null || mockup === null) return false;
     const current = currentVersion(mockupDetail);
     if (current === undefined) return false;
-    // Separado (la actual avanzó bajo el borrador): decide el panel de
-    // conflicto del editor, no un guardado a ciegas.
+    // Diverged (current moved under the draft): the editor's conflict
+    // panel decides, not a blind save.
     if (mockup.key !== `${mockupDetail.artifact.id}:${current.id}`) return false;
     if (!mockupSemanticDirty(mockup)) return false;
     let spec: unknown;
     try {
       spec = JSON.parse(mockup.history.present) as unknown;
     } catch {
-      setMockupSave({ busy: false, error: "El borrador no es JSON válido." });
+      setMockupSave({ busy: false, error: "The draft is not valid JSON." });
       return false;
     }
     setMockupSave({ busy: true, error: null });
@@ -1780,7 +2267,7 @@ export function RequirementsWorkspace() {
       if (err.kind === STALE_VERSION) {
         setMockupSave({
           busy: false,
-          error: `${err.message} Se ha actualizado la versión actual: revísala.`,
+          error: `${err.message} The current version was updated: review it.`,
         });
         void loadMockupDetail(mockupDetail.artifact.id);
       } else {
@@ -1831,7 +2318,7 @@ export function RequirementsWorkspace() {
     if (projectId === null || moduleId === null) return;
     if (created.artifact.projectId !== projectId || created.artifact.moduleId !== moduleId) return;
     setExplorerRefresh((t) => t + 1);
-    // Abrir el mockup nuevo conserva requisito y diseño en contexto.
+    // Opening the new mockup keeps requirement and design in context.
     requestSelect(
       withMockup(selectionSnapshot(), projectId, moduleId, created.artifact.id),
       false,
@@ -1841,8 +2328,8 @@ export function RequirementsWorkspace() {
   }
 
   function handleProposalAccepted(detail: RequirementDetail) {
-    // El panel sigue abierto: solo refrescar el navegador con el requisito
-    // creado, sin mover la selección ni tocar borradores.
+    // The panel stays open: only refresh the browser with the created
+    // requirement, without moving the selection or touching drafts.
     if (projectId === null || moduleId === null) return;
     if (detail.artifact.projectId !== projectId || detail.artifact.moduleId !== moduleId) return;
     setExplorerRefresh((t) => t + 1);
@@ -1858,7 +2345,7 @@ export function RequirementsWorkspace() {
 
   function handleOpenRequirement(artifactId: string) {
     if (projectId !== null && moduleId !== null) {
-      // Conserva el diseño en contexto; la vista la elige quien llama.
+      // Keeps the design in context; the caller picks the view.
       requestSelect(
         withRequirement(selectionSnapshot(), projectId, moduleId, artifactId),
         false,
@@ -1870,7 +2357,7 @@ export function RequirementsWorkspace() {
 
   function handleOpenDesign(artifactId: string) {
     if (projectId !== null && moduleId !== null) {
-      // Conserva el requisito en contexto.
+      // Keeps the requirement in context.
       requestSelect(
         withDesign(selectionSnapshot(), projectId, moduleId, artifactId),
         false,
@@ -1882,7 +2369,7 @@ export function RequirementsWorkspace() {
 
   function handleOpenMockup(artifactId: string) {
     if (projectId !== null && moduleId !== null) {
-      // Conserva requisito y diseño en contexto.
+      // Keeps requirement and design in context.
       requestSelect(
         withMockup(selectionSnapshot(), projectId, moduleId, artifactId),
         false,
@@ -1894,8 +2381,8 @@ export function RequirementsWorkspace() {
 
   function handleOpenImpactArtifact(artifactId: string, kind: string) {
     if (projectId === null || moduleId === null) return;
-    // Navegación real con la protección de borradores habitual; el mapa
-    // conserva su contexto al volver a la pestaña.
+    // Real navigation with the usual draft protection; the map keeps
+    // its context when returning to the tab.
     const snapshot = selectionSnapshot();
     const target =
       kind === "requirement"
@@ -1929,7 +2416,7 @@ export function RequirementsWorkspace() {
     } catch (raw) {
       const err = normalizeCoreError(raw);
       if (err.kind === STALE_VERSION) {
-        setDesignApproveError(`${err.message} Se ha actualizado la versión actual: revísala.`);
+        setDesignApproveError(`${err.message} The current version was updated: review it.`);
         void loadDesignDetail(designDetail.artifact.id);
       } else {
         setDesignApproveError(err.message);
@@ -1946,7 +2433,7 @@ export function RequirementsWorkspace() {
     setMockupApproveBusy(true);
     setMockupApproveError(null);
     try {
-      // El comando de diseños revalida el mockup en Rust y aprueba.
+      // The designs command revalidates the mockup in Rust and approves.
       const approved = await approveDesign({
         projectId,
         artifactId: mockupDetail.artifact.id,
@@ -1961,7 +2448,7 @@ export function RequirementsWorkspace() {
     } catch (raw) {
       const err = normalizeCoreError(raw);
       if (err.kind === STALE_VERSION) {
-        setMockupApproveError(`${err.message} Se ha actualizado la versión actual: revísala.`);
+        setMockupApproveError(`${err.message} The current version was updated: review it.`);
         void loadMockupDetail(mockupDetail.artifact.id);
       } else {
         setMockupApproveError(err.message);
@@ -2037,12 +2524,12 @@ export function RequirementsWorkspace() {
 
   if (!isNative) {
     return (
-      <section className="panel" aria-label="Requisitos">
-        <h2>Requisitos</h2>
+      <section className="panel" aria-label="Requirements">
+        <h2>Requirements</h2>
         <p className="notice">
-          Estás en un navegador. Crear y revisar requisitos es nativo y requiere
-          ejecutar Ruth IDE como aplicación de escritorio (Tauri). No se simula
-          ningún guardado ni aprobación.
+          You are in a browser. Creating and reviewing requirements is native and
+          requires running Ruth IDE as a desktop application (Tauri). No saving
+          or approval is simulated.
         </p>
       </section>
     );
@@ -2056,26 +2543,25 @@ export function RequirementsWorkspace() {
   });
   const saveLabel = SAVE_LABELS[saveStateValue];
 
-  // La banda solo interrumpe al comprobar o fallar; en marcha, el estado
-  // vive en la barra inferior sin empujar el contenido.
+  // The banner only interrupts while checking or on failure; while
+  // running, the state lives in the bottom bar without pushing content.
   const banner =
     storage === null ? (
       <p className="store-banner" role="note">
-        Comprobando almacenamiento local…
+        Checking local storage…
       </p>
     ) : storage.ready ? null : (
       <p className="store-banner error" role="alert">
-        No se pudo abrir la base local: {storage.message ?? "error desconocido"}{" "}
-        Nada se ha borrado ni reemplazado.
-        {storage.dbPath ? <> Ruta: {storage.dbPath}.</> : null} Revisa la ruta y
-        los permisos, cierra otra instancia de Ruth IDE si está abierta y vuelve
-        a abrir.
+        Could not open the local database: {storage.message ?? "unknown error"}{" "}
+        Nothing was deleted or replaced.
+        {storage.dbPath ? <> Path: {storage.dbPath}.</> : null} Check the path and
+        permissions, close another Ruth IDE instance if one is open, and reopen.
       </p>
     );
 
   if (storage !== null && !storage.ready) {
     return (
-      <section className="workbench" aria-label="Espacio de requisitos">
+      <section className="workbench" aria-label="Requirements space">
         {banner}
       </section>
     );
@@ -2091,26 +2577,77 @@ export function RequirementsWorkspace() {
     if (!ui.panels[tab]) ui.togglePanel(tab);
   }
 
+  const workspaceOpen = centerView !== "welcome";
+  const terminalMaximized = useRequirementsUi((s) => s.terminalMaximized);
+  const associatedRoots = projectId === null ? [] : codeRoots.filter((root) => root.projectId === projectId);
+
   return (
-    <section className="workbench" aria-label="Espacio de trabajo">
+    <section
+      className={`workbench${terminalMaximized && showTerminal ? " terminal-max" : ""}`}
+      aria-label="Workspace"
+    >
       {banner}
+      {workspaceOpen && (
+        <div className="workspace-bar">
+          <WorkspaceSelector
+            label={projectName ?? projectId ?? "Workspace"}
+            sublabel={
+              associatedRoots.length === 0
+                ? "No folders yet"
+                : `${associatedRoots.length} folder${associatedRoots.length === 1 ? "" : "s"}`
+            }
+            recents={recents}
+            busy={welcomeBusy}
+            onOpenProject={guardedOpenProject}
+            onNewProject={guardedNewProject}
+            onOpenRecent={(recent) => void guardedOpenRecent(recent)}
+            onSwitchWorkspace={guardedCloseWorkspace}
+            onCloseWorkspace={guardedCloseWorkspace}
+          />
+        </div>
+      )}
+      {/* The provider always stays mounted: tabs and drafts survive
+          perspective switches and closing (drafts revert, tabs stay). */}
+      <CodeWorkspaceProvider
+        saveApiRef={codeSaveRef}
+        onDocStatus={setCodeDocStatus}
+        visible={centerDoc !== null}
+      >
+      {centerView === "welcome" ? (
+        <WelcomeScreen
+          recents={recents}
+          recentsLoading={recentsLoading}
+          recentsError={recentsError}
+          busy={welcomeBusy}
+          busyRecentId={busyRecentId}
+          error={welcomeError}
+          onOpenProject={guardedOpenProject}
+          onOpenRecent={(recent) => void guardedOpenRecent(recent)}
+          onRemoveRecent={(id) => void handleRemoveRecent(id)}
+          onNewProject={guardedNewProject}
+          onRetryRecents={() => void loadRecents()}
+        />
+      ) : (
       <div
         className={`workbench-grid${showRight ? "" : " no-right"}`}
         style={
           {
-            ...(navigatorWidth === null ? {} : { "--nav-width": `${navigatorWidth}px` }),
-            ...(rightWidth === null ? {} : { "--right-width": `${rightWidth}px` }),
+            // Stored sizes never crush the center on a smaller screen:
+            // each side clamps to a viewport share (34vw ≈ 299px at the
+            // 880px minimum, no effective limit at 1366px and above).
+            ...(navigatorWidth === null ? {} : { "--nav-width": `min(${navigatorWidth}px, 34vw)` }),
+            ...(rightWidth === null ? {} : { "--right-width": `min(${rightWidth}px, 34vw)` }),
           } as CSSProperties
         }
       >
-        <div className="rail" aria-label="Paneles">
+        <div className="rail" aria-label="Panels">
           <button
             type="button"
             className={showNavigator ? "active" : ""}
             onClick={() => togglePanel("navigator")}
             aria-pressed={showNavigator}
-            title={showNavigator ? "Ocultar navegador" : "Mostrar navegador"}
-            aria-label={showNavigator ? "Ocultar navegador" : "Mostrar navegador"}
+            title={showNavigator ? "Hide navigator" : "Show navigator"}
+            aria-label={showNavigator ? "Hide navigator" : "Show navigator"}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path
@@ -2129,8 +2666,8 @@ export function RequirementsWorkspace() {
               else togglePanel("review");
             }}
             aria-pressed={showReview && rightTab === "review"}
-            title={showReview ? "Ocultar revisión" : "Mostrar revisión"}
-            aria-label={showReview ? "Ocultar revisión" : "Mostrar revisión"}
+            title={showReview ? "Hide review" : "Show review"}
+            aria-label={showReview ? "Hide review" : "Show review"}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path
@@ -2151,8 +2688,8 @@ export function RequirementsWorkspace() {
               else togglePanel("assistant");
             }}
             aria-pressed={showAssistant && rightTab === "assistant"}
-            title={showAssistant ? "Ocultar asistente" : "Mostrar asistente"}
-            aria-label={showAssistant ? "Ocultar asistente" : "Mostrar asistente"}
+            title={showAssistant ? "Hide assistant" : "Show assistant"}
+            aria-label={showAssistant ? "Hide assistant" : "Show assistant"}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path
@@ -2169,8 +2706,8 @@ export function RequirementsWorkspace() {
             className={`rail-bottom ${showTerminal ? "active" : ""}`}
             onClick={() => togglePanel("terminal")}
             aria-pressed={showTerminal}
-            title={showTerminal ? "Ocultar terminal" : "Mostrar terminal"}
-            aria-label={showTerminal ? "Ocultar terminal" : "Mostrar terminal"}
+            title={showTerminal ? "Hide terminal" : "Show terminal"}
+            aria-label={showTerminal ? "Hide terminal" : "Show terminal"}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path
@@ -2190,11 +2727,32 @@ export function RequirementsWorkspace() {
               />
             </svg>
           </button>
+          <button
+            type="button"
+            onClick={() => useRequirementsUi.getState().resetLayout()}
+            title="Reset layout (panel sizes and terminal restore)"
+            aria-label="Reset layout"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path
+                d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9 M13.5 1.5v3h-3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
+        {/* Single explorer: projects/design above, code folders below.
+            Both stay mounted (hidden, not unmounted) to keep expansion
+            and caches. */}
+        <div className="nav-slot">
         <ExplorerPanel
           hidden={!showNavigator}
           storageReady={storageReady}
-          selection={{ projectId, moduleId, requirementId, designId, mockupId }}
+          selection={{ projectId, moduleId, requirementId, designId, mockupId, screenId }}
           refreshToken={explorerRefresh}
           busy={navBusyAll}
           globalError={navError}
@@ -2202,23 +2760,23 @@ export function RequirementsWorkspace() {
           onSelectProject={(id) => {
             if (id !== projectId) {
               requestSelect(
-                { projectId: id, moduleId: null, requirementId: null, designId: null, mockupId: null },
+                { projectId: id, moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null },
                 false,
               );
             }
           }}
           onSelectModule={(pid, id) => {
             if (id !== moduleId || pid !== projectId) {
-              // Cambiar de módulo limpia artefactos de otro módulo.
+              // Switching modules clears another module's artifacts.
               requestSelect(
-                { projectId: pid, moduleId: id, requirementId: null, designId: null, mockupId: null },
+                { projectId: pid, moduleId: id, requirementId: null, designId: null, mockupId: null, screenId: null },
                 false,
               );
             }
           }}
           onSelectRequirement={(pid, mid, id) => {
             if (id !== requirementId || mid !== moduleId || pid !== projectId) {
-              // Abrir el requisito conserva diseño y mockup en contexto.
+              // Opening the requirement keeps design and mockup in context.
               requestSelect(
                 withRequirement(selectionSnapshot(), pid, mid, id),
                 false,
@@ -2229,35 +2787,42 @@ export function RequirementsWorkspace() {
           }}
           onSelectDesign={(pid, mid, id) => {
             if (id !== designId || mid !== moduleId || pid !== projectId) {
-              // Abrir el diseño conserva requisito y mockup en contexto.
+              // Opening the design keeps requirement and mockup in context.
               requestSelect(withDesign(selectionSnapshot(), pid, mid, id), false, false, "design");
             }
           }}
           onSelectMockup={(pid, mid, id) => {
             if (id !== mockupId || mid !== moduleId || pid !== projectId) {
-              // Abrir el mockup conserva requisito y diseño en contexto.
+              // Opening the mockup keeps requirement and design in context.
               requestSelect(withMockup(selectionSnapshot(), pid, mid, id), false, false, "mockups");
             }
           }}
+          onSelectScreen={(pid, mid, id, screen) => {
+            if (id !== mockupId || screen !== screenId || mid !== moduleId || pid !== projectId) {
+              // Opening the screen opens the same artifact on that screen.
+              requestSelect(withScreen(selectionSnapshot(), pid, mid, id, screen), false, false, "mockups");
+            }
+          }}
           onCreateProject={() => void handleCreateProject()}
+          onCreateProjectFromFolder={isNative ? () => void handleCreateProjectFromFolder() : undefined}
           onCreateModule={(pid) => void handleCreateModule(pid)}
           onNewRequirement={(pid, mid) => {
             requestSelect(
-              { projectId: pid, moduleId: mid, requirementId: null, designId: null, mockupId: null },
+              { projectId: pid, moduleId: mid, requirementId: null, designId: null, mockupId: null, screenId: null },
               true,
             );
           }}
           onProposeRequirements={(pid, mid) => {
             requestSelect(
-              { projectId: pid, moduleId: mid, requirementId: null, designId: null, mockupId: null },
+              { projectId: pid, moduleId: mid, requirementId: null, designId: null, mockupId: null, screenId: null },
               false,
               true,
             );
           }}
           onNewMockup={(pid, mid) => {
-            // Ir a Mockups con el módulo elegido; el formulario vive allí.
+            // Go to Mockups with the chosen module; the form lives there.
             requestSelect(
-              { projectId: pid, moduleId: mid, requirementId: null, designId: null, mockupId: null },
+              { projectId: pid, moduleId: mid, requirementId: null, designId: null, mockupId: null, screenId: null },
               false,
               false,
               "mockups",
@@ -2268,49 +2833,45 @@ export function RequirementsWorkspace() {
           onArchiveAction={(target, action) => requestArchive(target, action)}
           onRename={requestRename}
         />
+        <nav
+          className="navigator"
+          aria-label="Code folders"
+          hidden={!showNavigator}
+        >
+          <CodeTreePane />
+        </nav>
+        {showNavigator && <NavResizeHandle />}
+        </div>
 
-        <div className="workbench-center">
-          <div className="center-tabs" role="tablist" aria-label="Vistas">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={centerView === "requirements"}
-              className={centerView === "requirements" ? "active" : ""}
-              onClick={() => requestTab("requirements")}
-            >
-              Requisitos
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={centerView === "design"}
-              className={centerView === "design" ? "active" : ""}
-              onClick={() => requestTab("design")}
-            >
-              Diseño
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={centerView === "impact"}
-              className={centerView === "impact" ? "active" : ""}
-              onClick={() => requestTab("impact")}
-            >
-              Impacto
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={centerView === "mockups"}
-              className={centerView === "mockups" ? "active" : ""}
-              onClick={() => requestTab("mockups")}
-            >
-              Mockups
-            </button>
-          </div>
-          {centerView === "requirements" ? (
+        <div className={`workbench-center${centerDoc !== null ? " code-view" : ""}`}>
+          <PerspectiveTabs
+            centerView={centerView}
+            ready={projectId !== null && moduleId !== null}
+            projectReady={projectId !== null}
+            onSelect={requestTab}
+          />
+          {centerDoc !== null ? (
+            <CodeMainPane />
+          ) : (
+            <>
+              <CodeMainPane bare tabsOnly />
+              {centerView === "overview" ? (
+                projectId === null ? (
+                  <p className="hint">Open a project to see its overview.</p>
+                ) : (
+                  <OverviewView
+                    projectId={projectId}
+                    projectName={projectName ?? projectId}
+                    roots={codeRoots}
+                    onOpenArchitecture={() => requestTab("architecture")}
+                    onAddFolder={() => void handleAddFolder()}
+                  />
+                )
+              ) : centerView === "architecture" ? (
+                <ArchitectureView />
+              ) : centerView === "requirements" ? (
             detailBusy && detail === null ? (
-              <p className="hint">Cargando requisito…</p>
+              <p className="hint">Loading requirement…</p>
             ) : detailError !== null && detail === null ? (
               <p className="error" role="alert">
                 {detailError}
@@ -2347,10 +2908,10 @@ export function RequirementsWorkspace() {
               moduleArchived ? (
                 <div>
                   <p className="notice" role="note">
-                    Módulo archivado: restaúralo para crear requisitos.
+                    Archived module: restore it to create requirements.
                   </p>
                   <button type="button" className="secondary" onClick={() => setCreating(false)}>
-                    Cerrar
+                    Close
                   </button>
                 </div>
               ) : (
@@ -2361,16 +2922,23 @@ export function RequirementsWorkspace() {
                   onCancel={() => setCreating(false)}
                 />
               )
+            ) : moduleId === null ? (
+              <p className="hint">Select a project and a module.</p>
             ) : (
-              <p className="hint">
-                {moduleId === null
-                  ? "Selecciona un proyecto y un módulo."
-                  : "Selecciona un requisito o crea uno nuevo."}
-              </p>
+              <div>
+                <p className="hint">Select a requirement or create a new one.</p>
+                {isNative && (
+                  <ModuleCodeLinks
+                    moduleId={moduleId}
+                    moduleName={selectedModuleName}
+                    archived={moduleArchived}
+                  />
+                )}
+              </div>
             )
           ) : centerView === "impact" ? (
             moduleId === null || projectId === null ? (
-              <p className="hint">Selecciona un proyecto y un módulo.</p>
+              <p className="hint">Select a project and a module.</p>
             ) : (
               <ImpactTab
                 projectId={projectId}
@@ -2395,7 +2963,7 @@ export function RequirementsWorkspace() {
             )
           ) : centerView === "mockups" ? (
             moduleId === null || projectId === null ? (
-              <p className="hint">Selecciona un proyecto y un módulo.</p>
+              <p className="hint">Select a project and a module.</p>
             ) : mockupId === null ? (
               <MockupsPanel
                 projectId={projectId}
@@ -2409,7 +2977,7 @@ export function RequirementsWorkspace() {
                 onCreatedMockup={(created) => void handleMockupCreated(created)}
               />
             ) : mockupDetailBusy && mockupDetail === null ? (
-              <p className="hint">Cargando mockup…</p>
+              <p className="hint">Loading mockup…</p>
             ) : mockupDetailError !== null && mockupDetail === null ? (
               <p className="error" role="alert">
                 {mockupDetailError}
@@ -2418,7 +2986,7 @@ export function RequirementsWorkspace() {
               <div>
                 {mockupArchived && (
                   <p className="notice" role="note">
-                    Mockup archivado: se consulta en lectura; restaúralo para editarlo.
+                    Archived mockup: read-only; restore it to edit.
                   </p>
                 )}
                 <MockupDetail
@@ -2428,6 +2996,13 @@ export function RequirementsWorkspace() {
                   onValidatedVersion={(versionId, ok) => setMockupValidated({ versionId, ok })}
                   onRename={() => requestRenameDetail("mockup")}
                   renameDisabled={mockupArchived}
+                  screenId={screenId}
+                  onScreenChange={(id) => {
+                    const ui = useRequirementsUi.getState();
+                    if (ui.selection.screenId !== id) {
+                      ui.setSelection({ ...ui.selection, screenId: id });
+                    }
+                  }}
                   onGenerateDesign={
                     mockupArchived || mockupId === null
                       ? undefined
@@ -2457,7 +3032,7 @@ export function RequirementsWorkspace() {
             ) : null
           ) : designId === null ? (
             moduleId === null || projectId === null ? (
-              <p className="hint">Selecciona un proyecto y un módulo.</p>
+              <p className="hint">Select a project and a module.</p>
             ) : requirementId !== null ? (
               <RequirementDesigns
                 key={`${projectId}/${moduleId}/${requirementId}`}
@@ -2496,7 +3071,7 @@ export function RequirementsWorkspace() {
               />
             )
           ) : designDetailBusy && designDetail === null ? (
-            <p className="hint">Cargando diseño…</p>
+            <p className="hint">Loading design…</p>
           ) : designDetailError !== null && designDetail === null ? (
             <p className="error" role="alert">
               {designDetailError}
@@ -2505,7 +3080,7 @@ export function RequirementsWorkspace() {
             <div>
               {designArchived && (
                 <p className="notice" role="note">
-                  Diseño archivado: se consulta en lectura; restaúralo para editarlo.
+                  Archived design: read-only; restore it to edit.
                 </p>
               )}
               <DesignDetail
@@ -2530,13 +3105,30 @@ export function RequirementsWorkspace() {
               }
               />
             </div>
+          ) : centerView === "traceability" ? (
+            moduleId === null || projectId === null ? (
+              <p className="hint">Select a project and a module.</p>
+            ) : (
+              <TraceView
+                projectId={projectId}
+                moduleId={moduleId}
+                moduleName={selectedModuleName}
+                onOpenArtifact={(artifact) => {
+                  if (artifact.kind === "requirement") handleOpenRequirement(artifact.id);
+                  else if (artifact.kind === "mockup") handleOpenMockup(artifact.id);
+                  else handleOpenDesign(artifact.id);
+                }}
+              />
+            )
           ) : null}
+            </>
+          )}
         </div>
 
         {showRight && (
           <div className="right-column">
             <RightResizeHandle />
-            <div className="right-tabs" role="tablist" aria-label="Columna derecha">
+            <div className="right-tabs" role="tablist" aria-label="Right column">
               <button
                 type="button"
                 role="tab"
@@ -2544,7 +3136,7 @@ export function RequirementsWorkspace() {
                 className={rightTab === "review" ? "active" : ""}
                 onClick={() => showRightTab("review")}
               >
-                Revisión
+                Review
               </button>
               <button
                 type="button"
@@ -2553,7 +3145,7 @@ export function RequirementsWorkspace() {
                 className={rightTab === "assistant" ? "active" : ""}
                 onClick={() => showRightTab("assistant")}
               >
-                Asistente
+                Assistant
               </button>
             </div>
             {rightTab === "assistant" ? (
@@ -2586,7 +3178,7 @@ export function RequirementsWorkspace() {
                   onOpenImpact={() => useRequirementsUi.getState().setCenterView("impact")}
                 />
               ) : (
-                <p className="hint">Selecciona un proyecto y un módulo.</p>
+                <p className="hint">Select a project and a module.</p>
               )
             ) : (
               <>
@@ -2678,13 +3270,29 @@ export function RequirementsWorkspace() {
           </div>
         )}
       </div>
+      )}
+      </CodeWorkspaceProvider>
 
-      <TerminalPanel visible={showTerminal} onHide={() => togglePanel("terminal")} />
+      <TerminalPanel visible={showTerminal && workspaceOpen} onHide={() => togglePanel("terminal")} />
 
-      <footer className="statusbar" aria-label="Estado">
+      {closeGate !== null && (
+        <WorkspaceCloseDialog
+          dirtyLabels={closeGate.dirtyLabels}
+          terminalCount={closeGate.terminalCount}
+          terminalCwds={closeGate.terminalCwds}
+          terminalsUnknown={closeGate.terminalsUnknown}
+          saving={closeGate.saving}
+          saveError={closeGate.saveError}
+          onSaveAndClose={() => void handleSaveAndClose()}
+          onCloseWithoutSaving={handleCloseWithoutSaving}
+          onCancel={handleCancelClose}
+        />
+      )}
+
+      <footer className="statusbar" aria-label="Status">
         <span className="status-left">
           <span className={`save-dot ${saveStateValue}`} aria-hidden="true" />
-          {saveLabel ?? "Persistencia local activa"}
+          {saveLabel ?? "Local persistence active"}
         </span>
         <span className="status-right">
           {projectId ?? "—"} / {moduleId ?? "—"}
@@ -2797,8 +3405,8 @@ export function RequirementsWorkspace() {
 }
 
 /**
- * Tirador para ajustar el ancho de la columna derecha (ratón o teclado).
- * Espeja el del explorador, al otro lado: arrastrar a la izquierda ensancha.
+ * Handle to adjust the right column width (mouse or keyboard). Mirrors
+ * the explorer's, on the other side: dragging left widens.
  */
 function RightResizeHandle() {
   const width = useRequirementsUi((s) => s.rightWidth);
@@ -2814,7 +3422,7 @@ function RightResizeHandle() {
       className="right-resize"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Ajustar ancho de la columna derecha"
+      aria-label="Adjust the right column width"
       aria-valuenow={width ?? undefined}
       aria-valuemin={MIN_RIGHT_WIDTH}
       aria-valuemax={MAX_RIGHT_WIDTH}
@@ -2840,7 +3448,8 @@ function RightResizeHandle() {
         const current = useRequirementsUi.getState().rightWidth ?? DEFAULT_RIGHT_WIDTH;
         if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
           e.preventDefault();
-          const delta = e.key === "ArrowLeft" ? 16 : -16;
+          const delta =
+            e.key === "ArrowLeft" ? RESIZE_KEYBOARD_STEP_PX : -RESIZE_KEYBOARD_STEP_PX;
           useRequirementsUi
             .getState()
             .setRightWidth(

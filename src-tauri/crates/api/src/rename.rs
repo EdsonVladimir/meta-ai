@@ -1,10 +1,10 @@
-//! Renombrado de proyectos, módulos, requisitos y diagramas.
+//! Renaming projects, modules, requirements and diagrams.
 //!
-//! Sin Tauri ni E/S: adaptadores finos sobre los casos de uso del núcleo.
-//! Renombrar no toca identidades, versiones, fuentes, aprobaciones ni
-//! impacto: proyectos y módulos cambian su nombre organizativo, y
-//! requisitos y diagramas su título (metadato versionado con historial).
-//! Toda operación exige el nombre esperado y revalida archivado en Rust.
+//! No Tauri or I/O: thin adapters over the core use cases.
+//! Renaming touches no identities, versions, sources, approvals or
+//! impact: projects and modules change their organizational name, and
+//! requirements and diagrams their title (versioned metadata with history).
+//! Every operation requires the expected name and revalidates archiving in Rust.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{ArtifactId, ArtifactType, CoreError, HumanId, ModuleId, Name, ProjectId};
@@ -17,7 +17,7 @@ use crate::dto::{
 use crate::error::ApiError;
 use crate::logic::{get_requirement, list_modules, list_projects};
 
-/// Renombra un proyecto y devuelve el DTO actualizado.
+/// Renames a project and returns the updated DTO.
 pub fn rename_project(
     store: &mut Store,
     input: RenameProjectInput,
@@ -28,10 +28,10 @@ pub fn rename_project(
     list_projects(store)
         .into_iter()
         .find(|p| p.id == project.as_str())
-        .ok_or_else(|| ApiError::internal("el proyecto renombrado no aparece"))
+        .ok_or_else(|| ApiError::internal("the renamed project is missing"))
 }
 
-/// Renombra un módulo y devuelve el DTO actualizado.
+/// Renames a module and returns the updated DTO.
 pub fn rename_module(store: &mut Store, input: RenameModuleInput) -> Result<ModuleDto, ApiError> {
     let project = ProjectId::new(input.project_id.clone())?;
     let module = ModuleId::new(input.module_id)?;
@@ -45,11 +45,11 @@ pub fn rename_module(store: &mut Store, input: RenameModuleInput) -> Result<Modu
     )?
     .into_iter()
     .find(|m| m.id == module.as_str())
-    .ok_or_else(|| ApiError::internal("el módulo renombrado no aparece"))
+    .ok_or_else(|| ApiError::internal("the renamed module is missing"))
 }
 
-/// Cambia el título de un requisito y devuelve su detalle autoritativo.
-/// `now` es la fecha generada en la frontera para el historial.
+/// Changes a requirement title and returns its authoritative detail.
+/// `now` is the boundary-generated date for the history.
 pub fn rename_requirement(
     store: &mut Store,
     input: RenameArtifactInput,
@@ -58,7 +58,7 @@ pub fn rename_requirement(
     rename_titled(store, input, now, true)
 }
 
-/// Cambia el título de un diagrama (flujo o modelo de datos).
+/// Changes a diagram title (flow or data model).
 pub fn rename_design(
     store: &mut Store,
     input: RenameArtifactInput,
@@ -121,7 +121,7 @@ fn require_design(
         return Err(ApiError::coded(
             "not_a_design",
             format!(
-                "{} no es un diagrama: esta acción solo admite flujos y modelos de datos.",
+                "{} is not a diagram: this action only accepts flows and data models.",
                 artifact.as_str()
             ),
         ));

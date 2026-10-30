@@ -1,10 +1,10 @@
-//! Comandos de baselines y exportación: envoltorios finos sobre `ruth-api`.
+//! Baseline and export commands: thin wrappers over `ruth-api`.
 //!
-//! Preparar y previsualizar son consultas puras. Crear la baseline usa el
-//! camino atómico de la API (validar, persistir dominio+metadatos, publicar).
-//! Guardar el ZIP escribe mediante un temporal y lo publica con un renombre:
-//! nunca queda un archivo parcial como entrega exitosa, y cancelar el diálogo
-//! (que vive en el frontend) ni siquiera llega a este comando.
+//! Preparing and previewing are pure queries. Creating the baseline uses
+//! the API's atomic path (validate, persist domain+metadata, publish).
+//! Saving the ZIP writes through a temp file and publishes with a rename:
+//! a partial file never stands as a successful delivery, and cancelling the
+//! dialog (which lives in the frontend) never even reaches this command.
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -92,26 +92,26 @@ pub(super) fn invalid_path(message: impl Into<String>) -> ApiError {
     ApiError::coded("export_invalid_path", message)
 }
 
-/// Escribe el ZIP junto al destino con un nombre temporal y lo publica con
-/// un renombre atómico. Ante cualquier fallo limpia el temporal: el destino
-/// conserva su contenido anterior o no existe. Compartida con las entregas
-/// de trabajo: el mismo guardado seguro para ambas clases.
+/// Writes the ZIP next to the destination with a temp name and publishes
+/// it with an atomic rename. On any failure it cleans the temp: the
+/// destination keeps its previous content or does not exist. Shared with
+/// work deliveries: the same safe saving for both kinds.
 pub(super) fn write_zip_atomic(dest: &Path, zip: &[u8]) -> Result<(), ApiError> {
     let parent = dest
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .ok_or_else(|| {
-            invalid_path("El destino no indica una carpeta válida. Elige otro destino.")
+            invalid_path("The destination points to no valid folder. Pick another destination.")
         })?;
     if !parent.is_dir() {
         return Err(invalid_path(format!(
-            "La carpeta {} no existe o no es accesible.",
+            "Folder {} does not exist or is not accessible.",
             parent.display()
         )));
     }
     let name = dest
         .file_name()
-        .ok_or_else(|| invalid_path("El destino no tiene un nombre de archivo válido."))?;
+        .ok_or_else(|| invalid_path("The destination has no valid file name."))?;
     let mut temp_name = OsString::from(name);
     temp_name.push(format!(".ruth-part-{}", std::process::id()));
     let temp: PathBuf = parent.join(temp_name);
@@ -120,14 +120,14 @@ pub(super) fn write_zip_atomic(dest: &Path, zip: &[u8]) -> Result<(), ApiError> 
         ApiError::coded("export_failed", message)
     };
     let mut file = std::fs::File::create(&temp)
-        .map_err(|e| failed(&temp, format!("No se pudo crear el temporal: {e}")))?;
+        .map_err(|e| failed(&temp, format!("Could not create the temp file: {e}")))?;
     file.write_all(zip)
-        .map_err(|e| failed(&temp, format!("No se pudo escribir el ZIP: {e}")))?;
+        .map_err(|e| failed(&temp, format!("Could not write the ZIP: {e}")))?;
     file.sync_all()
-        .map_err(|e| failed(&temp, format!("No se pudo confirmar el ZIP: {e}")))?;
+        .map_err(|e| failed(&temp, format!("Could not flush the ZIP: {e}")))?;
     drop(file);
     std::fs::rename(&temp, dest)
-        .map_err(|e| failed(&temp, format!("No se pudo publicar el ZIP: {e}")))?;
+        .map_err(|e| failed(&temp, format!("Could not publish the ZIP: {e}")))?;
     Ok(())
 }
 
@@ -138,11 +138,11 @@ pub fn core_export_save(
 ) -> Result<ExportSaveDto, ApiError> {
     if input.dest_path.trim().is_empty() {
         return Err(invalid_path(
-            "Sin destino no hay guardado: vuelve a elegir dónde guardar el ZIP.",
+            "No destination, no saving: pick again where to save the ZIP.",
         ));
     }
-    // Bloqueo corto: el paquete se construye desde la memoria y el bloqueo
-    // se suelta antes de tocar el disco.
+    // Short lock: the package builds from memory and the lock
+    // releases before touching disk.
     let (zip, sha256) = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
@@ -160,7 +160,7 @@ pub fn core_export_save(
     if dest.exists() && !input.overwrite {
         return Err(ApiError::coded(
             "export_exists",
-            format!("Ya existe {}. Confirma para reemplazarlo.", dest.display()),
+            format!("{} already exists. Confirm to replace it.", dest.display()),
         ));
     }
     write_zip_atomic(&dest, &zip)?;
@@ -180,37 +180,32 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("ruth-export-save-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("carpeta");
+        std::fs::create_dir_all(&dir).expect("folder");
         dir
     }
 
     fn leftovers(dir: &Path) -> Vec<String> {
         std::fs::read_dir(dir)
-            .expect("leer")
-            .map(|e| {
-                e.expect("entrada")
-                    .file_name()
-                    .to_string_lossy()
-                    .to_string()
-            })
+            .expect("read")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().to_string())
             .collect()
     }
 
     #[test]
     fn atomic_write_publishes_complete_file_without_temp_leftovers() {
         let dir = scratch("ok");
-        let dest = dir.join("entrega.zip");
-        write_zip_atomic(&dest, b"PK-falso").expect("guardar");
-        assert_eq!(std::fs::read(&dest).expect("leer"), b"PK-falso");
-        assert_eq!(leftovers(&dir), vec!["entrega.zip".to_string()]);
+        let dest = dir.join("delivery.zip");
+        write_zip_atomic(&dest, b"PK-fake").expect("save");
+        assert_eq!(std::fs::read(&dest).expect("read"), b"PK-fake");
+        assert_eq!(leftovers(&dir), vec!["delivery.zip".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn missing_parent_writes_nothing() {
-        let dir = scratch("sin-padre");
-        let dest = dir.join("no-existe").join("entrega.zip");
-        let err = write_zip_atomic(&dest, b"PK-falso").expect_err("sin carpeta");
+        let dir = scratch("no-parent");
+        let dest = dir.join("missing").join("delivery.zip");
+        let err = write_zip_atomic(&dest, b"PK-fake").expect_err("no folder");
         assert_eq!(err.kind, "export_invalid_path");
         assert!(!dest.exists());
         assert!(leftovers(&dir).is_empty());
@@ -222,14 +217,14 @@ mod tests {
     fn unwritable_dir_fails_without_partial_file() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = scratch("sin-permiso");
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).expect("bloquear");
-        let dest = dir.join("entrega.zip");
-        let err = write_zip_atomic(&dest, b"PK-falso").expect_err("sin escritura");
+        let dir = scratch("no-permission");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).expect("lock down");
+        let dest = dir.join("delivery.zip");
+        let err = write_zip_atomic(&dest, b"PK-fake").expect_err("no write");
         assert_eq!(err.kind, "export_failed");
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("abrir");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("open");
         assert!(!dest.exists());
-        assert!(leftovers(&dir).is_empty(), "sin temporales abandonados");
+        assert!(leftovers(&dir).is_empty(), "no abandoned temp files");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

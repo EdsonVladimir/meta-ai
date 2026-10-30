@@ -1,6 +1,6 @@
-// Carga diferida del explorador: proyectos al arrancar, módulos y
-// artefactos al expandir, reutilizando lo cargado. La expansión vive en
-// estado local de la sesión, separada del dominio. Sin JSX.
+// Lazy explorer loading: projects at startup, modules and artifacts on
+// expand, reusing what is loaded. Expansion lives in local session
+// state, separate from the domain. No JSX.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listArtifacts } from "../design/client";
 import { buildLinkIndex, type LinkIndex } from "../design/coordination";
@@ -21,7 +21,7 @@ import {
   toggleExpanded,
 } from "./explorerModel";
 
-/** Vínculos de un módulo con sus detalles de respaldo. */
+/** A module's links with their backing details. */
 export interface ModuleGraph {
   status: "loading" | "ready" | "error";
   error: string | null;
@@ -37,7 +37,7 @@ export interface ExplorerData {
   artifactsByModule: Record<string, ArtifactDto[]>;
   loadingKeys: string[];
   errorKeys: Record<string, string>;
-  /** Vínculos por módulo (clave `proyecto/módulo`). */
+  /** Links per module (`project/module` key). */
   graphsByModule: Record<string, ModuleGraph>;
   expanded: string[];
   toggle: (nodeId: string) => void;
@@ -54,12 +54,13 @@ interface UseExplorerDataArgs {
   requirementId: string | null;
   designId: string | null;
   mockupId: string | null;
-  /** Al cambiar, recarga proyectos y todo lo ya cargado. */
+  screenId: string | null;
+  /** On change, reloads projects and everything already loaded. */
   refreshToken: number;
 }
 
 export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
-  const { storageReady, projectId, moduleId, requirementId, designId, mockupId, refreshToken } = args;
+  const { storageReady, projectId, moduleId, requirementId, designId, mockupId, screenId, refreshToken } = args;
   const [projects, setProjects] = useState<ProjectDto[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -73,8 +74,8 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
   const epochRef = useRef(0);
   const slotsRef = useRef<Record<string, ResponseMeta>>({});
 
-  // Espejo de la caché para decidir cargas sin bucles de efectos ni
-  // efectos secundarios dentro de actualizadores.
+  // Cache mirror to decide loads without effect loops or side effects
+  // inside updaters.
   const cacheRef = useRef({
     modulesByProject,
     artifactsByModule,
@@ -169,7 +170,7 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
     [begin, isFresh, setKeyError, setLoading],
   );
 
-  /** Carga si no hay datos, no está en curso y no falló antes. */
+  /** Loads when there are no data, nothing running and no past failure. */
   const ensureModules = useCallback(
     (pid: string) => {
       const cache = cacheRef.current;
@@ -203,9 +204,9 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
   );
 
   /**
-   * Carga los detalles del módulo y deriva el índice de vínculos desde
-   * fuentes exactas. Una sola petición por artefacto, con epochs por
-   * módulo para descartar respuestas tardías.
+   * Loads the module details and derives the links index from exact
+   * sources. One request per artifact, with per-module epochs to drop
+   * late responses.
    */
   const loadGraph = useCallback(
     async (pid: string, mid: string) => {
@@ -241,7 +242,7 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
     [begin, isFresh],
   );
 
-  /** Asegura vínculos si hay artefactos y no hay carga en curso ni datos. */
+  /** Ensures links when artifacts exist and nothing runs nor exists. */
   const ensureGraph = useCallback(
     (pid: string, mid: string) => {
       const key = moduleKey(pid, mid);
@@ -254,9 +255,9 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
     [loadGraph],
   );
 
-  // Módulos cuyos vínculos interesan: el seleccionado y cualquiera con
-  // un requisito expandido. Los artefactos pueden llegar después de
-  // pedirlos, así que un efecto reintenta al completarse cada lista.
+  // Modules whose links matter: the selected one and any with an expanded
+  // requirement. Artifacts may arrive after being asked, so an effect
+  // retries as each list completes.
   const wantedGraphsRef = useRef<Set<string>>(new Set());
 
   const wantGraph = useCallback(
@@ -267,9 +268,9 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
     [ensureGraph],
   );
 
-  // Al llegar (o renovarse) la lista de un módulo querido, el grafo se
-  // carga o se rederiva. Así el refresh explícito también lo actualiza,
-  // siempre sobre la lista nueva y nunca sobre la anterior.
+  // When a wanted module's list arrives (or renews), the graph loads or
+  // re-derives. That way the explicit refresh updates it too, always over
+  // the new list and never over the old one.
   const prevArtifactsRef = useRef(artifactsByModule);
   useEffect(() => {
     const prev = prevArtifactsRef.current;
@@ -286,9 +287,9 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
     }
   }, [artifactsByModule, ensureGraph, loadGraph]);
 
-  // Proyectos al estar listo; ante refresh explícito se recarga además
-  // todo lo ya cargado (creaciones y aceptaciones), sin tocar lo nunca
-  // abierto. Los grafos se rederivan al renovarse sus listas.
+  // Projects when ready; on explicit refresh everything already loaded
+  // reloads too (creations and acceptances), without touching the never
+  // opened. Graphs re-derive as their lists renew.
   useEffect(() => {
     if (!storageReady) return;
     void loadProjects();
@@ -301,13 +302,13 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageReady, refreshToken]);
 
-  // La selección expande a sus ancestros y asegura sus datos. No incluye
-  // moduleNodeId en el toggle: expandir un módulo abre también sus grupos.
+  // The selection expands its ancestors and ensures their data. The
+  // toggle excludes moduleNodeId: expanding a module also opens its groups.
   useEffect(() => {
     if (projectId === null) return;
     setExpanded((prev) => {
       const next = new Set(prev);
-      for (const id of ancestorsForSelection(projectId, moduleId, requirementId, designId, mockupId)) {
+      for (const id of ancestorsForSelection(projectId, moduleId, requirementId, designId, mockupId, screenId)) {
         next.add(id);
       }
       return [...next];
@@ -317,7 +318,7 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
       ensureArtifacts(projectId, moduleId);
       wantGraph(projectId, moduleId);
     }
-  }, [projectId, moduleId, requirementId, designId, mockupId, ensureArtifacts, ensureModules, wantGraph]);
+  }, [projectId, moduleId, requirementId, designId, mockupId, screenId, ensureArtifacts, ensureModules, wantGraph]);
 
   const toggle = useCallback(
     (nodeId: string) => {
@@ -333,7 +334,7 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
         return [...new Set(withGroups)];
       });
       if (collapsing) return;
-      // Al expandir también se reintenta tras un error.
+      // Expanding also retries after an error.
       const projectMatch = /^p:(.+)$/.exec(nodeId);
       if (projectMatch) {
         const pid = projectMatch[1];
@@ -356,7 +357,7 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
         }
         return;
       }
-      // Expandir un requisito asegura los vínculos de su módulo.
+      // Expanding a requirement ensures its module's links.
       const artifactMatch = /^a:([^/]+)\/(.+)\/(.+)$/.exec(nodeId);
       if (artifactMatch) {
         wantGraph(artifactMatch[1], artifactMatch[2]);
@@ -376,8 +377,8 @@ export function useExplorerData(args: UseExplorerDataArgs): ExplorerData {
     [loadGraph],
   );
 
-  // Identidad estable: el panel memoiza el bosque sobre este objeto y el
-  // árbol no debe reconstruirse (ni mover el foco) en cada render ajeno.
+  // Stable identity: the panel memoizes the forest over this object and
+  // the tree must not rebuild (nor move focus) on every foreign render.
   return useMemo(
     () => ({
       projects,

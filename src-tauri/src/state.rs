@@ -1,16 +1,15 @@
-//! Estado gestionado por Tauri: el `Store` del núcleo en memoria, el
-//! generador de identificadores, el actor SQLite y el registro de
-//! generaciones asistidas.
+//! Tauri-managed state: the in-memory core `Store`, the identifier
+//! generator, the SQLite actor and the assisted-generation log.
 //!
-//! Un único `Mutex` serializa los comandos en proceso; el actor serializa el
-//! SQL en su hilo; SQLite serializa en disco. Los bloqueos se toman y sueltan
-//! dentro de cada comando; nunca se mantienen durante llamadas de red: el
-//! comando de generación fotografía el contexto, suelta todo, hace red y
-//! registra después.
+//! A single `Mutex` serializes in-process commands; the actor serializes
+//! SQL on its thread; SQLite serializes on disk. Locks take and release
+//! inside each command; they never hold during network calls: the
+//! generation command snapshots the context, releases everything, does
+//! network and records afterwards.
 //!
-//! Si la base no pudo abrirse al arrancar, el estado queda como no
-//! disponible con un mensaje recuperable: la aplicación abre igual y la
-//! interfaz lo muestra sin borrar ni reemplazar nada.
+//! When the database could not open at startup, the state stays
+//! unavailable with a recoverable message: the app still opens and the
+//! UI shows it without deleting or replacing anything.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -18,18 +17,21 @@ use std::sync::Mutex;
 
 use ruth_api::IdGen;
 use ruth_core::application::Store;
-use ruth_store::{BaselineMetaLog, DbActor, DesignLog, LayoutLog, ProposalLog};
+use ruth_store::{
+    BaselineMetaLog, CodeGenLog, CodeLinkLog, CodeRootLog, DbActor, DesignLog, LayoutLog,
+    MockupLog, ProposalLog, RecentLog, SnapshotLog,
+};
 
 pub struct AppState {
     pub db_path: PathBuf,
     pub inner: Mutex<AppStateInner>,
-    /// Módulos con una generación en curso (una simultánea por módulo).
-    /// Candado separado y de vida corta: solo marca y desmarca.
+    /// Modules with a generation in flight (one simultaneous per module).
+    /// Separate, short-lived lock: only marks and unmarks.
     pub inflight: Mutex<HashSet<String>>,
 }
 
-/// Contenido del estado listo. Vive en un `Box` dentro del enum para no
-/// mover cientos de bytes cada vez que se inspecciona el estado.
+/// Ready-state content. Lives in a `Box` inside the enum to avoid
+/// moving hundreds of bytes on each state inspection.
 pub struct ReadyState {
     pub store: Store,
     pub ids: IdGen,
@@ -38,6 +40,12 @@ pub struct ReadyState {
     pub designs: DesignLog,
     pub baseline_meta: BaselineMetaLog,
     pub layouts: LayoutLog,
+    pub mockups: MockupLog,
+    pub code_roots: CodeRootLog,
+    pub code_links: CodeLinkLog,
+    pub snapshots: SnapshotLog,
+    pub codegen: CodeGenLog,
+    pub recents: RecentLog,
 }
 
 pub enum AppStateInner {
@@ -46,6 +54,9 @@ pub enum AppStateInner {
 }
 
 impl AppState {
+    // Thirteen initial state pieces: passed explicitly once at
+    // startup (grouping them in another struct would add no safety).
+    #[allow(clippy::too_many_arguments)]
     pub fn ready(
         db_path: PathBuf,
         store: Store,
@@ -55,6 +66,12 @@ impl AppState {
         designs: DesignLog,
         baseline_meta: BaselineMetaLog,
         layouts: LayoutLog,
+        mockups: MockupLog,
+        code_roots: CodeRootLog,
+        code_links: CodeLinkLog,
+        snapshots: SnapshotLog,
+        codegen: CodeGenLog,
+        recents: RecentLog,
     ) -> Self {
         Self {
             db_path,
@@ -66,6 +83,12 @@ impl AppState {
                 designs,
                 baseline_meta,
                 layouts,
+                mockups,
+                code_roots,
+                code_links,
+                snapshots,
+                codegen,
+                recents,
             }))),
             inflight: Mutex::new(HashSet::new()),
         }

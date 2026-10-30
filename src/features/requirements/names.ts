@@ -1,28 +1,28 @@
-// Nombres y títulos: validación espejo de Rust (`Name`, autoridad) y
-// etiquetas de presentación. La identidad es el ID, nunca el nombre:
-// los duplicados se permiten y se desambigua con el ID.
-// Sin React ni Tauri: se prueba con vitest sin DOM.
+// Names and titles: mirror validation of Rust (`Name`, authority) plus
+// presentation labels. Identity is the ID, never the name: duplicates
+// are allowed and disambiguated with the ID.
+// No React, no Tauri: tested with vitest without DOM.
 
-/** Máximo documentado, en caracteres. Espejo de `Name::MAX_CHARS`. */
+/** Documented maximum, in characters. Mirror of `Name::MAX_CHARS`. */
 export const MAX_NAME_CHARS = 120;
 
 /**
- * Valida un nombre antes de enviarlo. Devuelve el mensaje para personas o
- * null si pasa. Rust revalida al guardar (autoridad).
+ * Validates a name before sending it. Returns the human message, or null
+ * when it passes. Rust revalidates on save (authority).
  */
 export function validateName(value: string): string | null {
   const trimmed = value.trim();
-  if (trimmed === "") return "El nombre no puede estar vacío.";
+  if (trimmed === "") return "The name cannot be empty.";
   const chars = [...trimmed].length;
   if (chars > MAX_NAME_CHARS) {
-    return `El nombre tiene ${chars} caracteres; el máximo es ${MAX_NAME_CHARS}.`;
+    return `The name has ${chars} characters; the maximum is ${MAX_NAME_CHARS}.`;
   }
   return null;
 }
 
 /**
- * Etiqueta de un artefacto: título propio, primera línea derivada o ID.
- * Derivar no toca el dominio: es solo presentación, sin IA.
+ * An artifact label: own title, derived first line, or ID. Deriving
+ * never touches the domain: presentation only, no AI.
  */
 export function artifactLabel(
   title: string | null,
@@ -34,17 +34,17 @@ export function artifactLabel(
   return id;
 }
 
-/** ¿Necesita la fila mostrar el ID como secundario? */
+/** Does the row need to show the ID as secondary? */
 export function needsIdSecondary(label: string, id: string): boolean {
   return label !== id;
 }
 
 /**
- * Objetivo de un renombrado. `current` es el nombre mostrado en el
- * formulario; `expected` es la revisión esperada que Rust revalida
- * (null = el artefacto aún no tiene título propio). `derived` es la
- * etiqueta derivada (primera línea) cuando no hay título, solo pista.
- * La identidad (IDs) nunca cambia al renombrar.
+ * A rename target. `current` is the name shown in the form; `expected`
+ * is the expected revision that Rust revalidates (null = the artifact
+ * has no own title yet). `derived` is the derived label (first line)
+ * when there is no title, hint only. Identity (IDs) never changes on
+ * rename.
  */
 export type RenameTarget =
   | { kind: "project"; projectId: string; current: string; expected: string }
@@ -60,10 +60,10 @@ export type RenameTarget =
     };
 
 export function renameKindLabel(kind: RenameTarget["kind"]): string {
-  if (kind === "project") return "proyecto";
-  if (kind === "module") return "módulo";
-  if (kind === "design") return "diagrama";
-  return "requisito";
+  if (kind === "project") return "project";
+  if (kind === "module") return "module";
+  if (kind === "design") return "design";
+  return "requirement";
 }
 
 export function renameTargetId(target: RenameTarget): string {

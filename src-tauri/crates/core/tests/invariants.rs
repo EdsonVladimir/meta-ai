@@ -1,4 +1,4 @@
-//! Invariantes del núcleo: historial, aprobaciones, dependencias, impacto,
+//! Core invariants: history, approvals, dependencies, impact,
 //! baselines y ausencia de mutaciones parciales ante errores.
 
 use ruth_core::application::{Snapshot, Store};
@@ -46,11 +46,11 @@ fn mk_version(
             artifact,
             current.as_ref(),
             vid.clone(),
-            Content::new(format!("contenido {id}")).expect("contenido"),
+            Content::new(format!("contenido {id}")).expect("content"),
             &human("ana"),
             &[],
         )
-        .expect("versión");
+        .expect("version");
     vid
 }
 
@@ -113,9 +113,9 @@ fn rejects_ai_self_approval() -> Result<(), CoreError> {
         &agent_id,
         &[],
     )?;
-    // Aceptar incorpora un borrador: no crea aprobación.
+    // Accepting incorporates a draft: it creates no approval.
     assert!(store.approvals_of(&draft).is_empty());
-    // El agente no puede aprobarse a sí mismo ni nada.
+    // The agent cannot approve itself or anything.
     let itself = store.approve(
         &project,
         &req,
@@ -137,7 +137,7 @@ fn rejects_ai_self_approval() -> Result<(), CoreError> {
         Date::new("2026-10-20")?,
     );
     assert!(matches!(other, Err(CoreError::ApproverMustBeHuman { .. })));
-    // Una persona sí puede aprobar la propuesta revisada.
+    // A person can approve the reviewed proposal.
     store.approve(
         &project,
         &req,
@@ -286,15 +286,15 @@ fn generation_with_old_sources_is_kept_but_not_valid() -> Result<(), CoreError> 
     store.create_artifact(&project, &module, flow.clone(), ArtifactType::Flow)?;
     let req_v1 = mk_version(&mut store, &project, &req, "req-v1");
     let req_v2 = mk_version(&mut store, &project, &req, "req-v2");
-    // Crear con fuentes antiguas está permitido: explica una generación
-    // desactualizada; la vigencia se calcula, no se almacena.
+    // Creating with old sources is allowed: it explains a stale
+    // generation; freshness is computed, not stored.
     let flow_v1 = VersionId::new("flujo-v1")?;
     store.create_version(
         &project,
         &flow,
         None,
         flow_v1.clone(),
-        Content::new("generado con req v1")?,
+        Content::new("generated with req v1")?,
         &human("ana"),
         std::slice::from_ref(&req_v1),
     )?;
@@ -302,7 +302,7 @@ fn generation_with_old_sources_is_kept_but_not_valid() -> Result<(), CoreError> 
     assert!(!validity.valid);
     assert_eq!(validity.stale_sources, vec![req_v1]);
     assert_eq!(store.requires_review(&project)?, vec![flow.clone()]);
-    // ... pero no se puede aprobar hasta revisar con fuentes actuales.
+    // ... but it cannot be approved until reviewed with current sources.
     let denied = store.approve(
         &project,
         &flow,
@@ -317,7 +317,7 @@ fn generation_with_old_sources_is_kept_but_not_valid() -> Result<(), CoreError> 
         &flow,
         Some(&flow_v1),
         flow_v2.clone(),
-        Content::new("revisado con req v2")?,
+        Content::new("reviewed with req v2")?,
         &human("ana"),
         &[req_v2],
     )?;
@@ -462,7 +462,7 @@ fn reconstitute_rejects_gap_in_numbers() -> Result<(), CoreError> {
     mk_version(&mut store, &project, &req, "req-v2");
     let mut snapshot = snapshot_of(&store);
     snapshot.versions.retain(|v| v.number() != 1);
-    let err = Store::reconstitute(snapshot).expect_err("debe fallar");
+    let err = Store::reconstitute(snapshot).expect_err("must fail");
     assert_eq!(err, CoreError::NonConsecutiveVersions { artifact: req });
     Ok(())
 }
@@ -518,7 +518,7 @@ fn reconstitute_rejects_cycle() -> Result<(), CoreError> {
         title_history: vec![],
         deliveries: vec![],
     };
-    let err = Store::reconstitute(snapshot).expect_err("debe fallar");
+    let err = Store::reconstitute(snapshot).expect_err("must fail");
     assert!(
         matches!(err, CoreError::DependencyCycle { .. }),
         "era {err:?}"
@@ -535,15 +535,15 @@ fn reconstitute_rejects_dangling_source() -> Result<(), CoreError> {
         VersionId::new("req-v2")?,
         req.clone(),
         2,
-        Content::new("rota")?,
+        Content::new("broken")?,
         Provenance::Human(HumanId::new("ana")?),
-        vec![VersionId::new("fantasma")?],
+        vec![VersionId::new("ghost")?],
     ));
-    let err = Store::reconstitute(snapshot).expect_err("debe fallar");
+    let err = Store::reconstitute(snapshot).expect_err("must fail");
     assert_eq!(
         err,
         CoreError::VersionNotFound {
-            version: VersionId::new("fantasma")?
+            version: VersionId::new("ghost")?
         }
     );
     assert!(store.version(&v1).is_some());
@@ -558,7 +558,7 @@ fn reconstitute_rejects_duplicate_approval() -> Result<(), CoreError> {
     let mut snapshot = snapshot_of(&store);
     let dup = snapshot.approvals[0].clone();
     snapshot.approvals.push(dup);
-    let err = Store::reconstitute(snapshot).expect_err("debe fallar");
+    let err = Store::reconstitute(snapshot).expect_err("must fail");
     assert!(
         matches!(err, CoreError::DuplicateApproval { .. }),
         "era {err:?}"
@@ -599,13 +599,13 @@ fn reconstitute_rejects_baseline_without_closure() -> Result<(), CoreError> {
     )?;
     let mut snapshot = snapshot_of(&store);
     snapshot.baselines.push(Baseline::new(
-        BaselineId::new("base-rota")?,
+        BaselineId::new("base-broken")?,
         project.clone(),
         vec![(flow.clone(), flow_v1.clone())],
         std::collections::HashMap::new(),
         Date::new("2026-10-22")?,
     ));
-    let err = Store::reconstitute(snapshot).expect_err("debe fallar");
+    let err = Store::reconstitute(snapshot).expect_err("must fail");
     assert!(
         matches!(err, CoreError::BaselineMissingSource { .. }),
         "era {err:?}"
@@ -620,7 +620,7 @@ fn reconstitute_allows_historical_baseline() -> Result<(), CoreError> {
     store.approve(&project, &req, &v1, &human("ana"), Date::new("2026-10-20")?)?;
     mk_version(&mut store, &project, &req, "req-v2");
     let mut snapshot = snapshot_of(&store);
-    // Histórica: v1 ya no es actual, pero sigue cerrada y aprobada.
+    // Historic: v1 is no longer current, but stays closed and approved.
     snapshot.baselines.push(Baseline::new(
         BaselineId::new("base-vieja")?,
         project.clone(),
@@ -670,13 +670,13 @@ fn baseline_rejects_incoherence_without_mutation() -> Result<(), CoreError> {
         })
     );
 
-    let other = ArtifactId::new("otro-m")?;
+    let other = ArtifactId::new("other-m")?;
     let module = store.artifact(&req).expect("req").module().clone();
     store.create_artifact(&project, &module, other.clone(), ArtifactType::Flow)?;
     let unknown = store.create_baseline(
         &project,
         BaselineId::new("b2")?,
-        &[(ArtifactId::new("fantasma")?, v2.clone())],
+        &[(ArtifactId::new("ghost")?, v2.clone())],
         Date::new("d")?,
     );
     assert!(matches!(unknown, Err(CoreError::ArtifactNotFound { .. })));
@@ -732,6 +732,6 @@ fn baseline_rejects_incoherence_without_mutation() -> Result<(), CoreError> {
         assert!(store.baseline(&BaselineId::new(missing)?).is_none());
     }
     assert!(store.baseline(&BaselineId::new("b5")?).is_some());
-    assert_ne!(store, before, "solo la baseline válida mutó el estado");
+    assert_ne!(store, before, "only the valid baseline mutated state");
     Ok(())
 }

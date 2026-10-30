@@ -1,20 +1,20 @@
-//! Registro de generaciones asistidas y sus propuestas (hito 5).
+//! Assisted-generation log and its proposals (milestone 5).
 //!
-//! Datos puros de persistencia, sin reglas del dominio: cada generación
-//! conserva su identidad, proyecto y módulo, modelo, descripción enviada,
-//! versiones exactas usadas como contexto, versión de la plantilla, estado de
-//! uso y preguntas; cada propuesta, su contenido validado y su estado
-//! (pendiente, aceptada con artefacto y contenido final, o descartada).
+//! Pure persistence data, no domain rules: each generation keeps its
+//! identity, project and module, model, sent description, exact versions
+//! used as context, template version, usage state and questions; each
+//! proposal, its validated content and its state (pending, accepted with
+//! artifact and final content, or discarded).
 //!
-//! La única máquina de estados aquí es la transición de propuestas
-//! (pendiente → aceptada | descartada). La caducidad (¿cambió una fuente
-//! desde la generación?) se calcula en `ruth-api` comparando con el `Store`,
-//! no se almacena. No se guardan claves, cabeceras ni respuestas crudas.
+//! The only state machine here is the proposal transition (pending to
+//! accepted or discarded). Staleness (did a source change since the
+//! generation?) is computed in `ruth-api` by comparing against the `Store`,
+//! not stored. No keys, headers or raw responses are saved.
 
 use crate::error::StoreError;
 
-/// Estado de una propuesta. Aceptar registra el artefacto definitivo creado
-/// y el contenido finalmente aceptado (puede incluir ediciones humanas).
+/// A proposal state. Accepting records the final artifact created
+/// and the finally accepted content (may include human edits).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProposalState {
     Pending,
@@ -25,7 +25,7 @@ pub enum ProposalState {
     Discarded,
 }
 
-/// Propuesta validada de una generación, con su estado de aceptación.
+/// A generation validated proposal, with its acceptance state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredProposal {
     pub temp_id: String,
@@ -36,7 +36,7 @@ pub struct StoredProposal {
     pub state: ProposalState,
 }
 
-/// Generación registrada, vinculada a su contexto original exacto.
+/// Registered generation, linked to its exact original context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredGeneration {
     pub id: String,
@@ -54,7 +54,7 @@ pub struct StoredGeneration {
     pub proposals: Vec<StoredProposal>,
 }
 
-/// Registro en memoria, espejo del último commit confirmado.
+/// In-memory log, mirror of the last confirmed commit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProposalLog {
     generations: Vec<StoredGeneration>,
@@ -71,28 +71,28 @@ impl ProposalLog {
         Self::default()
     }
 
-    /// Registra una generación (recién validada o rehidratada al abrir).
-    /// Exige identidad única, al menos una propuesta e identificadores
-    /// temporales únicos. Que las nuevas lleguen pendientes lo exige la
-    /// persistencia (`save_generation`), no este registro.
+    /// Records a generation (newly validated or rehydrated on open).
+    /// Requires a unique identity, at least one proposal and unique temp
+    /// identifiers. That new ones arrive pending is enforced by
+    /// persistence (`save_generation`), not by this log.
     pub fn record(&mut self, generation: StoredGeneration) -> Result<(), StoreError> {
         if generation.id.trim().is_empty() {
-            return Err(invalid("la generación no tiene identidad"));
+            return Err(invalid("the generation has no identity"));
         }
         if self.generations.iter().any(|g| g.id == generation.id) {
-            return Err(invalid(format!("generación duplicada: {}", generation.id)));
+            return Err(invalid(format!("duplicate generation: {}", generation.id)));
         }
         if generation.proposals.is_empty() {
-            return Err(invalid("la generación no trae propuestas"));
+            return Err(invalid("the generation brings no proposals"));
         }
         let mut seen = std::collections::HashSet::new();
         for proposal in &generation.proposals {
             if proposal.temp_id.trim().is_empty() {
-                return Err(invalid("propuesta sin identificador temporal"));
+                return Err(invalid("proposal without a temp identifier"));
             }
             if !seen.insert(proposal.temp_id.clone()) {
                 return Err(invalid(format!(
-                    "identificador temporal duplicado: {}",
+                    "duplicate temp identifier: {}",
                     proposal.temp_id
                 )));
             }
@@ -101,7 +101,7 @@ impl ProposalLog {
         Ok(())
     }
 
-    /// Todas las generaciones, en orden de registro. Solo lectura.
+    /// All generations, in registration order. Read-only.
     pub fn all(&self) -> &[StoredGeneration] {
         &self.generations
     }
@@ -114,10 +114,10 @@ impl ProposalLog {
         self.generations
             .iter_mut()
             .find(|g| g.id == id)
-            .ok_or_else(|| invalid(format!("generación desconocida: {id}")))
+            .ok_or_else(|| invalid(format!("unknown generation: {id}")))
     }
 
-    /// Generaciones de un módulo, en orden de registro.
+    /// A module generations, in registration order.
     pub fn generations_of(&self, module_id: &str) -> Vec<&StoredGeneration> {
         self.generations
             .iter()
@@ -125,8 +125,8 @@ impl ProposalLog {
             .collect()
     }
 
-    /// Marca una propuesta como aceptada. Solo desde pendiente; si ya estaba
-    /// aceptada con el mismo artefacto es idempotente (reintento seguro).
+    /// Marks a proposal accepted. Only from pending; if already accepted
+    /// with the same artifact it is idempotent (safe retry).
     pub fn mark_accepted(
         &mut self,
         generation_id: &str,
@@ -139,7 +139,7 @@ impl ProposalLog {
             .proposals
             .iter_mut()
             .find(|p| p.temp_id == temp_id)
-            .ok_or_else(|| invalid(format!("propuesta desconocida: {temp_id}")))?;
+            .ok_or_else(|| invalid(format!("unknown proposal: {temp_id}")))?;
         match &proposal.state {
             ProposalState::Pending => {
                 proposal.state = ProposalState::Accepted {
@@ -152,34 +152,34 @@ impl ProposalLog {
                 artifact_id: known, ..
             } if known == artifact_id => Ok(()),
             ProposalState::Accepted { .. } => Err(invalid(format!(
-                "la propuesta {temp_id} ya se aceptó con otro artefacto"
+                "proposal {temp_id} was already accepted with another artifact"
             ))),
             ProposalState::Discarded => Err(invalid(format!(
-                "la propuesta {temp_id} está descartada y no puede aceptarse"
+                "proposal {temp_id} is discarded and cannot be accepted"
             ))),
         }
     }
 
-    /// Marca una propuesta como descartada. Idempotente.
+    /// Marks a proposal discarded. Idempotent.
     pub fn mark_discarded(&mut self, generation_id: &str, temp_id: &str) -> Result<(), StoreError> {
         let generation = self.generation_mut(generation_id)?;
         let proposal = generation
             .proposals
             .iter_mut()
             .find(|p| p.temp_id == temp_id)
-            .ok_or_else(|| invalid(format!("propuesta desconocida: {temp_id}")))?;
+            .ok_or_else(|| invalid(format!("unknown proposal: {temp_id}")))?;
         match &proposal.state {
             ProposalState::Pending | ProposalState::Discarded => {
                 proposal.state = ProposalState::Discarded;
                 Ok(())
             }
             ProposalState::Accepted { .. } => Err(invalid(format!(
-                "la propuesta {temp_id} ya se aceptó y no puede descartarse"
+                "proposal {temp_id} was already accepted and cannot be discarded"
             ))),
         }
     }
 
-    /// ¿Ya se aceptó esta propuesta? (Para no crear duplicados al reintentar.)
+    /// Was this proposal already accepted? (To avoid duplicates on retry.)
     pub fn accepted_artifact(&self, generation_id: &str, temp_id: &str) -> Option<String> {
         let generation = self.generation(generation_id)?;
         let proposal = generation.proposals.iter().find(|p| p.temp_id == temp_id)?;
@@ -218,7 +218,7 @@ mod tests {
             output_tokens: Some(20),
             total_tokens: Some(30),
             created_at: "2026-10-27T12:00:00Z".to_string(),
-            questions: vec!["¿Caducan?".to_string()],
+            questions: vec!["Do they expire?".to_string()],
             proposals: vec![pending("p1"), pending("p2")],
         }
     }
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn records_and_lists_by_module() {
         let mut log = ProposalLog::new();
-        log.record(generation("gen-1")).expect("registra");
+        log.record(generation("gen-1")).expect("records");
         assert_eq!(log.generations_of("mod-2").len(), 1);
         assert!(log.generations_of("mod-9").is_empty());
         assert_eq!(log.generation("gen-1").expect("id").questions.len(), 1);
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_ids_and_empty_proposals() {
         let mut log = ProposalLog::new();
-        log.record(generation("gen-1")).expect("registra");
+        log.record(generation("gen-1")).expect("records");
         assert!(log.record(generation("gen-1")).is_err());
         let mut dup = generation("gen-2");
         dup.proposals.push(pending("p1"));
@@ -248,20 +248,19 @@ mod tests {
     #[test]
     fn accept_is_idempotent_but_discard_after_accept_fails() {
         let mut log = ProposalLog::new();
-        log.record(generation("gen-1")).expect("registra");
-        log.mark_accepted("gen-1", "p1", "req-9", "contenido")
-            .expect("acepta");
+        log.record(generation("gen-1")).expect("records");
+        log.mark_accepted("gen-1", "p1", "req-9", "content")
+            .expect("accepts");
         assert_eq!(
             log.accepted_artifact("gen-1", "p1").as_deref(),
             Some("req-9")
         );
-        log.mark_accepted("gen-1", "p1", "req-9", "contenido")
-            .expect("reintento idempotente");
+        log.mark_accepted("gen-1", "p1", "req-9", "content")
+            .expect("idempotent retry");
         assert!(log.mark_accepted("gen-1", "p1", "req-10", "otro").is_err());
         assert!(log.mark_discarded("gen-1", "p1").is_err());
-        log.mark_discarded("gen-1", "p2").expect("descarta");
-        log.mark_discarded("gen-1", "p2")
-            .expect("reintento idempotente");
+        log.mark_discarded("gen-1", "p2").expect("discards");
+        log.mark_discarded("gen-1", "p2").expect("idempotent retry");
         assert!(log.mark_accepted("gen-1", "p2", "req-11", "x").is_err());
     }
 }

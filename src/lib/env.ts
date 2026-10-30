@@ -1,4 +1,4 @@
-// Detección del entorno Tauri, compartida por las funcionalidades.
+// Tauri environment detection, shared by the features.
 
 export function isTauriEnvironment(): boolean {
   if (typeof window === "undefined") return false;

@@ -1,4 +1,4 @@
-//! Errores de dominio: tipados y comprensibles, sin strings ambiguos.
+//! Domain errors: typed and understandable, no ambiguous strings.
 
 use std::fmt;
 
@@ -6,8 +6,8 @@ use crate::domain::{
     AgentId, ArtifactId, BaselineId, DeliveryId, HumanId, ModuleId, Name, ProjectId, VersionId,
 };
 
-/// Fallo de una operación del núcleo. Las operaciones que devuelven error no
-/// modifican el estado: primero validan todo y solo después mutan.
+/// A core operation failure. Operations returning an error do not
+/// mutate state: they validate everything first and only then mutate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreError {
     EmptyId {
@@ -51,134 +51,139 @@ pub enum CoreError {
     DuplicateDelivery {
         delivery: DeliveryId,
     },
-    /// El módulo no pertenece al proyecto indicado.
+    /// The module does not belong to the given project.
     ModuleNotInProject {
         module: ModuleId,
         project: ProjectId,
     },
-    /// El artefacto no pertenece al proyecto indicado.
+    /// The artifact does not belong to the given project.
     ArtifactNotInProject {
         artifact: ArtifactId,
         project: ProjectId,
     },
-    /// Una fuente apunta a una versión de otro proyecto.
+    /// A source points at a version from another project.
     CrossProjectDependency {
         from: VersionId,
         to: VersionId,
     },
-    /// La misma fuente declarada dos veces en una versión.
+    /// The same source declared twice in one version.
     DuplicateSource {
         source: VersionId,
     },
-    /// La dependencia crearía un ciclo; incluye el camino del ciclo.
+    /// The dependency would create a cycle; includes the cycle path.
     DependencyCycle {
         cycle: Vec<VersionId>,
     },
-    /// Las versiones de un artefacto no son consecutivas desde 1.
+    /// An artifact versions are not consecutive from 1.
     NonConsecutiveVersions {
         artifact: ArtifactId,
     },
-    /// Concurrencia optimista: la versión actual ya no es la esperada.
+    /// Optimistic concurrency: the current version is no longer the expected one.
     StaleVersion {
         expected: Option<VersionId>,
         actual: Option<VersionId>,
     },
-    /// La versión tiene fuentes que ya no son actuales.
+    /// The version has sources that are no longer current.
     VersionNotValid {
         version: VersionId,
         stale_sources: Vec<VersionId>,
     },
-    /// La versión no es la actual de su artefacto.
+    /// The version is not its artifact current one.
     VersionNotCurrent {
         version: VersionId,
         current: VersionId,
     },
-    /// La versión no tiene ninguna aprobación.
+    /// The version has no approval.
     VersionNotApproved {
         version: VersionId,
     },
-    /// La misma persona intenta aprobar dos veces la misma versión.
+    /// The same person tries to approve the same version twice.
     DuplicateApproval {
         version: VersionId,
         human: HumanId,
     },
-    /// Solo una persona puede aprobar; un agente no puede, ni siquiera lo suyo.
+    /// Only a person can approve; an agent cannot, not even its own.
     ApproverMustBeHuman {
         approver: AgentId,
     },
-    /// Una baseline vacía no exporta nada.
+    /// An empty baseline exports nothing.
     EmptyBaseline,
-    /// El mismo artefacto aparece dos veces en una baseline.
+    /// The same artifact appears twice in a baseline.
     BaselineDuplicateArtifact {
         artifact: ArtifactId,
     },
-    /// La versión indicada no pertenece al artefacto indicado.
+    /// The given version does not belong to the given artifact.
     BaselineMismatch {
         artifact: ArtifactId,
         version: VersionId,
     },
-    /// Falta en la baseline una fuente necesaria para reproducir la versión.
+    /// The baseline lacks a source needed to reproduce the version.
     BaselineMissingSource {
         version: VersionId,
         source: VersionId,
     },
-    /// Una entrega de trabajo vacía no exporta nada.
+    /// An empty work delivery exports nothing.
     EmptyDelivery,
-    /// El mismo artefacto aparece dos veces en una entrega de trabajo.
+    /// The same artifact appears twice in a work delivery.
     DeliveryDuplicateArtifact {
         artifact: ArtifactId,
     },
-    /// La versión indicada no pertenece al artefacto indicado.
+    /// The given version does not belong to the given artifact.
     DeliveryMismatch {
         artifact: ArtifactId,
         version: VersionId,
     },
-    /// Operación de escritura sobre un módulo archivado.
+    /// Write operation on an archived module.
     ArchivedModule {
         module: ModuleId,
     },
-    /// Operación de escritura sobre un artefacto archivado (propio o por
-    /// contexto de su módulo).
+    /// Write operation on an archived artifact (its own or via its
+    /// module context).
     ArchivedArtifact {
         artifact: ArtifactId,
     },
-    /// La versión depende de una fuente archivada: no puede aprobarse ni
-    /// entrar en una baseline hasta restaurar la fuente o revisar la versión.
+    /// The version depends on an archived source: it cannot be approved
+    /// or enter a baseline until the source is restored or the version reviewed.
     ArchivedSource {
         version: VersionId,
         source: VersionId,
     },
-    /// El artefacto tiene versiones aprobadas: no puede eliminarse.
+    /// The artifact has approved versions: it cannot be deleted.
     DeleteHasApprovals {
         artifact: ArtifactId,
     },
-    /// Otros artefactos dependen de sus versiones: no puede eliminarse.
+    /// Other artifacts depend on its versions: it cannot be deleted.
     DeleteHasDependents {
         artifact: ArtifactId,
         dependents: Vec<ArtifactId>,
     },
-    /// Alguna baseline lo incluye: no puede eliminarse.
+    /// Some baseline includes it: it cannot be deleted.
     DeleteInBaseline {
         artifact: ArtifactId,
         baseline: BaselineId,
     },
-    /// Alguna entrega de trabajo lo incluye: no puede eliminarse.
+    /// Some work delivery includes it: it cannot be deleted.
     DeleteInDelivery {
         artifact: ArtifactId,
         delivery: DeliveryId,
     },
-    /// El módulo aún contiene artefactos: no puede eliminarse.
+    /// The module still holds artifacts: it cannot be deleted.
     DeleteModuleNotEmpty {
         module: ModuleId,
         artifacts: Vec<ArtifactId>,
     },
-    /// El nombre o título está vacío (o solo espacios).
+    /// The project still holds modules: it cannot be deleted.
+    DeleteProjectNotEmpty {
+        project: ProjectId,
+        modules: Vec<ModuleId>,
+    },
+    /// The name or title is empty (or only spaces).
     EmptyName,
-    /// El nombre o título supera el máximo documentado.
+    /// The name or title exceeds the documented maximum.
     NameTooLong {
         chars: usize,
     },
-    /// El nombre cambió desde que se leyó: hay que revisar y reintentar.
+    /// The name changed since it was read: review and retry.
     StaleName {
         expected: Option<String>,
         actual: Option<String>,
@@ -188,35 +193,35 @@ pub enum CoreError {
 impl fmt::Display for CoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyId { entity } => write!(f, "identificador de {entity} vacío"),
-            Self::EmptyDate => write!(f, "fecha vacía: indícala como entrada"),
-            Self::EmptyContent => write!(f, "contenido vacío: una versión necesita texto"),
-            Self::ProjectNotFound { project } => write!(f, "proyecto inexistente: {project}"),
-            Self::ModuleNotFound { module } => write!(f, "módulo inexistente: {module}"),
-            Self::ArtifactNotFound { artifact } => write!(f, "artefacto inexistente: {artifact}"),
-            Self::VersionNotFound { version } => write!(f, "versión inexistente: {version}"),
-            Self::BaselineNotFound { baseline } => write!(f, "baseline inexistente: {baseline}"),
-            Self::DeliveryNotFound { delivery } => write!(f, "entrega inexistente: {delivery}"),
-            Self::DuplicateProject { project } => write!(f, "proyecto duplicado: {project}"),
-            Self::DuplicateModule { module } => write!(f, "módulo duplicado: {module}"),
-            Self::DuplicateArtifact { artifact } => write!(f, "artefacto duplicado: {artifact}"),
-            Self::DuplicateVersion { version } => write!(f, "versión duplicada: {version}"),
-            Self::DuplicateBaseline { baseline } => write!(f, "baseline duplicada: {baseline}"),
-            Self::DuplicateDelivery { delivery } => write!(f, "entrega duplicada: {delivery}"),
+            Self::EmptyId { entity } => write!(f, "empty {entity} identifier"),
+            Self::EmptyDate => write!(f, "empty date: provide it as input"),
+            Self::EmptyContent => write!(f, "empty content: a version needs text"),
+            Self::ProjectNotFound { project } => write!(f, "missing project: {project}"),
+            Self::ModuleNotFound { module } => write!(f, "missing module: {module}"),
+            Self::ArtifactNotFound { artifact } => write!(f, "missing artifact: {artifact}"),
+            Self::VersionNotFound { version } => write!(f, "missing version: {version}"),
+            Self::BaselineNotFound { baseline } => write!(f, "missing baseline: {baseline}"),
+            Self::DeliveryNotFound { delivery } => write!(f, "missing delivery: {delivery}"),
+            Self::DuplicateProject { project } => write!(f, "duplicate project: {project}"),
+            Self::DuplicateModule { module } => write!(f, "duplicate module: {module}"),
+            Self::DuplicateArtifact { artifact } => write!(f, "duplicate artifact: {artifact}"),
+            Self::DuplicateVersion { version } => write!(f, "duplicate version: {version}"),
+            Self::DuplicateBaseline { baseline } => write!(f, "duplicate baseline: {baseline}"),
+            Self::DuplicateDelivery { delivery } => write!(f, "duplicate delivery: {delivery}"),
             Self::ModuleNotInProject { module, project } => {
-                write!(f, "el módulo {module} no pertenece al proyecto {project}")
+                write!(f, "module {module} does not belong to project {project}")
             }
             Self::ArtifactNotInProject { artifact, project } => {
                 write!(
                     f,
-                    "el artefacto {artifact} no pertenece al proyecto {project}"
+                    "artifact {artifact} does not belong to project {project}"
                 )
             }
             Self::CrossProjectDependency { from, to } => {
-                write!(f, "dependencia entre proyectos distintos: {from} → {to}")
+                write!(f, "dependency across different projects: {from} → {to}")
             }
             Self::DuplicateSource { source } => {
-                write!(f, "fuente duplicada en la versión: {source}")
+                write!(f, "duplicate source in the version: {source}")
             }
             Self::DependencyCycle { cycle } => {
                 let path = cycle
@@ -224,15 +229,15 @@ impl fmt::Display for CoreError {
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(" → ");
-                write!(f, "la dependencia crearía un ciclo: {path}")
+                write!(f, "the dependency would create a cycle: {path}")
             }
             Self::NonConsecutiveVersions { artifact } => {
-                write!(f, "las versiones de {artifact} no son consecutivas desde 1")
+                write!(f, "the versions of {artifact} are not consecutive from 1")
             }
             Self::StaleVersion { expected, actual } => {
                 write!(
                     f,
-                    "la versión actual cambió: esperada {}, actual {}",
+                    "the current version changed: expected {}, current {}",
                     opt(expected),
                     opt(actual)
                 )
@@ -246,75 +251,69 @@ impl fmt::Display for CoreError {
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "la versión {version} no está vigente (fuentes desactualizadas: {sources}); crea una versión revisada")
+                write!(f, "version {version} is not current (stale sources: {sources}); create a reviewed version")
             }
             Self::VersionNotCurrent { version, current } => {
                 write!(
                     f,
-                    "la versión {version} no es la actual (actual: {current})"
+                    "version {version} is not the current one (current: {current})"
                 )
             }
             Self::VersionNotApproved { version } => {
-                write!(f, "la versión {version} no tiene aprobación")
+                write!(f, "version {version} has no approval")
             }
             Self::DuplicateApproval { version, human } => {
-                write!(f, "{human} ya aprobó la versión {version}")
+                write!(f, "{human} already approved version {version}")
             }
             Self::ApproverMustBeHuman { approver } => {
-                write!(
-                    f,
-                    "solo una persona puede aprobar; {approver} es una propuesta de IA"
-                )
+                write!(f, "only a person can approve; {approver} is an AI proposal")
             }
-            Self::EmptyBaseline => write!(f, "una baseline necesita al menos un artefacto"),
+            Self::EmptyBaseline => write!(f, "a baseline needs at least one artifact"),
             Self::BaselineDuplicateArtifact { artifact } => {
-                write!(f, "artefacto duplicado en la baseline: {artifact}")
+                write!(f, "duplicate artifact in the baseline: {artifact}")
             }
             Self::BaselineMismatch { artifact, version } => {
                 write!(
                     f,
-                    "la versión {version} no pertenece al artefacto {artifact}"
+                    "version {version} does not belong to artifact {artifact}"
                 )
             }
             Self::BaselineMissingSource { version, source } => {
-                write!(
-                    f,
-                    "la baseline no incluye la fuente {source} necesaria para {version}"
-                )
+                write!(f, "the baseline lacks source {source} needed for {version}")
             }
-            Self::EmptyDelivery => write!(f, "una entrega necesita al menos un artefacto"),
+            Self::EmptyDelivery => write!(f, "a delivery needs at least one artifact"),
             Self::DeliveryDuplicateArtifact { artifact } => {
-                write!(f, "artefacto duplicado en la entrega: {artifact}")
+                write!(f, "duplicate artifact in the delivery: {artifact}")
             }
             Self::DeliveryMismatch { artifact, version } => {
                 write!(
                     f,
-                    "la versión {version} no pertenece al artefacto {artifact}"
+                    "version {version} does not belong to artifact {artifact}"
                 )
             }
             Self::ArchivedModule { module } => {
                 write!(
                     f,
-                    "el módulo {module} está archivado: restaúralo para operar con él"
+                    "module {module} is archived: restore it to operate with it"
                 )
             }
             Self::ArchivedArtifact { artifact } => {
                 write!(
                     f,
-                    "el artefacto {artifact} está archivado: restaúralo para operar con él"
+                    "artifact {artifact} is archived: restore it to operate with it"
                 )
             }
             Self::ArchivedSource { version, source } => {
                 write!(
                     f,
-                    "la versión {version} depende de {source}, que está archivada: \
-                     restaura la fuente o crea una versión revisada sin ella"
+                    "version {version} depends on {source}, which is archived: \
+                     restore the source or create a reviewed version without it"
                 )
             }
             Self::DeleteHasApprovals { artifact } => {
                 write!(
                     f,
-                    "{artifact} tiene aprobaciones y no puede eliminarse: archívalo"
+                    "{artifact} has approvals and cannot be deleted: archive it"
                 )
             }
             Self::DeleteHasDependents {
@@ -328,25 +327,25 @@ impl fmt::Display for CoreError {
                     .join(", ");
                 write!(
                     f,
-                    "{artifact} no puede eliminarse: dependen de él {who}. Archívalo"
+                    "{artifact} cannot be deleted: {who} depend on it. Archive it"
                 )
             }
             Self::DeleteInBaseline { artifact, baseline } => {
                 write!(
                     f,
-                    "{artifact} no puede eliminarse: la baseline {baseline} lo incluye. Archívalo"
+                    "{artifact} cannot be deleted: baseline {baseline} includes it. Archive it"
                 )
             }
             Self::DeleteInDelivery { artifact, delivery } => {
                 write!(
                     f,
-                    "{artifact} no puede eliminarse: la entrega {delivery} lo incluye. Archívalo"
+                    "{artifact} cannot be deleted: delivery {delivery} includes it. Archive it"
                 )
             }
             Self::DeleteModuleNotEmpty { module, artifacts } => {
                 write!(
                     f,
-                    "el módulo {module} no está vacío ({}): vacíalo primero",
+                    "module {module} is not empty ({}): empty it first",
                     artifacts
                         .iter()
                         .map(ToString::to_string)
@@ -354,21 +353,33 @@ impl fmt::Display for CoreError {
                         .join(", ")
                 )
             }
+            Self::DeleteProjectNotEmpty { project, modules } => {
+                write!(
+                    f,
+                    "project {project} still holds {} module(s) ({}): delete them first, one by one",
+                    modules.len(),
+                    modules
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
             Self::EmptyName => {
-                write!(f, "el nombre no puede estar vacío")
+                write!(f, "the name cannot be empty")
             }
             Self::NameTooLong { chars } => {
                 write!(
                     f,
-                    "el nombre tiene {chars} caracteres; el máximo es {}",
+                    "the name has {chars} chars; the maximum is {}",
                     Name::MAX_CHARS
                 )
             }
             Self::StaleName { expected, actual } => {
                 write!(
                     f,
-                    "el nombre cambió mientras lo editabas (esperabas {}, ahora es {}): \
-                     revísalo y guarda de nuevo",
+                    "the name changed while you edited it (you expected {}, now it is {}): \
+                     review it and save again",
                     display_name(expected.as_deref()),
                     display_name(actual.as_deref())
                 )
@@ -377,18 +388,18 @@ impl fmt::Display for CoreError {
     }
 }
 
-/// Cómo mostrar un nombre esperado/actual en mensajes (`None` = sin título).
+/// How to show an expected/actual name in messages (`None` = untitled).
 fn display_name(name: Option<&str>) -> String {
     match name {
-        Some(text) => format!("«{text}»"),
-        None => "«sin título»".to_string(),
+        Some(text) => format!("\"{text}\""),
+        None => "\"untitled\"".to_string(),
     }
 }
 
 fn opt(id: &Option<VersionId>) -> String {
     id.as_ref()
         .map(ToString::to_string)
-        .unwrap_or_else(|| "ninguna".to_string())
+        .unwrap_or_else(|| "none".to_string())
 }
 
 impl std::error::Error for CoreError {}

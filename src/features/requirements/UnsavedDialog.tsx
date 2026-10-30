@@ -1,7 +1,7 @@
 interface UnsavedDialogProps {
-  /** «requisito req-1» o «diseño flujo-1»: qué borrador se protege. */
+  /** "requirement req-1" or "design flow-1": which draft is protected. */
   subject: string;
-  /** Solo disposición (sin versión nueva): no pide autoría. */
+  /** Layout only (no new version): asks no authorship. */
   layoutOnly: boolean;
   author: string;
   busy: boolean;
@@ -26,22 +26,22 @@ export function UnsavedDialog({
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="unsaved-title">
       <div className="modal">
-        <h3 id="unsaved-title">Cambios sin guardar</h3>
+        <h3 id="unsaved-title">Unsaved changes</h3>
         <p>
-          El borrador de <code>{subject}</code>{" "}
+          The draft of <code>{subject}</code>{" "}
           {layoutOnly
-            ? "tiene cambios de disposición sin guardar. ¿Qué quieres hacer?"
-            : "tiene cambios sin guardar como versión nueva. ¿Qué quieres hacer?"}
+            ? "has unsaved layout changes. What do you want to do?"
+            : "has changes not saved as a new version. What do you want to do?"}
         </p>
         {!layoutOnly && (
           <label className="field">
-            <span>Autoría para guardar</span>
+            <span>Authorship for saving</span>
             <input
               type="text"
               value={author}
               onChange={(e) => onAuthorChange(e.target.value)}
               disabled={busy}
-              placeholder="Tu nombre"
+              placeholder="Your name"
               autoComplete="off"
             />
           </label>
@@ -53,13 +53,13 @@ export function UnsavedDialog({
         )}
         <div className="modal-actions">
           <button type="button" className="primary" onClick={onSave} disabled={busy}>
-            {busy ? "Guardando…" : layoutOnly ? "Guardar disposición y continuar" : "Guardar y continuar"}
+            {busy ? "Saving…" : layoutOnly ? "Save layout and continue" : "Save and continue"}
           </button>
           <button type="button" className="secondary" onClick={onDiscard} disabled={busy}>
-            Descartar
+            Discard
           </button>
           <button type="button" className="secondary" onClick={onCancel} disabled={busy}>
-            Cancelar
+            Cancel
           </button>
         </div>
       </div>

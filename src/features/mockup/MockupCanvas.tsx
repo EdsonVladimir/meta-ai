@@ -1,11 +1,10 @@
-// Lienzo interactivo de mockups sobre React Flow (carga diferida: este
-// módulo solo se importa desde el editor, en su propio chunk). Espeja el
-// lienzo de diseños: zoom con rueda centrado en el cursor, arrastre del
-// fondo para desplazar, botones acercar/alejar/ajustar/restablecer con
-// porcentaje. Sin aristas: los componentes se seleccionan, mueven y
-// redimensionan; mover o redimensionar solo toca la disposición, nunca
-// la semántica. La tecla de borrado está desactivada: eliminar pasa por
-// el inspector con confirmación de consecuencias.
+// Interactive mockup canvas on React Flow (lazy loaded: this module is
+// only imported from the editor, in its own chunk). Mirrors the design
+// canvas: cursor-centered wheel zoom, background drag to pan, zoom
+// in/out/fit/reset buttons with percentage. No edges: components are
+// selected, moved and resized; moving or resizing only touches layout,
+// never semantics. The delete key is disabled: deletion goes through
+// the inspector with a consequences confirmation.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -28,11 +27,13 @@ const FIT_PADDING = 0.2;
 export interface MockupCanvasProps {
   nodes: Node[];
   readOnly: boolean;
-  /** Incrementar para reajustar la vista al contenido. */
+  /** Increment to refit the view to the content. */
   fitSignal: number;
-  /** Movimiento de un componente: solo disposición, nunca semántica. */
+  /** Visible dot grid (optional, presentation only). */
+  grid?: boolean;
+  /** Component move: layout only, never semantics. */
   onMoveNode?: (id: string, x: number, y: number) => void;
-  /** Tamaño nuevo al soltar el redimensionado: solo disposición. */
+  /** New size on resize release: layout only. */
   onResizeNode?: (id: string, w: number, h: number) => void;
   onSelectNode?: (id: string | null) => void;
   ariaLabel: string;
@@ -43,32 +44,32 @@ function CanvasToolbar({ readOnly }: { readOnly: boolean }) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const percent = Math.round(zoom * 100);
   return (
-    <div className="canvas-toolbar" role="toolbar" aria-label="Controles del lienzo">
-      {!readOnly && <span className="canvas-hint">Arrastra para mover; tira de las esquinas para redimensionar</span>}
+    <div className="canvas-toolbar" role="toolbar" aria-label="Canvas controls">
+      {!readOnly && <span className="canvas-hint">Drag to move; pull the corners to resize</span>}
       <div className="canvas-toolbar-group">
-        <button type="button" className="secondary small" onClick={() => zoomOut()} aria-label="Alejar">
+        <button type="button" className="secondary small" onClick={() => zoomOut()} aria-label="Zoom out">
           −
         </button>
-        <span className="canvas-zoom" aria-live="polite" aria-label={`Zoom ${percent} por ciento`}>
+        <span className="canvas-zoom" aria-live="polite" aria-label={`Zoom ${percent} percent`}>
           {percent} %
         </span>
-        <button type="button" className="secondary small" onClick={() => zoomIn()} aria-label="Acercar">
+        <button type="button" className="secondary small" onClick={() => zoomIn()} aria-label="Zoom in">
           +
         </button>
         <button
           type="button"
           className="secondary small"
           onClick={() => fitView({ padding: FIT_PADDING, duration: 200 })}
-          aria-label="Ajustar al contenido"
+          aria-label="Fit to content"
         >
-          Ajustar
+          Fit
         </button>
         <button
           type="button"
           className="secondary small"
           onClick={() => fitView({ padding: FIT_PADDING, minZoom: 1, maxZoom: 1, duration: 200 })}
-          aria-label="Restablecer vista al cien por cien"
-          title="Centra el contenido al 100 %"
+          aria-label="Reset view to one hundred percent"
+          title="Centers the content at 100%"
         >
           100 %
         </button>
@@ -81,6 +82,7 @@ function CanvasInner({
   nodes,
   readOnly,
   fitSignal,
+  grid = true,
   onMoveNode,
   onResizeNode,
   onSelectNode,
@@ -94,8 +96,8 @@ function CanvasInner({
   const resizeRef = useRef(onResizeNode);
   resizeRef.current = onResizeNode;
 
-  // Dimensiones medidas por React Flow (modo controlado: hay que
-  // devolverlas para que el ajuste inicial mida en estable).
+  // Dimensions measured by React Flow (controlled mode: they must
+  // flow back so the initial fit measures on stable ground).
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
   const idsSignature = useMemo(() => nodes.map((node) => node.id).sort().join("|"), [nodes]);
   useEffect(() => {
@@ -117,7 +119,7 @@ function CanvasInner({
     [nodes, measured],
   );
 
-  // Ajuste inicial único cuando los nodos ya están medidos.
+  // Single initial fit once nodes are measured.
   useEffect(() => {
     if (!nodesInitialized || didInitialFit.current) return;
     didInitialFit.current = true;
@@ -168,7 +170,7 @@ function CanvasInner({
         colorMode="dark"
         aria-label={ariaLabel}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+        {grid && <Background variant={BackgroundVariant.Dots} gap={24} size={1} />}
         <CanvasToolbar readOnly={readOnly} />
       </ReactFlow>
     </div>

@@ -1,33 +1,33 @@
-//! Núcleo de dominio de Ruth IDE: artefactos, versiones, dependencias y
-//! aprobaciones.
+//! Ruth IDE domain core: artifacts, versions, dependencies and
+//! approvals.
 //!
-//! Independiente de Tauri, React, Meta y almacenamiento. No lee reloj,
-//! entorno, archivos ni red: identificadores, contenido y fechas llegan como
-//! entradas de los casos de uso.
+//! Independent of Tauri, React, Meta and storage. It reads no clock,
+//! environment, files or network: identifiers, content and dates arrive
+//! as use-case inputs.
 //!
-//! Capas:
-//! - [`domain`]: tipos, invariantes y operaciones puras.
-//! - [`application`]: coordinación de casos de uso sobre un [`Store`](application::Store)
-//!   en memoria.
+//! Layers:
+//! - [`domain`]: types, invariants and pure operations.
+//! - [`application`]: use-case coordination over an in-memory
+//!   [`Store`](application::Store).
 //!
 //! ```rust
 //! use ruth_core::application::Store;
 //! use ruth_core::domain::{ArtifactId, ArtifactType, Author, Content, Date, HumanId, ModuleId, ProjectId, VersionId};
 //!
 //! let mut store = Store::new();
-//! let project = ProjectId::new("proy-ventas")?;
-//! let module = ModuleId::new("mod-ventas")?;
-//! let req = ArtifactId::new("req-confirmar")?;
+//! let project = ProjectId::new("proj-sales")?;
+//! let module = ModuleId::new("mod-sales")?;
+//! let req = ArtifactId::new("req-confirm")?;
 //! store.create_project(project.clone())?;
 //! store.create_module(&project, module.clone())?;
 //! store.create_artifact(&project, &module, req.clone(), ArtifactType::Requirement)?;
-//! let v1 = VersionId::new("req-confirmar-v1")?;
+//! let v1 = VersionId::new("req-confirm-v1")?;
 //! store.create_version(
 //!     &project,
 //!     &req,
 //!     None,
 //!     v1.clone(),
-//!     Content::new("Confirmar una venta descuenta stock.")?,
+//!     Content::new("Confirming a sale discounts stock.")?,
 //!     &Author::Human(HumanId::new("ana")?),
 //!     &[],
 //! )?;

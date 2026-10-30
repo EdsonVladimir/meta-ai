@@ -1,5 +1,5 @@
-//! DTOs serializables de la frontera. Reflejan el dominio sin duplicar sus
-//! reglas: solo transportan datos entre Rust y la interfaz.
+//! Serializable boundary DTOs. They mirror the domain without duplicating
+//! its rules: they only carry data between Rust and the UI.
 
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct ProjectDto {
     pub id: String,
-    /// Nombre organizativo editable. Al crear, el ID.
+    /// Editable organizational name. At creation, the ID.
     pub name: String,
 }
 
@@ -16,9 +16,9 @@ pub struct ProjectDto {
 pub struct ModuleDto {
     pub id: String,
     pub project_id: String,
-    /// Nombre organizativo editable. Al crear, el ID.
+    /// Editable organizational name. At creation, the ID.
     pub name: String,
-    /// Archivado propio reversible. El contenido se oculta por contexto.
+    /// Reversible own archiving. Content hides by context.
     pub archived: bool,
 }
 
@@ -29,10 +29,10 @@ pub struct ArtifactDto {
     pub project_id: String,
     pub module_id: String,
     pub kind: String,
-    /// Título editable como metadato (`None` = sin título propio: la
-    /// presentación deriva uno legible sin tocar el dominio).
+    /// Title editable as metadata (`None` = no own title: the
+    /// presentation derives a readable one without touching the domain).
     pub title: Option<String>,
-    /// Archivado individual reversible. El archivado efectivo suma el módulo.
+    /// Reversible individual archiving. Effective archiving adds the module.
     pub archived: bool,
 }
 
@@ -41,7 +41,7 @@ pub struct ArtifactDto {
 pub struct ProvenanceDto {
     /// `human` o `ai`.
     pub kind: String,
-    /// Persona o agente de origen.
+    /// Origin person or agent.
     pub by: String,
 }
 
@@ -63,9 +63,9 @@ pub struct ApprovalDto {
     pub at: String,
 }
 
-/// Instantánea autoritativa de un requisito: artefacto, historial completo,
-/// aprobaciones y versión actual. La interfaz actualiza desde aquí tras
-/// cada mutación, sin cachés propias del dominio.
+/// Authoritative requirement snapshot: artifact, full history,
+/// approvals and current version. The UI updates from here after
+/// each mutation, with no domain caches of its own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequirementDetail {
@@ -136,8 +136,8 @@ pub struct UsageDto {
     pub total_tokens: Option<u32>,
 }
 
-/// Propuesta de una generación: contenido validado más estado. `state` es
-/// `pending`, `accepted` o `discarded`; `artifact_id` solo existe aceptada.
+/// A generation's proposal: validated content plus state. `state` is
+/// `pending`, `accepted` or `discarded`; `artifact_id` exists only when accepted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProposalDto {
@@ -150,8 +150,8 @@ pub struct ProposalDto {
     pub artifact_id: Option<String>,
 }
 
-/// Generación registrada con su contexto original. `stale` se calcula al
-/// servir: cambió alguna fuente desde la generación.
+/// Registered generation with its original context. `stale` computes at
+/// serve time: some source changed since the generation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerationDto {
@@ -169,8 +169,8 @@ pub struct GenerationDto {
     pub proposals: Vec<ProposalDto>,
 }
 
-/// Vista previa del contexto que se enviará: identidades, tamaño y extracto.
-/// La interfaz la muestra antes de pedir confirmación para generar.
+/// Preview of the context to be sent: identities, size and excerpt.
+/// The UI shows it before asking confirmation to generate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerationContextPreview {
@@ -195,8 +195,8 @@ pub struct GenerationContextInput {
     pub module_id: String,
 }
 
-/// Aceptación de una propuesta con sus campos editados por la persona. Rust
-/// vuelve a validar límites y compone el contenido definitivo.
+/// Acceptance of a proposal with its person-edited fields. Rust
+/// revalidates limits and composes the final content.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptProposalInput {
@@ -215,9 +215,9 @@ pub struct DiscardProposalInput {
     pub temp_id: String,
 }
 
-/// Propuesta de diseño: especificación JSON autoritativa más Mermaid
-/// derivado, explicación y estado. `state` es `pending`, `accepted` o
-/// `discarded`; `artifact_id` solo existe aceptada.
+/// Design proposal: authoritative JSON spec plus derived Mermaid,
+/// explanation and state. `state` is `pending`, `accepted` or
+/// `discarded`; `artifact_id` exists only when accepted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesignProposalDto {
@@ -229,9 +229,9 @@ pub struct DesignProposalDto {
     pub artifact_id: Option<String>,
 }
 
-/// Generación de diseño registrada con su contexto original. `kind` es
-/// `flow` o `data_model`; `stale` se calcula al servir. Las propuestas de
-/// actualización (hito 8) fijan además el objetivo y su versión.
+/// Registered design generation with its original context. `kind` is
+/// `flow` or `data_model`; `stale` computes at serve time. Update
+/// proposals (milestone 8) additionally pin the target and its version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesignGenerationDto {
@@ -251,9 +251,9 @@ pub struct DesignGenerationDto {
     pub target_version_id: Option<String>,
 }
 
-/// Requisito del módulo con su revisión vigente: la interfaz lo usa para
-/// seleccionar las fuentes de un diseño (se genera desde versiones
-/// guardadas; la revisión es informativa).
+/// Module requirement with its current review: the UI uses it for
+/// selecting a design's sources (generation runs from saved
+/// versions; review is informative).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesignContextPreview {
@@ -279,10 +279,10 @@ pub struct DesignContextInput {
     pub module_id: String,
 }
 
-/// Aceptación de un diseño con su especificación editada por la persona
-/// (el título vive dentro del JSON autoritativo). Sin `target_artifact_id`
-/// crea el artefacto; con él, versiona el elegido exigiendo la versión
-/// esperada. Rust revalida la especificación.
+/// Acceptance of a design with its person-edited spec
+/// (the title lives inside the authoritative JSON). Without
+/// `target_artifact_id` it creates the artifact; with it, it versions the
+/// chosen one requiring the expected version. Rust revalidates the spec.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptDesignInput {
@@ -292,11 +292,11 @@ pub struct AcceptDesignInput {
     pub expected_version_id: Option<String>,
 }
 
-/// Revisión manual de un diseño desde el editor visual: crea una versión
-/// nueva del MISMO artefacto con procedencia humana. Las fuentes se declaran
-/// explícitamente (versiones exactas) y deben estar vigentes; nadie las
-/// actualiza en silencio. `layout` es la disposición visual (presentación)
-/// y viaja en la misma transacción cuando se envía.
+/// Manual review of a design from the visual editor: creates a new
+/// version of the SAME artifact with human provenance. Sources declare
+/// explicitly (exact versions) and must be current; nobody updates
+/// them silently. `layout` is the visual layout (presentation)
+/// and travels in the same transaction when sent.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveDesignVersionInput {
@@ -309,10 +309,10 @@ pub struct SaveDesignVersionInput {
     pub layout: Option<serde_json::Value>,
 }
 
-/// Creación manual de un mockup: artefacto nuevo con su primera versión
-/// (contenido dibujado por la persona, validado en Rust). Las fuentes son
-/// opcionales, pero las referencias citadas deben pertenecer a las fuentes
-/// declaradas; la disposición inicial viaja en la misma transacción.
+/// Manual creation of a mockup: new artifact with its first version
+/// (person-drawn content, validated in Rust). Sources are
+/// optional, but cited references must belong to the declared
+/// sources; the initial layout travels in the same transaction.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMockupInput {
@@ -324,9 +324,9 @@ pub struct CreateMockupInput {
     pub layout: Option<serde_json::Value>,
 }
 
-/// Revisión manual de un mockup como versión nueva del MISMO artefacto,
-/// con procedencia humana. Mismas reglas que en diseños: fuentes vigentes
-/// declaradas (vacías solo sin referencias) y versión esperada.
+/// Manual review of a mockup as a new version of the SAME artifact,
+/// with human provenance. Same rules as designs: declared current
+/// sources (empty only without references) and expected version.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveMockupVersionInput {
@@ -339,9 +339,9 @@ pub struct SaveMockupVersionInput {
     pub layout: Option<serde_json::Value>,
 }
 
-/// Fuentes seleccionables para generar un diseño desde mockups y para
-/// declarar fuentes de un mockup: requisitos, diseños y mockups del
-/// módulo con su versión actual y su revisión vigente.
+/// Selectable sources for generating a design from mockups and for
+/// declaring a mockup's sources: the module's requirements, designs and
+/// mockups with their current version and current review.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MockupContextPreview {
@@ -350,8 +350,8 @@ pub struct MockupContextPreview {
     pub mockups: Vec<DesignContextPreview>,
 }
 
-/// Validación estructural de un mockup contra sus propias citas (para
-/// mostrar y revisar; sin red). No exige fuentes declaradas.
+/// Structural validation of a mockup against its own citations (for
+/// display and review; no network). Requires no declared sources.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidateMockupInput {
@@ -367,8 +367,64 @@ pub struct ValidatedMockupDto {
     pub components: usize,
 }
 
-/// Disposición visual guardada para una versión (`None` = sin disposición:
-/// el editor usa su trazado automático).
+/// Proposed screen: the canonical JSON of a ONE-screen mockup,
+/// ready to preview and incorporate as a new artifact. `state`
+/// is `pending`, `accepted` or `discarded`; `artifact_id` only when accepted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MockupScreenProposalDto {
+    pub temp_id: String,
+    pub title: String,
+    pub spec: serde_json::Value,
+    pub explanation: String,
+    pub state: String,
+    pub artifact_id: Option<String>,
+}
+
+/// Registered screen generation with its exact original context.
+/// `stale` computes at serve time: some source changed since then.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MockupGenerationDto {
+    pub id: String,
+    pub project_id: String,
+    pub module_id: String,
+    pub model: String,
+    pub context_version_ids: Vec<String>,
+    pub template_version: u32,
+    pub usage: UsageDto,
+    pub created_at: String,
+    pub stale: bool,
+    pub questions: Vec<String>,
+    pub proposals: Vec<MockupScreenProposalDto>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListMockupGenerationsInput {
+    pub project_id: String,
+    pub module_id: String,
+}
+
+/// Acceptance of a screen: incorporates the SAVED spec (validated at
+/// recording and revalidated at accept) as a new mockup. No edited
+/// spec: after incorporating, the person edits in the visual editor.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptMockupScreenInput {
+    pub generation_id: String,
+    pub temp_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscardMockupScreenInput {
+    pub generation_id: String,
+    pub temp_id: String,
+}
+
+/// Saved visual layout for a version (`None` = no layout:
+/// the editor uses its automatic placement).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesignLayoutDto {
@@ -382,8 +438,8 @@ pub struct GetDesignLayoutInput {
     pub version_id: String,
 }
 
-/// Guarda solo la disposición visual de una versión existente, sin crear
-/// versión nueva. Para reordenar sin cambiar la semántica.
+/// Saves only an existing version's visual layout, without creating
+/// a new version. For rearranging without changing semantics.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveDesignLayoutInput {
@@ -405,8 +461,8 @@ pub struct DiscardDesignInput {
     pub generation_id: String,
 }
 
-/// Validación bajo demanda de una especificación (editor JSON, historial).
-/// Con `generation_id` exige además referencias dentro de su contexto.
+/// On-demand spec validation (JSON editor, history).
+/// With `generation_id` it additionally requires references inside its context.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidateDesignInput {
@@ -422,8 +478,8 @@ pub struct ValidatedDesignDto {
     pub mermaid: String,
 }
 
-/// Vista previa del contexto de actualización de un diseño. Sin
-/// `origin_artifact_id` no hay cambio origen ni caminos.
+/// Preview of a design's update context. Without
+/// `origin_artifact_id` there is no origin change or paths.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateContextInput {
@@ -433,10 +489,10 @@ pub struct UpdateContextInput {
     pub origin_from_version_id: Option<String>,
 }
 
-/// Motivo que bloquea la generación, con qué revisar primero. `code` es
+/// Reason blocking generation, with what to review first. `code` is
 /// `target_up_to_date`, `source_stale`, `target_archived`,
-/// `source_archived` o `source_missing`. La falta de revisión NO bloquea
-/// (diseño vivo): viaja como `current_approved` en cada fuente.
+/// `source_archived` or `source_missing`. Missing review does NOT block
+/// (living design): it travels as `current_approved` on each source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBlockerDto {
@@ -445,7 +501,7 @@ pub struct UpdateBlockerDto {
     pub artifact_id: Option<String>,
 }
 
-/// Fuente del diseño con su versión utilizada y su versión actual.
+/// Design source with its used version and its current version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSourceDto {
@@ -460,7 +516,7 @@ pub struct UpdateSourceDto {
     pub current_valid: bool,
 }
 
-/// Cambio origen que contextualiza la actualización, si se conoce.
+/// Origin change giving context to the update, when known.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateOriginDto {
@@ -471,9 +527,9 @@ pub struct UpdateOriginDto {
     pub current_content: String,
 }
 
-/// Snapshot consultivo para proponer la actualización: objetivo, diseño
-/// actual, fuentes con sus dos versiones, cambio origen, caminos y
-/// bloqueos. La generación vuelve a tomar el snapshot de forma autoritativa.
+/// Advisory snapshot for proposing the update: target, current
+/// design, sources with both versions, origin change, paths and
+/// blockers. Generation retakes the snapshot authoritatively.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateContextPreview {
@@ -489,7 +545,7 @@ pub struct UpdateContextPreview {
     pub can_generate: bool,
 }
 
-/// Entrada del diff estructural: dos especificaciones del mismo tipo.
+/// Structural diff input: two specs of the same kind.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesignDiffInput {
@@ -498,7 +554,7 @@ pub struct DesignDiffInput {
     pub new_spec: serde_json::Value,
 }
 
-/// Elemento añadido, eliminado o modificado del diff.
+/// Added, removed or modified diff item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffItemDto {
@@ -507,7 +563,7 @@ pub struct DiffItemDto {
     pub detail: String,
 }
 
-/// Diferencias estructurales deterministas entre dos diseños.
+/// Deterministic structural differences between two designs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesignDiffDto {
@@ -516,9 +572,9 @@ pub struct DesignDiffDto {
     pub modified: Vec<DiffItemDto>,
 }
 
-/// Preparación de entrega: alcance (módulo) y artefactos elegidos. Las
-/// versiones son siempre las actuales: nunca se eligen históricas para
-/// ocultar pendientes.
+/// Delivery preparation: scope (module) and chosen artifacts. Versions
+/// are always the current ones: historic ones are never chosen to
+/// hide pendings.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselinePrepareInput {
@@ -527,7 +583,7 @@ pub struct BaselinePrepareInput {
     pub artifact_ids: Vec<String>,
 }
 
-/// Entrada prevista: versión actual exacta con aprobación y procedencia.
+/// Foreseen entry: exact current version with approval and provenance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineEntryPreviewDto {
@@ -541,8 +597,8 @@ pub struct BaselineEntryPreviewDto {
     pub auto_included: bool,
 }
 
-/// Bloqueo concreto que impide crear. `code` es `draft`, `stale_sources`,
-/// `missing_source`, `not_in_scope`, `archived` o `archived_source`.
+/// Concrete blocker preventing creation. `code` is `draft`, `stale_sources`,
+/// `missing_source`, `not_in_scope`, `archived` or `archived_source`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineBlockerDto {
@@ -551,8 +607,8 @@ pub struct BaselineBlockerDto {
     pub artifact_id: Option<String>,
 }
 
-/// Lo que queda fuera: otros módulos con sus artefactos y artefactos del
-/// alcance no elegidos.
+/// What stays out: other modules with their artifacts and unchosen
+/// scope artifacts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineOutOfScopeDto {
@@ -567,8 +623,8 @@ pub struct ModuleScopeDto {
     pub artifacts: Vec<String>,
 }
 
-/// Vista previa consultiva: lo elegido más el cierre de dependencias, lo
-/// que queda fuera y los bloqueos. No muta nada.
+/// Advisory preview: the chosen plus the dependency closure, what
+/// stays out and the blockers. Mutates nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselinePreviewDto {
@@ -580,7 +636,7 @@ pub struct BaselinePreviewDto {
     pub can_create: bool,
 }
 
-/// Una entrada exacta de la baseline a crear (revisada en la preparación).
+/// One exact entry of the baseline to create (reviewed in preparation).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineEntryInput {
@@ -588,7 +644,7 @@ pub struct BaselineEntryInput {
     pub version_id: String,
 }
 
-/// Creación explícita con nombre y descripción opcional.
+/// Explicit creation with a name and optional description.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineCreateInput {
@@ -599,14 +655,14 @@ pub struct BaselineCreateInput {
     pub entries: Vec<BaselineEntryInput>,
 }
 
-/// Entrada guardada con detalle para mostrar y exportar.
+/// Saved entry with detail for display and export.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineEntryDto {
     pub artifact: ArtifactDto,
     pub kind: String,
-    /// Título fijado al crear la baseline (`None` = sin título entonces).
-    /// Histórica e inmutable: jamás se consulta el título actual.
+    /// Title pinned at baseline creation (`None` = no title then).
+    /// Historic and immutable: the current title is never consulted.
     pub title: Option<String>,
     pub version_id: String,
     pub number: u32,
@@ -615,7 +671,7 @@ pub struct BaselineEntryDto {
     pub sources: Vec<String>,
 }
 
-/// Baseline inmutable con sus metadatos humanos.
+/// Immutable baseline with its human metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineDto {
@@ -628,8 +684,8 @@ pub struct BaselineDto {
     pub entries: Vec<BaselineEntryDto>,
 }
 
-/// Resumen para el listado: `advanced` indica que el proyecto ya avanzó
-/// más allá de alguna versión incluida.
+/// Summary for the listing: `advanced` tells the project already moved
+/// past some included version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineSummaryDto {
@@ -643,9 +699,9 @@ pub struct BaselineSummaryDto {
     pub advanced_artifacts: Vec<String>,
 }
 
-// --- Entregas de trabajo/borrador (diseño vivo) ---
+// --- Work/draft deliveries (living design) ---
 
-/// Preparación: artefactos elegidos del módulo de alcance.
+/// Preparation: chosen artifacts of the scope module.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryPrepareInput {
@@ -654,8 +710,8 @@ pub struct DeliveryPrepareInput {
     pub artifact_ids: Vec<String>,
 }
 
-/// Entrada prevista: versión actual exacta con revisión (opcional),
-/// procedencia y fuentes (con las desactualizadas señaladas, sin veto).
+/// Foreseen entry: exact current version with review (optional),
+/// provenance and sources (stale ones flagged, no veto).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryEntryPreviewDto {
@@ -670,8 +726,8 @@ pub struct DeliveryEntryPreviewDto {
     pub stale_sources: Vec<String>,
 }
 
-/// Vista previa consultiva. Sin cierre automático: la entrega identifica
-/// fuentes, no las incluye por el usuario.
+/// Advisory preview. No automatic closure: the delivery identifies
+/// sources, never includes them for the user.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryPreviewDto {
@@ -685,7 +741,7 @@ pub struct DeliveryPreviewDto {
     pub stale_count: usize,
 }
 
-/// Detalle de una entrega: qué proyecto y qué entrega.
+/// A delivery's detail: which project and which delivery.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryGetInput {
@@ -693,14 +749,14 @@ pub struct DeliveryGetInput {
     pub delivery_id: String,
 }
 
-/// Listado de entregas de un proyecto.
+/// A project's delivery listing.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryListInput {
     pub project_id: String,
 }
 
-/// Creación explícita con nombre y descripción opcional.
+/// Explicit creation with a name and optional description.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryCreateInput {
@@ -711,7 +767,7 @@ pub struct DeliveryCreateInput {
     pub entries: Vec<BaselineEntryInput>,
 }
 
-/// Entrada guardada: título fijado y desactualización calculada al leer.
+/// Saved entry: pinned title and staleness computed on read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryEntryDto {
@@ -726,7 +782,7 @@ pub struct DeliveryEntryDto {
     pub stale_sources: Vec<String>,
 }
 
-/// Detalle de una entrega guardada.
+/// A saved delivery's detail.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryDto {
@@ -739,7 +795,7 @@ pub struct DeliveryDto {
     pub entries: Vec<DeliveryEntryDto>,
 }
 
-/// Resumen para el listado, con pendientes honestos.
+/// Summary for the listing, with honest pendings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliverySummaryDto {
@@ -755,7 +811,7 @@ pub struct DeliverySummaryDto {
     pub advanced_artifacts: Vec<String>,
 }
 
-/// Archivo del paquete exportable: ruta relativa, tamaño y SHA-256.
+/// Exportable package file: relative path, size and SHA-256.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportFileDto {
@@ -764,7 +820,7 @@ pub struct ExportFileDto {
     pub sha256: String,
 }
 
-/// Vista previa de la exportación: inventario sin contenido.
+/// Export preview: inventory without content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportPreviewDto {
@@ -774,7 +830,7 @@ pub struct ExportPreviewDto {
     pub total_bytes: u64,
 }
 
-/// Detalle de una baseline: qué proyecto y qué entrega.
+/// A baseline's detail: which project and which delivery.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineGetInput {
@@ -782,14 +838,14 @@ pub struct BaselineGetInput {
     pub baseline_id: String,
 }
 
-/// Listado de baselines de un proyecto.
+/// A project's baseline listing.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineListInput {
     pub project_id: String,
 }
 
-/// Vista previa del paquete exportable de una baseline.
+/// A baseline's exportable package preview.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportPreviewInput {
@@ -797,8 +853,8 @@ pub struct ExportPreviewInput {
     pub baseline_id: String,
 }
 
-/// Guardado del ZIP: destino elegido en el diálogo nativo. `overwrite`
-/// solo llega a `true` tras confirmación explícita ante un archivo existente.
+/// ZIP saving: destination chosen in the native dialog. `overwrite`
+/// only reaches `true` after explicit confirmation over an existing file.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportSaveInput {
@@ -808,7 +864,7 @@ pub struct ExportSaveInput {
     pub overwrite: bool,
 }
 
-/// Resultado del guardado: dónde quedó el ZIP, su tamaño y su SHA-256.
+/// Save result: where the ZIP landed, its size and its SHA-256.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportSaveDto {
@@ -818,7 +874,7 @@ pub struct ExportSaveDto {
     pub sha256: String,
 }
 
-/// Vista previa del paquete de una entrega de trabajo.
+/// A work delivery's package preview.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryExportPreviewDto {
@@ -828,7 +884,7 @@ pub struct DeliveryExportPreviewDto {
     pub total_bytes: u64,
 }
 
-/// Qué entrega de trabajo previsualizar.
+/// Which work delivery to preview.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryExportPreviewInput {
@@ -836,7 +892,7 @@ pub struct DeliveryExportPreviewInput {
     pub delivery_id: String,
 }
 
-/// Guardado del ZIP de una entrega: destino del diálogo nativo.
+/// A delivery's ZIP saving: native dialog destination.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryExportSaveInput {
@@ -846,7 +902,7 @@ pub struct DeliveryExportSaveInput {
     pub overwrite: bool,
 }
 
-/// Resultado del guardado de una entrega.
+/// A delivery's save result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryExportSaveDto {
@@ -856,9 +912,9 @@ pub struct DeliveryExportSaveDto {
     pub sha256: String,
 }
 
-/// Consulta de impacto: artefacto origen del cambio y versión base de la
-/// comparación. Sin `from_version_id` se compara la anterior con la actual;
-/// con una sola versión, ambas coinciden y no hay cambio que mostrar.
+/// Impact query: the change's origin artifact and the comparison's
+/// base version. Without `from_version_id` the previous compares with the
+/// current; with a single version both match and there is no change to show.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImpactQueryInput {
@@ -867,7 +923,7 @@ pub struct ImpactQueryInput {
     pub from_version_id: Option<String>,
 }
 
-/// Versión resumida para la comparación Antes/Ahora.
+/// Summarized version for the Before/Now comparison.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImpactVersionDto {
@@ -876,7 +932,7 @@ pub struct ImpactVersionDto {
     pub content: String,
 }
 
-/// Origen del cambio con su comparación de versiones.
+/// The change's origin with its version comparison.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImpactOriginDto {
@@ -885,10 +941,10 @@ pub struct ImpactOriginDto {
     pub current_version: ImpactVersionDto,
 }
 
-/// Una fuente fijada por la versión actual frente a la actual de su
-/// artefacto. Si la fuente ya no se resuelve (estado manipulado: el núcleo
-/// la trata como no vigente), `source_artifact_id` y `current_version_id`
-/// son nulos y `stale` es verdadero.
+/// A source pinned by the current version versus its artifact's
+/// current one. When the source no longer resolves (tampered state: the
+/// core treats it as stale), `source_artifact_id` and `current_version_id`
+/// are null and `stale` is true.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourcePinDto {
@@ -898,12 +954,12 @@ pub struct SourcePinDto {
     pub stale: bool,
 }
 
-/// Artefacto alcanzado por el cambio. `requires_review` es la vigencia
-/// negada que calcula el núcleo (nunca un flag guardado); `paths` son los
-/// caminos de artefactos que justifican el impacto; `approvals` son las de
-/// la versión actual y `approved_before` indica si alguna versión anterior
-/// se aprobó (ambos hechos conviven: aprobado históricamente y pendiente
-/// hoy no se contradicen).
+/// Artifact reached by the change. `requires_review` is the negated
+/// currency the core computes (never a stored flag); `paths` are the
+/// artifact paths justifying the impact; `approvals` are the
+/// current version's and `approved_before` tells whether some earlier
+/// version was approved (both facts coexist: historically approved and
+/// pending today never contradict each other).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImpactedDto {
@@ -918,7 +974,7 @@ pub struct ImpactedDto {
     pub paths: Vec<Vec<String>>,
 }
 
-/// Informe de impacto: origen con comparación y afectados ordenados.
+/// Impact report: origin with comparison and ordered affected items.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImpactReportDto {
@@ -927,8 +983,8 @@ pub struct ImpactReportDto {
     pub affected: Vec<ImpactedDto>,
 }
 
-/// Resumen consultivo antes de archivar o eliminar. `kind` es `module` o
-/// `requirement`. No muta nada; la ejecución revalida en Rust.
+/// Advisory summary before archiving or deleting. `kind` is `module` or
+/// `requirement`. Mutates nothing; execution revalidates in Rust.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchivePreviewInput {
@@ -937,8 +993,8 @@ pub struct ArchivePreviewInput {
     pub id: String,
 }
 
-/// Dependiente del objetivo, con su módulo para distinguir referencias
-/// internas de las que vienen de otros módulos.
+/// The target's dependent, with its module for telling apart
+/// internal references from other-module ones.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveDependentDto {
@@ -946,8 +1002,8 @@ pub struct ArchiveDependentDto {
     pub same_module: bool,
 }
 
-/// Baseline que incluye al objetivo. Histórica e inmutable: seguirá
-/// consultable y exportable aunque se archive.
+/// Baseline including the target. Historic and immutable: it stays
+/// queryable and exportable even when archived.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveBaselineDto {
@@ -955,10 +1011,10 @@ pub struct ArchiveBaselineDto {
     pub name: String,
 }
 
-/// Generación que menciona al objetivo. `log` es `requirement` o `design`;
-/// `role` es `owns` (módulo de la generación), `context` (versión en su
-/// contexto), `accepted` (la propuesta creó el artefacto) o `target`
-/// (actualización dirigida a él).
+/// Generation mentioning the target. `log` is `requirement` or `design`;
+/// `role` is `owns` (the generation's module), `context` (a version in
+/// its context), `accepted` (the proposal created the artifact) or
+/// `target` (an update aimed at it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveGenerationDto {
@@ -967,7 +1023,7 @@ pub struct ArchiveGenerationDto {
     pub role: String,
 }
 
-/// Bloqueo del borrado definitivo: código estable y mensaje para personas.
+/// Definitive-deletion blocker: stable code and message for people.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveBlockerDto {
@@ -975,8 +1031,9 @@ pub struct ArchiveBlockerDto {
     pub message: String,
 }
 
-/// Resumen de archivo/borrado: contenido (módulos), dependientes, baselines,
-/// generaciones, aprobaciones y si el borrado es seguro con sus bloqueos.
+/// Archive/delete summary: content (modules), dependents, baselines,
+/// generations, code links, approvals and whether deleting is safe
+/// with its blockers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchivePreviewDto {
@@ -985,15 +1042,31 @@ pub struct ArchivePreviewDto {
     pub id: String,
     pub archived: bool,
     pub contents: Vec<ArtifactDto>,
+    /// The project's modules. Only for `kind == "project"`; empty
+    /// otherwise (its `contents` already brings the artifacts).
+    pub modules: Vec<ModuleDto>,
     pub dependents: Vec<ArchiveDependentDto>,
     pub baselines: Vec<ArchiveBaselineDto>,
-    /// Entregas de trabajo que lo incluyen (forma `{id, name}`).
+    /// Work deliveries including it (`{id, name}` shape).
     pub deliveries: Vec<ArchiveBaselineDto>,
     pub generations: Vec<ArchiveGenerationDto>,
+    /// Code links (folders, files or symbols).
+    pub code_links: Vec<ArchiveCodeLinkDto>,
     pub approvals: usize,
     pub versions: usize,
     pub can_delete: bool,
     pub delete_blockers: Vec<ArchiveBlockerDto>,
+}
+
+/// Code link in the summary: destination and kind (manual/detected).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveCodeLinkDto {
+    pub id: String,
+    pub root_id: String,
+    pub rel: String,
+    pub symbol_name: Option<String>,
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1024,8 +1097,14 @@ pub struct DeleteRequirementInput {
     pub artifact_id: String,
 }
 
-/// Renombrar exige el nombre esperado: si cambió desde que se leyó, Rust
-/// rechaza con `stale_name` en vez de sobrescribir.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteProjectInput {
+    pub project_id: String,
+}
+
+/// Renaming requires the expected name: when it changed since read, Rust
+/// rejects with `stale_name` instead of overwriting.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenameProjectInput {
@@ -1043,8 +1122,8 @@ pub struct RenameModuleInput {
     pub name: String,
 }
 
-/// `expected_title` es `None` cuando el artefacto no tiene título propio.
-/// `by` firma el cambio en el historial de títulos.
+/// `expected_title` is `None` when the artifact has no own title.
+/// `by` signs the change in the title history.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenameArtifactInput {

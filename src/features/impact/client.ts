@@ -1,5 +1,5 @@
-// Adaptador Tauri para la consulta de impacto. Solo lectura: el análisis
-// vive en `ruth-core` y aquí únicamente se invoca el comando.
+// Tauri adapter for the impact query. Read-only: analysis lives in
+// `ruth-core` and only the command is invoked here.
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriEnvironment } from "../../lib/env";
 import { normalizeCoreError, type CoreApiError } from "../requirements/types";
@@ -9,7 +9,7 @@ function ensureTauri(): void {
   if (!isTauriEnvironment()) {
     throw {
       kind: "not_tauri",
-      message: "El mapa de impacto requiere ejecutar Ruth IDE como escritorio (Tauri).",
+      message: "The impact map requires running Ruth IDE as a desktop app (Tauri).",
     } satisfies CoreApiError;
   }
 }

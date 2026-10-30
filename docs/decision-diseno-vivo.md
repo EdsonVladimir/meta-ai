@@ -1,62 +1,62 @@
-# Decisión de producto: diseño vivo (autorizada)
+# Product decision: live design (authorized)
 
-Fecha: 2026-10-28. Sustituye a las instrucciones anteriores que exigían
-aprobación para generar, actualizar o exportar borradores. No elimina
-historial: las aprobaciones registradas siguen visibles como revisiones
-opcionales, y las baselines aprobadas conservan sus invariantes.
+Date: 2026-10-28. Supersedes the earlier instructions that required
+approval to generate, update or export drafts. It removes no
+history: recorded approvals stay visible as optional reviews, and
+approved baselines keep their invariants.
 
-## Lo que cambia
+## What changes
 
-- Guardar, generar y seguir diseñando no requieren aprobación.
-- Ctrl+S guarda una versión y actualiza las vistas derivadas.
-- La revisión (aprobar) es opcional e informativa.
-- El desarrollador conserva el control de sus ediciones.
-- La IA nunca sobrescribe silenciosamente contenido manual: sus
-  resultados van a propuestas separadas que la persona incorpora.
-- «Desactualizado» significa «requiere sincronización/revisión», no
-  prohibición de trabajar. No se actualizan dependencias en silencio
-  para aparentar coherencia.
+- Saving, generating and continuing to design need no approval.
+- Ctrl+S saves a version and refreshes the derived views.
+- Review (approve) is optional and informative.
+- The developer keeps control of their edits.
+- AI never silently overwrites manual content: its results go to
+  separate proposals that the person takes in.
+- "Stale" means "needs syncing/review", not a ban on working.
+  Dependencies are never silently updated to fake coherence.
 
-## Lo que NO cambia (bloqueos estructurales vigentes)
+## What does NOT change (current structural blocks)
 
-- Referencias inexistentes, contenido inválido, conflictos de
-  concurrencia (`expected_*`) y errores de disco siguen bloqueando.
-- La acción de revisar (aprobar) sigue exigiendo versión actual y
-  vigente, autoría humana y confirmación explícita: son las reglas de
-  la propia revisión, no una barrera para otros trabajos.
-- Las baselines aprobadas históricas son inmutables y reproducibles;
-  sus invariantes (versiones aprobadas, actuales, coherentes, cierre de
-  fuentes, nada archivado) no se relajan retroactivamente.
-- El borrado seguro sigue exigiendo cero aprobaciones, cero
-  dependientes, cero baselines y cero menciones en generaciones.
-- Procedencia, versiones exactas como fuentes y atomicidad
-  validar → persistir → publicar se conservan íntegras.
+- Missing references, invalid content, concurrency conflicts
+  (`expected_*`) and disk errors still block.
+- The review (approve) action still requires a current and valid
+  version, human authorship and explicit confirmation: those are
+  the review's own rules, not a barrier to other work.
+- Historical approved baselines are immutable and reproducible;
+  their invariants (approved, current and coherent versions,
+  source closure, nothing archived) are never relaxed
+  retroactively.
+- Safe deletion still requires zero approvals, zero dependents,
+  zero baselines and zero mentions in generations.
+- Provenance, exact versions as sources and validate → persist →
+  publish atomicity stay fully intact.
 
-## Reglas anteriores sustituidas (contexto histórico)
+## Superseded earlier rules (historical context)
 
-1. «Solo se puede aprobar la versión actual y vigente» — VIGENTE solo
-   como regla de la acción de revisar; SUSTITUIDA como requisito para
-   generar, guardar, actualizar o entregar borradores.
-2. «Generar diseños exige fuentes aprobadas» (`not_approved`) —
-   SUSTITUIDA: se genera desde versiones actuales guardadas.
-3. «Aceptar actualizaciones exige fuentes aprobadas» (`update_stale`
-   por falta de aprobación, `source_not_approved`) — SUSTITUIDA: basta
-   con fuentes existentes y vigentes; la revisión se informa.
-4. «No basta con volver a aprobar un derivado desactualizado» —
-   SUSTITUIDA como flujo obligatorio; la revisión sigue disponible
-   pero ya no bloquea la sincronización.
-5. «Una baseline debe incluir versiones aprobadas» — VIGENTE para
-   baselines aprobadas; la entrega de trabajo/borrador es un concepto
-   NUEVO y separado, sin ese requisito, y no debe llamarse coherente
-   ni verificada si tiene pendientes.
-6. «Estados pendiente de aprobación» — la etiqueta pasa a revisión
-   opcional; el estado calculado sigue existiendo como información.
+1. "Only the current and valid version may be approved" — CURRENT
+   only as a rule of the review action; SUPERSEDED as a requirement
+   to generate, save, update or deliver drafts.
+2. "Generating designs requires approved sources" (`not_approved`) —
+   SUPERSEDED: generation starts from current saved versions.
+3. "Accepting updates requires approved sources" (`update_stale`
+   for missing approval, `source_not_approved`) — SUPERSEDED:
+   existing and current sources are enough; review is reported.
+4. "Re-approving a stale derivative is not enough" — SUPERSEDED as
+   a mandatory flow; review stays available but no longer blocks
+   syncing.
+5. "A baseline must include approved versions" — CURRENT for
+   approved baselines; the work/draft delivery is a NEW and
+   separate concept, without that requirement, and must not be
+   called coherent or verified while it has pending items.
+6. "Pending approval" states — the label becomes optional review;
+   the computed status still exists as information.
 
-## Etapas
+## Stages
 
-- Etapa A (guardar sin barreras): quitar las barreras 2–4, Ctrl+S
-  central, derivados locales, automatización IA opcional por módulo
-  (desactivada por defecto), entrega de trabajo/borrador exportable.
-- Etapa B (mockups): artefacto Mockup versionado con editor propio,
-  generación de flujo/ER desde requisitos y mockups con los contratos
-  existentes, sin editor de estilos ni Figma.
+- Stage A (saving without barriers): remove barriers 2–4, central
+  Ctrl+S, local derivatives, opt-in AI automation per module (off
+  by default), exportable work/draft delivery.
+- Stage B (mockups): versioned Mockup artifact with its own
+  editor, flow/ER generation from requirements and mockups under
+  the existing contracts, with no style editor or Figma.

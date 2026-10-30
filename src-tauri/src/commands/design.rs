@@ -1,23 +1,23 @@
-//! Comandos de diseño vinculado a requisitos (hitos 6 y 8).
+//! Requirement-linked design commands (milestones 6 and 8).
 //!
-//! - `core_design_context`: requisitos del módulo con su revisión (sin red).
-//! - `core_generate_design`: genera con Meta y registra. La red ocurre SIN
-//!   bloqueos: foto del contexto guardado, suelta, red, y registro posterior.
-//!   Comparte la marca de una generación simultánea por módulo.
-//! - `core_update_context`: vista previa del snapshot de actualización (sin
-//!   red): objetivo, fuentes con sus dos versiones, cambio origen, caminos
-//!   y bloqueos.
-//! - `core_propose_design_update`: propone el ajuste de UN diseño pendiente
-//!   con Meta y lo registra en el mismo ciclo (misma tabla, misma
-//!   aceptación). La red ocurre sin bloqueos, como en la creación.
-//! - `core_design_diff`: diff estructural entre dos especificaciones (puro,
-//!   sin red ni dominio).
-//! - `core_save_design_version`: revisión manual del editor visual como
-//!   versión nueva con procedencia humana, con disposición en la misma
-//!   transacción. `core_design_layout`: lectura tolerante de la disposición.
+//! - `core_design_context`: the module's requirements with their revision (no network).
+//! - `core_generate_design`: generates with Meta and records. The network runs WITHOUT
+//!   locks: saved-context snapshot, release, network, then later recording.
+//!   Shares the one-inflight-generation-per-module mark.
+//! - `core_update_context`: update-snapshot preview (without
+//!   network): target, sources with both versions, source change, paths
+//!   and blocks.
+//! - `core_propose_design_update`: proposes the tweak of ONE pending design
+//!   with Meta and records it in the same cycle (same table, same
+//!   acceptance). The network runs without locks, as in creation.
+//! - `core_design_diff`: structural diff between two specs (pure,
+//!   no network or domain).
+//! - `core_save_design_version`: manual revision from the visual editor as
+//!   a new version with human provenance, with layout in the same
+//!   transaction. `core_design_layout`: tolerant layout read.
 //! - `core_list_designs`, `core_validate_design`, `core_accept_design`,
 //!   `core_discard_design`, `core_approve_design`, `core_list_artifacts`:
-//!   envoltorios finos sobre `ruth-api`, con bloqueos cortos.
+//!   thin wrappers over `ruth-api`, with short locks.
 
 use tauri::State;
 
@@ -164,7 +164,7 @@ pub async fn core_propose_design_update(
     state: State<'_, AppState>,
     input: UpdateContextInput,
 ) -> Result<DesignGenerationDto, ApiError> {
-    // Bloqueo corto: snapshot autoritativo (con bloqueos) y marca.
+    // Short lock: authoritative snapshot (with locks) and mark.
     let snapshot = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
@@ -174,7 +174,7 @@ pub async fn core_propose_design_update(
     };
     let _guard = InflightGuard::hold(&state.inflight, snapshot.module_id.clone());
 
-    // Sin bloqueos durante la red: ni SQLite ni el estado del proyecto.
+    // No locks during the network: neither SQLite nor the project state.
     let config = ruth_meta::MetaConfig::from_env().map_err(ApiError::from_meta)?;
     let prompt = ruth_meta::design::build_update_input(
         snapshot.kind,
@@ -192,9 +192,9 @@ pub async fn core_propose_design_update(
         .await
         .map_err(ApiError::from_meta)?;
 
-    // Bloqueo corto: registrar lo validado (o nada, si la red falló). Si el
-    // objetivo o una fuente se movió durante la red, la propuesta nace
-    // desactualizada (se calcula al servir) y su aceptación se bloquea.
+    // Short lock: record what validated (or nothing, if the network failed). If the
+    // target or a source moved during the network, the proposal is born
+    // stale (computed when served) and its acceptance is blocked.
     let mut guard = lock(&state.inner)?;
     let ready = ready(&mut guard)?;
     let (input_tokens, output_tokens, total_tokens) = match &result.usage {
@@ -235,7 +235,7 @@ pub async fn core_generate_design(
     input: GenerateDesignInput,
 ) -> Result<DesignGenerationDto, ApiError> {
     let kind = ruth_meta::design::DesignKind::parse(&input.kind).map_err(ApiError::from_meta)?;
-    // Bloqueo corto: foto del contexto aprobado y marca de generación.
+    // Short lock: approved-context snapshot and generation mark.
     let context = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
@@ -250,7 +250,7 @@ pub async fn core_generate_design(
     };
     let _guard = InflightGuard::hold(&state.inflight, input.module_id.clone());
 
-    // Sin bloqueos durante la red: ni SQLite ni el estado del proyecto.
+    // No locks during the network: neither SQLite nor the project state.
     let config = ruth_meta::MetaConfig::from_env().map_err(ApiError::from_meta)?;
     let prompt = ruth_meta::design::build_design_input(kind, &context);
     let allowed: Vec<String> = context.iter().map(|c| c.artifact_id.clone()).collect();
@@ -258,7 +258,7 @@ pub async fn core_generate_design(
         .await
         .map_err(ApiError::from_meta)?;
 
-    // Bloqueo corto: registrar lo validado (o nada, si la red falló).
+    // Short lock: record what validated (or nothing, if the network failed).
     let mut guard = lock(&state.inner)?;
     let ready = ready(&mut guard)?;
     let (input_tokens, output_tokens, total_tokens) = match &result.usage {

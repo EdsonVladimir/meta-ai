@@ -1,25 +1,24 @@
-// Estado del borrador de mockups, elevado al workspace para sobrevivir a
-// cambios de pestaña. Puro: sin React. Espeja el borrador visual de
-// diseños: la especificación viaja como texto canónico (comparable) y la
-// disposición aparte (posición y tamaño): mover o redimensionar nunca
-// ensucian la semántica.
+// Mockup draft state, lifted to the workspace to survive tab switches.
+// Pure: no React. Mirrors the visual design draft: the spec travels as
+// canonical text (comparable) and the layout separately (position and
+// size): moving or resizing never dirties semantics.
 //
-// dirty semántico = spec ≠ base → guardar crea versión nueva.
-// dirty de disposición = layout ≠ baseLayout → guardar solo dispone.
+// semantic dirty = spec ≠ base → saving creates a new version.
+// layout dirty = layout ≠ baseLayout → saving only lays out.
 import { createHistory, pushHistory, redoHistory, undoHistory, type SpecHistory } from "../design/editing/specHistory";
 import type { Layout } from "../design/editing/specModel";
 
 export interface MockupDraftState {
-  /** `${artifactId}:${versionId}` de la versión editada. */
+  /** `${artifactId}:${versionId}` of the edited version. */
   key: string;
-  /** Especificación canónica de la versión actual (punto de partida). */
+  /** Canonical spec of the current version (starting point). */
   base: string;
   history: SpecHistory;
   layout: Layout;
   baseLayout: Layout;
-  /** Artefactos citables (fuentes declaradas). */
+  /** Citable artifacts (declared sources). */
   allowed: string[];
-  /** Versiones exactas declaradas para el guardado. */
+  /** Exact versions declared for saving. */
   pins: string[];
 }
 
@@ -44,7 +43,7 @@ export type MockupDraftAction =
   | { type: "savedLayout"; layout: Layout }
   | { type: "reset" };
 
-/** Sin borrador (null) hasta que el editor lo inicia para una versión. */
+/** No draft (null) until the editor starts one for a version. */
 export function mockupDraftReducer(
   state: MockupDraftState | null,
   action: MockupDraftAction,
@@ -102,8 +101,8 @@ export function mockupDraftReducer(
     case "pins":
       return { ...state, pins: action.pins, allowed: action.allowed };
     case "saved":
-      // Solo limpia si nada cambió durante la petición: lo editado
-      // mientras tanto se conserva para resolverlo en el conflicto.
+      // Only clears when nothing changed during the request: edits made
+      // meanwhile are kept for conflict resolution.
       if (
         state.history.present !== action.present ||
         !sameMockupList(state.pins, action.pins) ||
@@ -123,8 +122,8 @@ function sameMockupList(left: string[], right: string[]): boolean {
 }
 
 /**
- * ¿Hay que confirmar antes de navegar? Borrador con cambios y el destino
- * abandona el mockup (otro mockup, módulo o proyecto).
+ * Must navigation confirm first? Draft with changes and the target
+ * leaves the mockup (another mockup, module or project).
  */
 export function needsMockupConfirm(
   state: MockupDraftState | null,
@@ -136,7 +135,7 @@ export function needsMockupConfirm(
   return currentMockupId !== targetMockupId;
 }
 
-/** ¿Cambió la semántica respecto a la versión guardada? */
+/** Did semantics change vs the saved version? */
 export function mockupSemanticDirty(state: MockupDraftState | null): boolean {
   return state !== null && state.history.present !== state.base;
 }
@@ -151,12 +150,12 @@ function layoutKey(layout: Layout): string {
     .join("|");
 }
 
-/** ¿Cambió solo la disposición? */
+/** Did only the layout change? */
 export function mockupLayoutDirty(state: MockupDraftState | null): boolean {
   return state !== null && layoutKey(state.layout) !== layoutKey(state.baseLayout);
 }
 
-/** Borrador actual como texto canónico (o null sin borrador). */
+/** Current draft as canonical text (or null without a draft). */
 export function mockupSpec(state: MockupDraftState | null): string | null {
   return state?.history.present ?? null;
 }

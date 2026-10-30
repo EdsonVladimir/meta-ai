@@ -1,9 +1,9 @@
-// Detalle de un mockup: valida en Rust la versión mostrada (estructural,
-// sin consumir API), resume pantallas y componentes, y ofrece el editor
-// visual en la segunda pestaña. Informa a la revisión si la versión
-// mostrada está validada: aprobar exige ese estado además de la
-// revalidación en Rust. Solo el montaje canónico edita (los demás y las
-// versiones históricas son lectura).
+// Mockup detail: validates the shown version in Rust (structural, no API
+// consumption), summarizes screens and components, and offers the visual
+// editor in the second tab. Informs the review whether the shown version
+// is validated: approval requires that state plus revalidation in Rust.
+// Only the canonical mount edits (the rest and historic versions are
+// read-only).
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   approvalsForVersion,
@@ -20,7 +20,7 @@ const MockupEditor = lazy(() =>
   import("./MockupEditor").then((module) => ({ default: module.MockupEditor })),
 );
 
-/** Cableado del borrador. Ausente = montaje de solo lectura. */
+/** Draft wiring. Missing = read-only mount. */
 export interface MockupDetailEditing {
   projectId: string;
   moduleId: string;
@@ -40,17 +40,20 @@ interface MockupDetailProps {
   onValidatedVersion: (versionId: string, ok: boolean) => void;
   editing?: MockupDetailEditing;
   /**
-   * Renombrar el mockup; ausente = sin acción (lectura, histórica o
-   * archivado). Recibe el detalle para derivar el objetivo.
+   * Rename the mockup; missing = no action (reading, historic or
+   * archived). Receives the detail to derive the target.
    */
   onRename?: () => void;
-  /** Mockup archivado: sin renombrar hasta restaurarlo. */
+  /** Archived mockup: no renaming until restored. */
   renameDisabled?: boolean;
   /**
-   * Abrir el diálogo «Generar diseño» con este mockup premarcado como
-   * fuente. Ausente = sin acción (lectura histórica). Nunca genera solo.
+   * Open the "Generate design" dialog with this mockup preselected as a
+   * source. Missing = no action (historic reading). Never generates alone.
    */
   onGenerateDesign?: () => void;
+  /** Screen requested from outside (tree). */
+  screenId?: string | null;
+  onScreenChange?: (id: string | null) => void;
 }
 
 export function MockupDetail({
@@ -62,6 +65,8 @@ export function MockupDetail({
   onRename,
   renameDisabled = false,
   onGenerateDesign,
+  screenId = null,
+  onScreenChange,
 }: MockupDetailProps) {
   const current = currentVersion(detail);
   const shown = viewing ?? current;
@@ -89,7 +94,7 @@ export function MockupDetail({
         spec = JSON.parse(shownContent) as unknown;
       } catch {
         if (cancelledRef.current) return;
-        setValidateError("El contenido guardado no es JSON válido.");
+        setValidateError("The saved content is not valid JSON.");
         return;
       }
       try {
@@ -114,7 +119,7 @@ export function MockupDetail({
   }, [artifactId]);
 
   return (
-    <section className="editor design-detail" aria-label="Detalle de mockup">
+    <section className="editor design-detail" aria-label="Mockup detail">
       <div className="editor-head">
         <h3>
           {title !== null && title !== "" ? (
@@ -126,14 +131,14 @@ export function MockupDetail({
           )}{" "}
           · mockup · v{shown?.number}{" "}
           {viewing !== null ? (
-            <span className="badge">lectura</span>
+            <span className="badge">read-only</span>
           ) : (
-            <span className="badge">actual</span>
+            <span className="badge">current</span>
           )}
         </h3>
         {viewing !== null && (
           <button type="button" className="secondary small" onClick={onBackToCurrent}>
-            Volver a la actual (v{current?.number})
+            Back to current (v{current?.number})
           </button>
         )}
         {onRename !== undefined && viewing === null && (
@@ -142,9 +147,9 @@ export function MockupDetail({
             className="secondary small"
             onClick={onRename}
             disabled={renameDisabled}
-            title={renameDisabled ? "Restaura el mockup antes de renombrarlo" : "Renombrar mockup"}
+            title={renameDisabled ? "Restore the mockup before renaming it" : "Rename mockup"}
           >
-            Renombrar
+            Rename
           </button>
         )}
         {onGenerateDesign !== undefined && viewing === null && (
@@ -152,9 +157,9 @@ export function MockupDetail({
             type="button"
             className="primary small"
             onClick={onGenerateDesign}
-            title="Proponer un flujo o ER con Meta usando este mockup como fuente"
+            title="Propose a flow or ER with Meta using this mockup as a source"
           >
-            Generar diseño
+            Generate design
           </button>
         )}
       </div>
@@ -162,33 +167,33 @@ export function MockupDetail({
       {shown && (
         <dl className="facts">
           <div>
-            <dt>Procedencia</dt>
+            <dt>Origin</dt>
             <dd>
               {shown.provenance.kind === "ai"
-                ? `propuesta de IA (${shown.provenance.by})`
+                ? `AI proposal (${shown.provenance.by})`
                 : shown.provenance.by}
             </dd>
           </div>
           <div>
-            <dt>Revisión</dt>
+            <dt>Review</dt>
             <dd>
               {approvals.length === 0
-                ? "Sin revisar"
+                ? "Unreviewed"
                 : approvals.map((a) => `${a.approvedBy} · ${a.at}`).join("; ")}
             </dd>
           </div>
           <div>
-            <dt>Fuentes</dt>
+            <dt>Sources</dt>
             <dd>
               {shown.sources.length === 0
-                ? "Sin dependencias"
+                ? "No dependencies"
                 : shown.sources.join(", ")}
             </dd>
           </div>
         </dl>
       )}
 
-      <div className="tabs" role="tablist" aria-label="Vistas del mockup">
+      <div className="tabs" role="tablist" aria-label="Mockup views">
         <button
           type="button"
           role="tab"
@@ -196,7 +201,7 @@ export function MockupDetail({
           className={tab === "summary" ? "active" : ""}
           onClick={() => setTab("summary")}
         >
-          Resumen
+          Summary
         </button>
         <button
           type="button"
@@ -205,7 +210,7 @@ export function MockupDetail({
           className={tab === "canvas" ? "active" : ""}
           onClick={() => setTab("canvas")}
         >
-          {editing !== undefined ? "Editor" : "Lienzo"}
+          {editing !== undefined ? "Editor" : "Canvas"}
         </button>
       </div>
 
@@ -219,26 +224,26 @@ export function MockupDetail({
           {validated !== null && (
             <dl className="facts">
               <div>
-                <dt>Título</dt>
+                <dt>Title</dt>
                 <dd>{validated.title}</dd>
               </div>
               <div>
-                <dt>Pantallas</dt>
+                <dt>Screens</dt>
                 <dd>{validated.screens}</dd>
               </div>
               <div>
-                <dt>Componentes</dt>
+                <dt>Components</dt>
                 <dd>{validated.components}</dd>
               </div>
             </dl>
           )}
           <p className="hint">
-            El resumen se valida en Rust al mostrarlo; dibuja y edita en la pestaña{" "}
-            {editing !== undefined ? "Editor" : "Lienzo"}.
+            The summary is validated in Rust when shown; draw and edit in the{" "}
+            {editing !== undefined ? "Editor" : "Canvas"} tab.
           </p>
         </>
       ) : shown !== undefined && current !== undefined ? (
-        <Suspense fallback={<p className="hint">Cargando editor…</p>}>
+        <Suspense fallback={<p className="hint">Loading editor…</p>}>
           <MockupEditor
             projectId={editing?.projectId ?? detail.artifact.projectId}
             moduleId={editing?.moduleId ?? detail.artifact.moduleId}
@@ -255,10 +260,12 @@ export function MockupDetail({
             onSaveLayoutOnly={editing?.onSaveLayoutOnly ?? (() => {})}
             onAdoptPins={editing?.onAdoptPins ?? (() => {})}
             onDeclareSources={editing?.onDeclareSources ?? (() => {})}
+            screenId={screenId}
+            onScreenChange={onScreenChange ?? (() => {})}
           />
         </Suspense>
       ) : (
-        <p className="hint">Sin versión que mostrar.</p>
+        <p className="hint">No version to show.</p>
       )}
     </section>
   );

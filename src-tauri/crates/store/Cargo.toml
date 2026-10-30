@@ -5,7 +5,9 @@ edition = "2021"
 
 [dependencies]
 ruth-core = { path = "../core" }
+ruth-code = { path = "../code" }
 rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
 
 [dev-dependencies]
 ruth-api = { path = "../api" }

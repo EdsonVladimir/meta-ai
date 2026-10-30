@@ -1,4 +1,4 @@
-//! Estado en memoria y casos de uso del núcleo.
+//! In-memory state and core use cases.
 
 use std::collections::{HashMap, HashSet};
 
@@ -9,9 +9,9 @@ use crate::domain::{
     Provenance, TitleChange, Validity, Version, VersionId, VersionView, WorkDelivery,
 };
 
-/// Instantánea completa del estado: la forma bulk que acepta
-/// [`Store::reconstitute`] tras validar. La construye el adaptador de
-/// persistencia leyendo la base; nunca se genera a mano.
+/// Complete state snapshot: the bulk form [`Store::reconstitute`]
+/// accepts after validating. The persistence adapter builds it by
+/// reading the database; it is never hand-made.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub projects: Vec<Project>,
@@ -24,9 +24,9 @@ pub struct Snapshot {
     pub deliveries: Vec<WorkDelivery>,
 }
 
-/// Referencias de un artefacto dentro del dominio: de qué depende su
-/// borrado seguro (dependientes de otros artefactos, baselines y entregas
-/// que lo incluyen, y aprobaciones de sus versiones). Orden determinista.
+/// References of an artifact inside the domain: what its safe deletion
+/// depends on (dependents of other artifacts, baselines and deliveries
+/// including it, and approvals of its versions). Deterministic order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactReferences {
     pub dependents: Vec<ArtifactId>,
@@ -36,8 +36,8 @@ pub struct ArtifactReferences {
     pub versions: usize,
 }
 
-/// Proyectos, módulos, artefactos, versiones, aprobaciones y baselines en
-/// memoria. Las consultas no mutan; los comandos validan todo antes de mutar.
+/// Projects, modules, artifacts, versions, approvals and baselines in
+/// memory. Queries do not mutate; commands validate everything before mutating.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Store {
     projects: HashMap<ProjectId, Project>,
@@ -48,9 +48,9 @@ pub struct Store {
     approvals: Vec<Approval>,
     baselines: HashMap<BaselineId, Baseline>,
     deliveries: HashMap<DeliveryId, WorkDelivery>,
-    /// Historial de títulos por artefacto, en orden de registro. Metadato
-    /// versionado separado del contenido: no crea versiones ni toca
-    /// aprobaciones, vigencia o impacto.
+    /// Title history per artifact, in registration order. Versioned
+    /// metadata separate from content: it creates no versions and touches
+    /// no approvals, freshness or impact.
     title_history: Vec<TitleChange>,
 }
 
@@ -59,7 +59,7 @@ impl Store {
         Self::default()
     }
 
-    // -- Creación --
+    // -- Creation --
 
     pub fn create_project(&mut self, id: ProjectId) -> Result<Project, CoreError> {
         if self.projects.contains_key(&id) {
@@ -124,12 +124,12 @@ impl Store {
         Ok(artifact)
     }
 
-    /// Crea una versión nueva sin modificar las anteriores. Las fuentes son
-    /// versiones exactas que deben existir, pertenecer al proyecto y no formar
-    /// ciclos. `expected_current` es la versión que quien llama cree actual:
-    /// `None` para la primera versión; si ya no coincide, se rechaza.
-    // Entradas explícitas a propósito: identificadores, contenido y autor
-    // llegan como parámetros para no leer nada fuera del dominio.
+    /// Creates a new version without modifying earlier ones. Sources are
+    /// exact versions that must exist, belong to the project and form no
+    /// cycles. `expected_current` is the version the caller believes current:
+    /// `None` for the first version; rejected on mismatch.
+    // Deliberately explicit inputs: identifiers, content and author
+    // arrive as parameters to read nothing outside the domain.
     #[allow(clippy::too_many_arguments)]
     pub fn create_version(
         &mut self,
@@ -150,8 +150,8 @@ impl Store {
         if self.versions.contains_key(&id) {
             return Err(CoreError::DuplicateVersion { version: id });
         }
-        // El ciclo se comprueba antes de la existencia: una autorreferencia es
-        // un ciclo aunque el identificador aún no exista como versión.
+        // The cycle checks before existence: a self-reference is a
+        // cycle even when the identifier is not a version yet.
         let views = self.project_views(project);
         if let Some(cycle) = dependency_cycle(&id, sources, &views) {
             return Err(CoreError::DependencyCycle { cycle });
@@ -165,7 +165,7 @@ impl Store {
             let source_artifact = self
                 .artifacts
                 .get(source_version.artifact())
-                .expect("toda versión apunta a un artefacto existente");
+                .expect("every version points at an existing artifact");
             if source_artifact.project() != project {
                 return Err(CoreError::CrossProjectDependency {
                     from: id.clone(),
@@ -201,9 +201,9 @@ impl Store {
         Ok(version)
     }
 
-    /// Acepta contenido de IA: lo incorpora como versión nueva con procedencia
-    /// de propuesta, sin aprobarla. Aceptar no equivale a aprobar.
-    // Mismas entradas explícitas que `create_version`, con agente en vez de autor.
+    /// Accepts AI content: incorporates it as a new version with proposal
+    /// provenance, without approving it. Accepting does not equal approving.
+    // Same explicit inputs as `create_version`, with an agent instead of an author.
     #[allow(clippy::too_many_arguments)]
     pub fn accept_ai_draft(
         &mut self,
@@ -226,9 +226,9 @@ impl Store {
         )
     }
 
-    /// Aprueba la versión actual de un artefacto mediante una acción humana
-    /// explícita. Solo se puede aprobar la versión actual y vigente; la
-    /// aprobación apunta a esa versión exacta y no se hereda.
+    /// Approves an artifact current version through an explicit human
+    /// action. Only the current, fresh version can be approved; the
+    /// approval points at that exact version and is not inherited.
     pub fn approve(
         &mut self,
         project: &ProjectId,
@@ -258,9 +258,9 @@ impl Store {
                 });
             }
         };
-        let current = actual.expect("acaba de comprobarse que existe actual");
-        // Una fuente archivada bloquea antes que la vigencia: restaurar la
-        // fuente puede bastar sin crear otra versión.
+        let current = actual.expect("current was just proven to exist");
+        // An archived source blocks before freshness: restoring the
+        // source may suffice without creating another version.
         if let Some(source) = self.first_archived_source(&current) {
             return Err(CoreError::ArchivedSource {
                 version: current.clone(),
@@ -289,8 +289,8 @@ impl Store {
         Ok(approval)
     }
 
-    /// Construye una baseline coherente: entradas aprobadas, actuales y
-    /// cerradas bajo fuentes. La baseline queda inmutable y reproducible.
+    /// Builds a coherent baseline: approved, current entries closed
+    /// under sources. The baseline stays immutable and reproducible.
     pub fn create_baseline(
         &mut self,
         project: &ProjectId,
@@ -332,7 +332,7 @@ impl Store {
             }
             let current = self
                 .current_id(artifact)
-                .expect("el artefacto tiene versiones");
+                .expect("the artifact has versions");
             if &current != version {
                 return Err(CoreError::VersionNotCurrent {
                     version: version.clone(),
@@ -347,14 +347,14 @@ impl Store {
             let entry_artifact = self
                 .artifacts
                 .get(artifact)
-                .expect("artefacto validado arriba");
+                .expect("artifact validated above");
             if self.effectively_archived(entry_artifact) {
                 return Err(CoreError::ArchivedArtifact {
                     artifact: artifact.clone(),
                 });
             }
-            // Las fuentes fijadas tampoco pueden estar archivadas: la entrega
-            // debe poder aprobarse y reproducirse con fuentes activas.
+            // Pinned sources cannot be archived either: the delivery
+            // must stay approvable and reproducible with active sources.
             if let Some(source) = self.first_archived_source(version) {
                 return Err(CoreError::ArchivedSource {
                     version: version.clone(),
@@ -364,7 +364,7 @@ impl Store {
         }
         let pinned: HashSet<&VersionId> = entries.iter().map(|(_, v)| v).collect();
         for (_, version) in entries {
-            let version_ref = self.versions.get(version).expect("validada arriba");
+            let version_ref = self.versions.get(version).expect("validated above");
             for source in version_ref.sources() {
                 if !pinned.contains(source) {
                     return Err(CoreError::BaselineMissingSource {
@@ -374,15 +374,15 @@ impl Store {
                 }
             }
         }
-        // Títulos vigentes fijados con la baseline: la histórica conserva
-        // sus nombres originales aunque se renombre después.
+        // Current titles pinned with the baseline: the historic one keeps
+        // its original names even after later renames.
         let titles: HashMap<ArtifactId, Option<String>> = entries
             .iter()
             .map(|(artifact, _)| {
                 let title = self
                     .artifacts
                     .get(artifact)
-                    .expect("artefacto validado arriba")
+                    .expect("artifact validated above")
                     .title()
                     .map(str::to_string);
                 (artifact.clone(), title)
@@ -393,15 +393,15 @@ impl Store {
         Ok(baseline)
     }
 
-    /// Crea una entrega de trabajo/borrador: foto inmutable de versiones
-    /// guardadas SIN exigir aprobación (diseño vivo). Exige proyecto,
-    /// entradas no vacías sin duplicar artefacto, versiones existentes que
-    /// pertenezcan al artefacto y sean las actuales, y nada archivado
-    /// (entradas ni fuentes fijadas). A diferencia de la baseline, NO exige
-    /// cierre bajo fuentes: las fuentes de cada entrada se identifican al
-    /// leer (incluidas las desactualizadas), sin prohibir la entrega.
-    /// Por eso una entrega con pendientes nunca debe llamarse coherente.
-    /// No relaja `create_baseline`: son invariantes separadas.
+    /// Creates a work/draft delivery: an immutable snapshot of saved
+    /// versions WITHOUT requiring approval (living design). Requires a
+    /// project, non-empty entries without artifact duplicates, existing
+    /// versions that belong to the artifact and are current, and nothing
+    /// archived (neither entries nor pinned sources). Unlike the baseline,
+    /// it does NOT require closure under sources: each entry sources are
+    /// identified on read (stale ones included), without forbidding the
+    /// delivery. Hence a delivery with pendings must never be called coherent.
+    /// It does not relax `create_baseline`: separate invariants.
     #[allow(clippy::too_many_arguments)]
     pub fn create_work_delivery(
         &mut self,
@@ -450,7 +450,7 @@ impl Store {
             }
             let current = self
                 .current_id(artifact)
-                .expect("el artefacto tiene versiones");
+                .expect("the artifact has versions");
             if &current != version {
                 return Err(CoreError::VersionNotCurrent {
                     version: version.clone(),
@@ -460,7 +460,7 @@ impl Store {
             let entry_artifact = self
                 .artifacts
                 .get(artifact)
-                .expect("artefacto validado arriba");
+                .expect("artifact validated above");
             if self.effectively_archived(entry_artifact) {
                 return Err(CoreError::ArchivedArtifact {
                     artifact: artifact.clone(),
@@ -473,15 +473,15 @@ impl Store {
                 });
             }
         }
-        // Sin cierre bajo fuentes (ver el doc): las fuentes se listan al
-        // leer y las desactualizadas se señalan, sin bloquear la entrega.
+        // No closure under sources (see the docs): sources list on
+        // read and stale ones are flagged, without blocking the delivery.
         let titles: HashMap<ArtifactId, Option<String>> = entries
             .iter()
             .map(|(artifact, _)| {
                 let title = self
                     .artifacts
                     .get(artifact)
-                    .expect("artefacto validado arriba")
+                    .expect("artifact validated above")
                     .title()
                     .map(str::to_string);
                 (artifact.clone(), title)
@@ -501,10 +501,10 @@ impl Store {
         Ok(delivery)
     }
 
-    /// Archiva o restaura un módulo. El contenido se oculta por contexto sin
-    /// cambiar el estado individual de cada artefacto: restaurar el módulo no
-    /// restaura lo archivado individualmente. Siempre permitido: archivar no
-    /// rompe dependencias (sus consecuencias aparecen al aprobar o entregar).
+    /// Archives or restores a module. Content hides by context without
+    /// changing each artifact individual state: restoring the module does
+    /// not restore individually archived items. Always allowed: archiving
+    /// breaks no dependencies (its consequences show on approve or deliver).
     pub fn set_module_archived(
         &mut self,
         project: &ProjectId,
@@ -512,13 +512,13 @@ impl Store {
         archived: bool,
     ) -> Result<Module, CoreError> {
         self.module_in_project(project, module)?;
-        let module_ref = self.modules.get_mut(module).expect("validado arriba");
+        let module_ref = self.modules.get_mut(module).expect("validated above");
         module_ref.set_archived(archived);
         Ok(module_ref.clone())
     }
 
-    /// Archiva o restaura un artefacto individualmente. Siempre permitido;
-    /// conserva versiones, aprobaciones, dependencias y baselines.
+    /// Archives or restores an artifact individually. Always allowed;
+    /// keeps versions, approvals, dependencies and baselines.
     pub fn set_artifact_archived(
         &mut self,
         project: &ProjectId,
@@ -526,15 +526,15 @@ impl Store {
         archived: bool,
     ) -> Result<Artifact, CoreError> {
         self.artifact_in_project(project, artifact)?;
-        let artifact_ref = self.artifacts.get_mut(artifact).expect("validado arriba");
+        let artifact_ref = self.artifacts.get_mut(artifact).expect("validated above");
         artifact_ref.set_archived(archived);
         Ok(artifact_ref.clone())
     }
 
-    /// Elimina un artefacto con sus versiones. Solo cuando es seguro: sin
-    /// aprobaciones, sin dependientes de otros artefactos y sin presencia en
-    /// baselines. Sin cascadas: si algo lo referencia, se rechaza indicando
-    /// qué; archivar es la alternativa.
+    /// Deletes an artifact with its versions. Only when safe: without
+    /// approvals, without other-artifact dependents and without baseline
+    /// presence. No cascades: when something references it, the rejection
+    /// says what; archiving is the alternative.
     pub fn delete_artifact(
         &mut self,
         project: &ProjectId,
@@ -576,9 +576,9 @@ impl Store {
         Ok(artifact.clone())
     }
 
-    /// Renombra un proyecto. Solo cambia el nombre organizativo: la
-    /// identidad y todo lo que cuelga de ella quedan intactos. Exige el
-    /// nombre esperado para no sobrescribir un cambio concurrente.
+    /// Renames a project. Only the organizational name changes: identity
+    /// and everything hanging from it stay intact. Requires the expected
+    /// name to avoid overwriting a concurrent change.
     pub fn rename_project(
         &mut self,
         project: &ProjectId,
@@ -596,13 +596,13 @@ impl Store {
                 actual: Some(known.name().to_string()),
             });
         }
-        let project_ref = self.projects.get_mut(project).expect("validado arriba");
+        let project_ref = self.projects.get_mut(project).expect("validated above");
         project_ref.set_name(name);
         Ok(project_ref.clone())
     }
 
-    /// Renombra un módulo. Como en proyectos, más la pertenencia y el
-    /// bloqueo sobre módulos archivados (restaurar primero).
+    /// Renames a module. Like projects, plus membership and the block
+    /// on archived modules (restore first).
     pub fn rename_module(
         &mut self,
         project: &ProjectId,
@@ -622,15 +622,15 @@ impl Store {
                 actual: Some(known.name().to_string()),
             });
         }
-        let module_ref = self.modules.get_mut(module).expect("validado arriba");
+        let module_ref = self.modules.get_mut(module).expect("validated above");
         module_ref.set_name(name);
         Ok(module_ref.clone())
     }
 
-    /// Cambia el título de un requisito o diagrama y lo registra en el
-    /// historial. Metadato separado del contenido: no crea versiones, no
-    /// toca fuentes ni aprobaciones y no genera impacto. Bloqueado sobre
-    /// archivados efectivos; exige el título esperado (`None` = sin título).
+    /// Changes a requirement or diagram title and records it in the
+    /// history. Metadata separate from content: it creates no versions,
+    /// touches no sources or approvals and generates no impact. Blocked on
+    /// effectively archived items; requires the expected title (`None` = untitled).
     pub fn rename_artifact(
         &mut self,
         project: &ProjectId,
@@ -652,15 +652,15 @@ impl Store {
                 actual: known.title().map(str::to_string),
             });
         }
-        let artifact_ref = self.artifacts.get_mut(artifact).expect("validado arriba");
+        let artifact_ref = self.artifacts.get_mut(artifact).expect("validated above");
         artifact_ref.set_title(Some(title.clone()));
         self.title_history
             .push(TitleChange::new(artifact.clone(), title, by.clone(), at));
         Ok(artifact_ref.clone())
     }
 
-    /// Elimina un módulo vacío. Con contenido (activo o archivado) se rechaza:
-    /// hay que vaciarlo primero, artefacto a artefacto.
+    /// Deletes an empty module. With content (active or archived) it is
+    /// rejected: empty it first, artifact by artifact.
     pub fn delete_module(
         &mut self,
         project: &ProjectId,
@@ -682,7 +682,30 @@ impl Store {
         Ok(module.clone())
     }
 
-    // -- Consultas (no mutan) --
+    /// Deletes an empty project. With modules (active or archived) it is
+    /// rejected: delete them first, one by one. No cascades.
+    pub fn delete_project(&mut self, project: &ProjectId) -> Result<ProjectId, CoreError> {
+        let Some(_) = self.projects.get(project) else {
+            return Err(CoreError::ProjectNotFound {
+                project: project.clone(),
+            });
+        };
+        let contents: Vec<ModuleId> = self
+            .modules_of(project)
+            .iter()
+            .map(|m| (*m).id().clone())
+            .collect();
+        if !contents.is_empty() {
+            return Err(CoreError::DeleteProjectNotEmpty {
+                project: project.clone(),
+                modules: contents,
+            });
+        }
+        self.projects.remove(project);
+        Ok(project.clone())
+    }
+
+    // -- Queries (no mutation) --
 
     pub fn project(&self, id: &ProjectId) -> Option<&Project> {
         self.projects.get(id)
@@ -704,7 +727,7 @@ impl Store {
         self.baselines.get(id)
     }
 
-    /// Todas las baselines, ordenadas por identificador.
+    /// Every baseline, ordered by identifier.
     pub fn baselines(&self) -> Vec<&Baseline> {
         let mut all: Vec<&Baseline> = self.baselines.values().collect();
         all.sort_by(|a, b| a.id().as_str().cmp(b.id().as_str()));
@@ -715,18 +738,18 @@ impl Store {
         self.deliveries.get(id)
     }
 
-    /// Todas las entregas de trabajo, ordenadas por identificador.
+    /// Every work delivery, ordered by identifier.
     pub fn deliveries(&self) -> Vec<&WorkDelivery> {
         let mut all: Vec<&WorkDelivery> = self.deliveries.values().collect();
         all.sort_by(|a, b| a.id().as_str().cmp(b.id().as_str()));
         all
     }
 
-    /// Reconstituye un estado completo a partir de entidades ya construidas,
-    /// validando las mismas invariantes que los casos de uso. Es la única vía
-    /// para cargar datos persistidos: nunca reconstruye generando nuevos
-    /// identificadores, números o fechas. Las baselines históricas no están
-    /// obligadas a seguir siendo actuales, pero sí cerradas y aprobadas.
+    /// Reconstitutes a complete state from already-built entities,
+    /// validating the same invariants as the use cases. The only way to
+    /// load persisted data: it never rebuilds by generating new
+    /// identifiers, numbers or dates. Historic baselines need not stay
+    /// current, but must stay closed and approved.
     pub fn reconstitute(snapshot: Snapshot) -> Result<Self, CoreError> {
         let mut store = Store::new();
         for project in snapshot.projects {
@@ -797,12 +820,12 @@ impl Store {
                 let source_project = store
                     .artifacts
                     .get(source_version.artifact())
-                    .expect("artefacto validado arriba")
+                    .expect("artifact validated above")
                     .project();
                 let own_project = store
                     .artifacts
                     .get(version.artifact())
-                    .expect("artefacto validado arriba")
+                    .expect("artifact validated above")
                     .project();
                 if source_project != own_project {
                     return Err(CoreError::CrossProjectDependency {
@@ -815,7 +838,7 @@ impl Store {
                 return Err(CoreError::DuplicateSource { source: dup });
             }
         }
-        // Números consecutivos desde 1 por artefacto.
+        // Consecutive numbers from 1 per artifact.
         let mut by_artifact: HashMap<&ArtifactId, Vec<&Version>> = HashMap::new();
         for version in store.versions.values() {
             by_artifact
@@ -833,7 +856,7 @@ impl Store {
                 }
             }
         }
-        // Aciclicidad global.
+        // Global acyclicity.
         let views: Vec<VersionView> = store
             .versions
             .values()
@@ -924,7 +947,7 @@ impl Store {
             }
             let pinned: HashSet<&VersionId> = baseline.entries().iter().map(|(_, v)| v).collect();
             for (_, version) in baseline.entries() {
-                let version_ref = store.versions.get(version).expect("validada arriba");
+                let version_ref = store.versions.get(version).expect("validated above");
                 for source in version_ref.sources() {
                     if !pinned.contains(source) {
                         return Err(CoreError::BaselineMissingSource {
@@ -936,9 +959,9 @@ impl Store {
             }
             store.baselines.insert(baseline.id().clone(), baseline);
         }
-        // Entregas de trabajo: estructurales, sin exigir aprobación (igual
-        // que al crearlas). Las baselines históricas conservan su propia
-        // validación de arriba, sin relajar.
+        // Work deliveries: structural, without requiring approval (same
+        // as on creation). Historic baselines keep their own validation
+        // from above, unrelaxed.
         for delivery in snapshot.deliveries {
             if store.deliveries.contains_key(delivery.id()) {
                 return Err(CoreError::DuplicateDelivery {
@@ -994,7 +1017,7 @@ impl Store {
             }
             store.deliveries.insert(delivery.id().clone(), delivery);
         }
-        // Orden de historial = números consecutivos.
+        // History order = consecutive numbers.
         let mut ordered: Vec<&Version> = store.versions.values().collect();
         ordered.sort_by(|a, b| {
             a.artifact()
@@ -1012,14 +1035,14 @@ impl Store {
         Ok(store)
     }
 
-    /// Todos los proyectos, ordenados por identificador.
+    /// Every project, ordered by identifier.
     pub fn projects(&self) -> Vec<&Project> {
         let mut all: Vec<&Project> = self.projects.values().collect();
         all.sort_by(|a, b| a.id().as_str().cmp(b.id().as_str()));
         all
     }
 
-    /// Módulos de un proyecto, ordenados por identificador.
+    /// A project modules, ordered by identifier.
     pub fn modules_of(&self, project: &ProjectId) -> Vec<&Module> {
         let mut all: Vec<&Module> = self
             .modules
@@ -1030,7 +1053,7 @@ impl Store {
         all
     }
 
-    /// Artefactos de un módulo, ordenados por identificador.
+    /// A module artifacts, ordered by identifier.
     pub fn artifacts_of(&self, project: &ProjectId, module: &ModuleId) -> Vec<&Artifact> {
         let mut all: Vec<&Artifact> = self
             .artifacts
@@ -1041,7 +1064,7 @@ impl Store {
         all
     }
 
-    /// Versiones de un artefacto en orden de creación (la actual es la última).
+    /// An artifact versions in creation order (the current one is last).
     pub fn versions_of(&self, artifact: &ArtifactId) -> Vec<&Version> {
         self.by_artifact
             .get(artifact)
@@ -1060,7 +1083,7 @@ impl Store {
             .collect()
     }
 
-    /// Todas las aprobaciones en orden de registro.
+    /// Every approval in registration order.
     pub fn approvals(&self) -> Vec<&Approval> {
         self.approvals.iter().collect()
     }
@@ -1069,14 +1092,14 @@ impl Store {
         self.approvals.iter().any(|a| a.version() == version)
     }
 
-    /// Todo el historial de títulos, en orden de registro. Lo usan la
-    /// persistencia y las instantáneas; para un artefacto, `title_history`.
+    /// The whole title history, in registration order. Used by
+    /// persistence and snapshots; for one artifact, `title_history`.
     pub fn title_changes(&self) -> &[TitleChange] {
         &self.title_history
     }
 
-    /// Historial de títulos de un artefacto, en orden de registro. Vacío
-    /// cuando nunca se tituló. No muta.
+    /// An artifact title history, in registration order. Empty when
+    /// never titled. No mutation.
     pub fn title_history(&self, artifact: &ArtifactId) -> Vec<&TitleChange> {
         self.title_history
             .iter()
@@ -1084,8 +1107,8 @@ impl Store {
             .collect()
     }
 
-    /// ¿Está el artefacto archivado, por sí mismo o por su módulo? Se calcula
-    /// en cada consulta: ningún flag redundante puede contradecirlo.
+    /// Is the artifact archived, by itself or via its module? Computed on
+    /// every query: no redundant flag can contradict it.
     pub fn is_effectively_archived(&self, artifact: &ArtifactId) -> bool {
         self.artifacts
             .get(artifact)
@@ -1093,7 +1116,7 @@ impl Store {
             .unwrap_or(false)
     }
 
-    /// Referencias de un artefacto para decidir archivado y borrado. No muta.
+    /// An artifact references to decide archiving and deletion. No mutation.
     pub fn artifact_references(
         &self,
         project: &ProjectId,
@@ -1144,7 +1167,7 @@ impl Store {
         })
     }
 
-    /// Vigencia calculada de una versión a partir de sus fuentes exactas.
+    /// Computed version freshness from its exact sources.
     pub fn validity(&self, version: &VersionId) -> Result<Validity, CoreError> {
         let Some(version_ref) = self.versions.get(version) else {
             return Err(CoreError::VersionNotFound {
@@ -1160,12 +1183,12 @@ impl Store {
         let view = views
             .iter()
             .find(|v| &v.id == version)
-            .expect("la versión está en su proyecto");
+            .expect("the version is in its project");
         Ok(Validity::of(view, &views))
     }
 
-    /// Artefactos del proyecto cuya versión actual no está vigente y por tanto
-    /// requieren revisión.
+    /// Project artifacts whose current version is not fresh and therefore
+    /// require review.
     pub fn requires_review(&self, project: &ProjectId) -> Result<Vec<ArtifactId>, CoreError> {
         if !self.projects.contains_key(project) {
             return Err(CoreError::ProjectNotFound {
@@ -1182,8 +1205,8 @@ impl Store {
         Ok(stale)
     }
 
-    /// Informe de impacto transitivo desde unos artefactos cambiados, con los
-    /// caminos que justifican cada impacto. No modifica nada.
+    /// Transitive impact report from changed artifacts, with the paths
+    /// justifying each impact. It modifies nothing.
     pub fn impact(
         &self,
         project: &ProjectId,
@@ -1200,7 +1223,7 @@ impl Store {
         Ok(compute_impact(changed, &self.project_views(project)))
     }
 
-    // -- Ayudas internas --
+    // -- Internal helpers --
 
     fn effectively_archived(&self, artifact: &Artifact) -> bool {
         if artifact.archived() {
@@ -1212,7 +1235,7 @@ impl Store {
             .unwrap_or(false)
     }
 
-    /// Primera fuente efectivamente archivada de una versión, si la hay.
+    /// First effectively archived source of a version, if any.
     fn first_archived_source(&self, version: &VersionId) -> Option<VersionId> {
         let version_ref = self.versions.get(version)?;
         for source in version_ref.sources() {

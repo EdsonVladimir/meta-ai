@@ -1,18 +1,23 @@
-//! Comandos organizados por funcionalidad.
+//! Commands organized by feature.
 //!
-//! Los comandos del núcleo comparten el acceso al estado: un bloqueo corto,
-//! comprobación de disponibilidad y llamada a `ruth-api`. Los comandos de
-//! Meta no tocan este estado; el de generación lo suelta durante la red.
+//! Core commands share state access: a short lock,
+//! an availability check and a `ruth-api` call. Meta
+//! commands never touch this state; the generation one releases it during network.
 
 pub mod archive;
 pub mod baseline;
+pub mod code;
+pub mod code_links;
+pub mod codegen;
 pub mod delivery;
 pub mod design;
 pub mod impact;
 pub mod meta;
 pub mod mockup;
 pub mod proposals;
+pub mod recent;
 pub mod rename;
+pub mod replicate;
 pub mod requirements;
 pub mod terminal;
 
@@ -23,9 +28,9 @@ use ruth_api::ApiError;
 
 use crate::state::AppStateInner;
 
-/// Vista mutable del estado listo: dominio, ids, base, registros de
-/// generaciones y disposiciones visuales. Vive solo dentro del bloqueo que
-/// la entrega.
+/// Mutable ready-state view: domain, ids, database, generation
+/// and visual-layout logs. Lives only inside the lock that
+/// delivers it.
 pub(crate) struct Ready<'a> {
     pub store: &'a mut ruth_core::application::Store,
     pub ids: &'a mut ruth_api::IdGen,
@@ -34,6 +39,12 @@ pub(crate) struct Ready<'a> {
     pub designs: &'a mut ruth_store::DesignLog,
     pub baseline_meta: &'a mut ruth_store::BaselineMetaLog,
     pub layouts: &'a mut ruth_store::LayoutLog,
+    pub mockups: &'a mut ruth_store::MockupLog,
+    pub code_roots: &'a mut ruth_store::CodeRootLog,
+    pub code_links: &'a mut ruth_store::CodeLinkLog,
+    pub snapshots: &'a mut ruth_store::SnapshotLog,
+    pub codegen: &'a mut ruth_store::CodeGenLog,
+    pub recents: &'a mut ruth_store::RecentLog,
 }
 
 pub(crate) fn ready<'a>(
@@ -48,38 +59,44 @@ pub(crate) fn ready<'a>(
             designs: &mut ready.designs,
             baseline_meta: &mut ready.baseline_meta,
             layouts: &mut ready.layouts,
+            mockups: &mut ready.mockups,
+            code_roots: &mut ready.code_roots,
+            code_links: &mut ready.code_links,
+            snapshots: &mut ready.snapshots,
+            codegen: &mut ready.codegen,
+            recents: &mut ready.recents,
         }),
         AppStateInner::Unavailable { message } => Err(ApiError::storage_message(message.clone())),
     }
 }
 
 fn lock_failed(what: &str) -> ApiError {
-    ApiError::internal(format!("{what} bloqueado"))
+    ApiError::internal(format!("{what} locked"))
 }
 
 pub(crate) fn lock(
     mutex: &Mutex<AppStateInner>,
 ) -> Result<MutexGuard<'_, AppStateInner>, ApiError> {
-    mutex.lock().map_err(|_| lock_failed("estado del núcleo"))
+    mutex.lock().map_err(|_| lock_failed("core state"))
 }
 
-/// Marca un módulo con generación en curso. Compartida por requisitos y
-/// diseño: una sola generación simultánea por módulo, sea del tipo que sea.
+/// Marks a module with a generation in flight. Shared by requirements
+/// and design: a single simultaneous generation per module, of any kind.
 pub(crate) fn mark_inflight(set: &Mutex<HashSet<String>>, module: &str) -> Result<(), ApiError> {
     let mut flying = set
         .lock()
-        .map_err(|_| ApiError::internal("generaciones en curso bloqueado"))?;
+        .map_err(|_| ApiError::internal("in-flight generations locked"))?;
     if !flying.insert(module.to_string()) {
         return Err(ApiError::coded(
             "generation_busy",
-            "Ya hay una generación en curso para este módulo. Espera a que termine.",
+            "A generation is already running for this module. Wait for it to finish.",
         ));
     }
     Ok(())
 }
 
-/// Libera la marca al terminar, por cualquier camino (éxito, error o
-/// cancelación): el `Drop` corre aunque la red falle.
+/// Releases the mark on finish, by any path (success, error or
+/// cancellation): `Drop` runs even when the network fails.
 pub(crate) struct InflightGuard<'a> {
     set: &'a Mutex<HashSet<String>>,
     module: String,

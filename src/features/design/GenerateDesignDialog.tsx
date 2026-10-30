@@ -1,6 +1,6 @@
-// Diálogo «Generar diseño»: el selector completo de fuentes y todas las
-// capacidades de generación y revisión del panel, con requisitos
-// preseleccionados desde el contexto. Nunca genera solo.
+// "Generate design" dialog: the full source picker and all the panel
+// generation and review capabilities, with preselected requirements
+// from context. It never generates alone.
 import { useEffect } from "react";
 import type { ArtifactDto, RequirementDetail } from "../requirements/types";
 import { DesignPanel } from "./DesignPanel";
@@ -9,9 +9,9 @@ interface GenerateDesignDialogProps {
   projectId: string;
   moduleId: string;
   artifacts: ArtifactDto[];
-  /** Requisitos premarcados (null = todos los guardados). */
+  /** Preselected requirements (null = every saved one). */
   preselected: string[] | null;
-  /** Mockups premarcados (null = ninguno; se eligen a mano). */
+  /** Preselected mockups (null = none; picked by hand). */
   preselectedMockups?: string[] | null;
   onClose: () => void;
   onAccepted: (detail: RequirementDetail) => void;
@@ -42,13 +42,13 @@ export function GenerateDesignDialog({
         className="modal wide"
         role="dialog"
         aria-modal="true"
-        aria-label="Generar diseño"
+        aria-label="Generate design"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
-          <h3>Generar diseño</h3>
+          <h3>Generate design</h3>
           <button type="button" className="secondary small" onClick={onClose} autoFocus>
-            Cerrar
+            Close
           </button>
         </div>
         <DesignPanel

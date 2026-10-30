@@ -1,7 +1,7 @@
-// Una sesión en pantalla: instancia xterm.js con ajuste al contenedor.
-// La salida entra por `handle.write` (eventos Tauri → xterm, sin React);
-// las teclas salen por `onInput` hacia el PTY. Al ocultarse conserva el
-// scrollback (acotado a 2000 líneas); al desmontarse se destruye.
+// One session on screen: an xterm.js instance fitted to its container.
+// Output enters through `handle.write` (Tauri events → xterm, no React);
+// keys leave through `onInput` toward the PTY. Hiding keeps the
+// scrollback (capped at 2000 lines); unmounting destroys it.
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -15,9 +15,9 @@ export interface TerminalHandle {
 
 interface TerminalViewProps {
   id: string;
-  /** Recibe foco y se marca como actual (una sola). */
+  /** Receives focus and is marked current (only one). */
   active: boolean;
-  /** Visible en pantalla (en paralelo, todas; en pestañas, la activa). */
+  /** On screen (side by side: all of them; tabs: the active one). */
   shown: boolean;
   visible: boolean;
   register: (id: string, handle: TerminalHandle | null) => void;
@@ -26,7 +26,7 @@ interface TerminalViewProps {
   onError: (message: string) => void;
 }
 
-/** Espera tras el último cambio de tamaño antes de avisar al PTY. */
+/** Wait after the last resize before notifying the PTY. */
 const RESIZE_DEBOUNCE_MS = 150;
 
 function cssVar(name: string, fallback: string): string {
@@ -62,7 +62,7 @@ export function TerminalView({ id, active, shown, visible, register, onInput, on
 
     let lastSent = "";
     const sendSize = () => {
-      // Solo la vista mostrada mide: una oculta mide cero y ensuciaría el PTY.
+      // Only the shown view measures: a hidden one measures zero and would dirty the PTY.
       if (!shownRef.current.shown || !shownRef.current.visible) return;
       try {
         fit.fit();
@@ -88,16 +88,16 @@ export function TerminalView({ id, active, shown, visible, register, onInput, on
     };
 
     const onData = term.onData((data) => callbacksRef.current.onInput(id, data));
-    // Copiar/pegar explícitos. Ctrl+C sigue siendo del PTY (SIGINT) y no
-    // se intercepta; Ctrl+S llega al PTY (XOFF) y el Guardar del editor lo
-    // ignora dentro del panel (ver workspace).
+    // Explicit copy/paste. Ctrl+C still belongs to the PTY (SIGINT) and
+    // is not intercepted; Ctrl+S reaches the PTY (XOFF) and the editor's
+    // Save ignores it inside the panel (see workspace).
     term.attachCustomKeyEventHandler((event) => {
       const mod = event.ctrlKey || event.metaKey;
       if (mod && event.shiftKey && event.key.toLowerCase() === "c") {
         const selected = term.getSelection();
         if (selected !== "") {
           navigator.clipboard?.writeText(selected).catch(() => {
-            callbacksRef.current.onError("No se pudo copiar: el portapapeles no está disponible.");
+            callbacksRef.current.onError("Could not copy: the clipboard is not available.");
           });
         }
         return false;
@@ -109,7 +109,7 @@ export function TerminalView({ id, active, shown, visible, register, onInput, on
             if (text !== "") callbacksRef.current.onInput(id, text);
           })
           .catch(() => {
-            callbacksRef.current.onError("No se pudo pegar: permite el acceso al portapapeles.");
+            callbacksRef.current.onError("Could not paste: allow clipboard access.");
           });
         return false;
       }
@@ -120,15 +120,15 @@ export function TerminalView({ id, active, shown, visible, register, onInput, on
             if (text !== "") callbacksRef.current.onInput(id, text);
           })
           .catch(() => {
-            callbacksRef.current.onError("No se pudo pegar: permite el acceso al portapapeles.");
+            callbacksRef.current.onError("Could not paste: allow clipboard access.");
           });
         return false;
       }
       return true;
     });
 
-    // El observador también cubre mostrar/ocultar: al reaparecer el tamaño
-    // cambia y se re-mide (con antirrebote) sin código extra.
+    // The observer also covers show/hide: on reappearing the size
+    // changes and is re-measured (debounced) with no extra code.
     const observer = new ResizeObserver(scheduleSize);
     observer.observe(container);
     sendSize();
@@ -154,7 +154,7 @@ export function TerminalView({ id, active, shown, visible, register, onInput, on
       className="terminal-view"
       hidden={!shown}
       role="application"
-      aria-label={`Terminal ${id}${active ? ", activa" : ""}. Ctrl C interrumpe, Ctrl Mayús C copia, Ctrl Mayús V pega.`}
+      aria-label={`Terminal ${id}${active ? ", active" : ""}. Ctrl C interrupts, Ctrl Shift C copies, Ctrl Shift V pastes.`}
     />
   );
 }

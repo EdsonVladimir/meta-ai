@@ -1,5 +1,5 @@
-// Adaptador Tauri para generación asistida. La red y la clave viven solo en
-// Rust; aquí solo se invocan comandos y se normalizan errores.
+// Tauri adapter for assisted generation. Network and key live in Rust
+// only; here commands are invoked and errors normalized.
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriEnvironment } from "../../lib/env";
 import { normalizeCoreError, type CoreApiError } from "../requirements/types";
@@ -14,7 +14,7 @@ function ensureTauri(): void {
   if (!isTauriEnvironment()) {
     throw {
       kind: "not_tauri",
-      message: "La generación asistida requiere ejecutar Ruth IDE como escritorio (Tauri).",
+      message: "Assisted generation requires running Ruth IDE as a desktop app (Tauri).",
     } satisfies CoreApiError;
   }
 }

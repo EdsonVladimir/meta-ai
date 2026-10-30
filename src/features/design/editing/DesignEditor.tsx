@@ -1,11 +1,10 @@
-// Editor visual de diseños (carga diferida con el lienzo). Compone
-// navegación del lienzo, inspectores, validación orientativa y guardado.
-//
-// El borrador vive elevado en el workspace (sobrevive a cambios de
-// pestaña); aquí solo se interpreta y se despachan acciones. La versión
-// histórica o el montaje no canónico muestran el lienzo en lectura.
-// Guardar crea una versión nueva con procedencia humana; reordenar sin
-// cambiar semántica solo guarda disposición (sin versiones vacías).
+// Visual design editor (lazy loaded with the canvas). Composes canvas
+// navigation, inspectors, orientative validation and saving. The draft
+// lives lifted in the workspace (survives tab switches); here it is only
+// interpreted and actions are dispatched. A historic version or a
+// non-canonical mount shows the canvas read-only. Saving creates a new
+// version with human provenance; reordering without semantic changes
+// only saves layout (no empty versions).
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import { designLayout, updateContext } from "../client";
@@ -61,15 +60,15 @@ export interface VisualSaveState {
 interface DesignEditorProps {
   projectId: string;
   artifactId: string;
-  /** Versión mostrada (puede ser histórica). */
+  /** Shown version (may be historic). */
   versionId: string;
   currentVersionId: string;
-  /** Contenido JSON de la versión mostrada. */
+  /** JSON content of the shown version. */
   content: string;
-  /** Fuentes de la versión ACTUAL (fijación inicial al guardar). */
+  /** CURRENT version sources (initial pins on save). */
   currentPins: string[];
   kind: DesignKind;
-  /** Solo el montaje canónico edita; el resto es lectura. */
+  /** Only the canonical mount edits; the rest is read-only. */
   editable: boolean;
   draft: VisualDraftState | null;
   onAction: (action: VisualDraftAction) => void;
@@ -95,10 +94,10 @@ function parseDraft(kind: DesignKind, text: string): Parsed | null {
 }
 
 const FLOW_ADD: { kind: FlowNodeKind; label: string }[] = [
-  { kind: "start", label: "+ Inicio" },
-  { kind: "step", label: "+ Paso" },
-  { kind: "decision", label: "+ Decisión" },
-  { kind: "end", label: "+ Fin" },
+  { kind: "start", label: "+ Start" },
+  { kind: "step", label: "+ Step" },
+  { kind: "decision", label: "+ Decision" },
+  { kind: "end", label: "+ End" },
 ];
 
 export function DesignEditor({
@@ -127,7 +126,7 @@ export function DesignEditor({
   const [selection, setSelection] = useState<EditorSelection>(null);
   const [author, setAuthor] = useState("");
 
-  // Disposición guardada (todas las vistas) con guarda de obsolescencia.
+  // Saved layout (all views) with an obsolescence guard.
   useEffect(() => {
     let fresh = true;
     setSavedLayout(null);
@@ -140,7 +139,7 @@ export function DesignEditor({
       } catch (raw) {
         if (!fresh) return;
         setSavedLayout({});
-        setLayoutNote(`Sin disposición guardada (${normalizeCoreError(raw).message}).`);
+        setLayoutNote(`No saved layout (${normalizeCoreError(raw).message}).`);
       }
     })();
     return () => {
@@ -148,7 +147,7 @@ export function DesignEditor({
     };
   }, [artifactId, versionId]);
 
-  // Contexto de fuentes para citas y frescura (solo al editar la actual).
+  // Source context for citations and freshness (editing the current one only).
   useEffect(() => {
     if (!editing) return;
     let fresh = true;
@@ -167,22 +166,23 @@ export function DesignEditor({
     };
   }, [editing, projectId, artifactId]);
 
-  // La selección no sobrevive a un cambio de versión mostrada.
+  // Selection does not survive a shown-version change.
   useEffect(() => {
     setSelection(null);
   }, [key]);
 
   const activeDraft = editing && draft?.key === key ? draft : null;
-  // Borrador separado: la versión actual avanzó bajo el borrador (conflicto
-  // ya recargado). No se reinicia solo: la persona decide.
+  // Detached draft: the current version moved under the draft
+  // (already-reloaded conflict). It does not reset itself: the person
+  // decides.
   const detachedDraft =
     editing && draft !== null && draft.key !== key && draft.key.startsWith(`${artifactId}:`)
       ? draft
       : null;
 
-  // Inicio único del borrador cuando hay disposición y contexto (o fallo
-  // declarado: las citas derivan de las fijaciones como alternativa).
-  // Un borrador separado no se pisa: espera decisión explícita.
+  // Single draft start once there is layout and context (or a declared
+  // failure: citations derive from pins as a fallback). A detached
+  // draft is not overwritten: it awaits an explicit decision.
   useEffect(() => {
     if (!editing || savedLayout === null || (ctx === null && !ctxFailed)) return;
     if (draft !== null && (draft.key === key || draft.key.startsWith(`${artifactId}:`))) return;
@@ -290,7 +290,7 @@ export function DesignEditor({
       onAction({ type: "layout", layout: remapLayout(activeDraft.layout, renamed[0], renamed[1]) });
     }
     onAction({ type: "apply", spec: text });
-    // Cambiar la lista de conexiones invalida la selección de arista.
+    // Changing the connection list invalidates the edge selection.
     setSelection((current) => {
       if (current?.kind !== "edge") return current;
       const before =
@@ -340,7 +340,7 @@ export function DesignEditor({
   if (parsed === null) {
     return (
       <p className="error" role="alert">
-        El contenido guardado no es un diseño {kind === "flow" ? "de flujo" : "ER"} válido.
+        The saved content is not a valid {kind === "flow" ? "flow" : "ER"} design.
       </p>
     );
   }
@@ -349,10 +349,10 @@ export function DesignEditor({
     return (
       <div className="editor-readonly">
         {!isCurrent && (
-          <p className="hint">Versión histórica en lectura: vuelve a la actual para editarla.</p>
+          <p className="hint">Historic version, read-only: go back to the current one to edit it.</p>
         )}
         {layoutNote !== null && <p className="hint">{layoutNote}</p>}
-        <Suspense fallback={<p className="hint">Cargando lienzo…</p>}>
+        <Suspense fallback={<p className="hint">Loading canvas…</p>}>
           <DesignCanvas
             nodes={nodes}
             edges={edges}
@@ -362,7 +362,7 @@ export function DesignEditor({
             onSelectEdge={(id) =>
               setSelection(id === null ? null : { kind: "edge", index: Number(id.slice(1)) })
             }
-            ariaLabel={`Lienzo de ${artifactId} en lectura`}
+            ariaLabel={`Read-only canvas of ${artifactId}`}
           />
         </Suspense>
       </div>
@@ -373,14 +373,14 @@ export function DesignEditor({
     return (
       <div className="draft-conflict" role="alert">
         <p>
-          El diseño avanzó a otra versión mientras editabas. Tu borrador se conserva íntegro
-          abajo; para seguir, descártalo y edita la versión actual.
+          The design moved to another version while you edited. Your draft is kept intact
+          below; to continue, discard it and edit the current version.
         </p>
         <button type="button" className="secondary small" onClick={() => onAction({ type: "reset" })}>
-          Descartar borrador y editar la actual
+          Discard draft and edit the current one
         </button>
         <details>
-          <summary>JSON del borrador conservado (solo lectura)</summary>
+          <summary>Kept draft JSON (read-only)</summary>
           <pre className="readonly-box">{detachedDraft.history.present}</pre>
         </details>
       </div>
@@ -388,7 +388,7 @@ export function DesignEditor({
   }
 
   if (activeDraft === null || validation === null) {
-    return <p className="hint">Preparando el editor…</p>;
+    return <p className="hint">Preparing the editor…</p>;
   }
 
   const semanticDirty = visualSemanticDirty(activeDraft);
@@ -409,33 +409,33 @@ export function DesignEditor({
 
   return (
     <div className="design-editor" onKeyDown={handleKeyDown}>
-      <div className="editor-toolbar" role="toolbar" aria-label="Edición del diseño">
+      <div className="editor-toolbar" role="toolbar" aria-label="Design editing">
         <div className="editor-toolbar-group">
           <button
             type="button"
             className="secondary small"
             disabled={!canUndo(activeDraft.history)}
             onClick={() => onAction({ type: "undo" })}
-            aria-label="Deshacer cambio"
-            title="Deshacer (Ctrl+Z)"
+            aria-label="Undo change"
+            title="Undo (Ctrl+Z)"
           >
-            Deshacer
+            Undo
           </button>
           <button
             type="button"
             className="secondary small"
             disabled={!canRedo(activeDraft.history)}
             onClick={() => onAction({ type: "redo" })}
-            aria-label="Rehacer cambio"
-            title="Rehacer (Ctrl+Y)"
+            aria-label="Redo change"
+            title="Redo (Ctrl+Y)"
           >
-            Rehacer
+            Redo
           </button>
           <span
             className={`draft-badge${semanticDirty ? " dirty" : layoutDirty ? " layout" : ""}`}
             aria-live="polite"
           >
-            {semanticDirty ? "Cambios sin guardar" : layoutDirty ? "Solo disposición" : "Sin cambios"}
+            {semanticDirty ? "Unsaved changes" : layoutDirty ? "Layout only" : "No changes"}
           </span>
         </div>
         <div className="editor-toolbar-group">
@@ -464,21 +464,21 @@ export function DesignEditor({
                   setSelection({ kind: "node", id: name });
                 }}
               >
-                + Entidad
+                + Entity
               </button>
             )}
         </div>
         <div className="editor-toolbar-group">
           <label className="inline-field">
-            <span>Autoría</span>
+            <span>Authorship</span>
             <input
               type="text"
               value={author}
               onChange={(e) => setAuthor(e.target.value)}
-              placeholder="Tu nombre"
+              placeholder="Your name"
               autoComplete="off"
               disabled={save.busy || (!semanticDirty && !layoutDirty)}
-              aria-label="Autoría de la revisión"
+              aria-label="Review authorship"
             />
           </label>
           {semanticDirty ? (
@@ -489,11 +489,11 @@ export function DesignEditor({
               onClick={() => onSave(author.trim())}
               title={
                 validation.errors.length > 0
-                  ? "Corrige los errores antes de guardar"
-                  : "Guardar como versión nueva"
+                  ? "Fix the errors before saving"
+                  : "Save as a new version"
               }
             >
-              {save.busy ? "Guardando…" : "Guardar versión"}
+              {save.busy ? "Saving…" : "Save version"}
             </button>
           ) : (
             <button
@@ -501,9 +501,9 @@ export function DesignEditor({
               className="secondary small"
               disabled={save.busy || !layoutDirty}
               onClick={onSaveLayoutOnly}
-              title="Guardar solo la disposición, sin versión nueva"
+              title="Save only the layout, no new version"
             >
-              {save.busy ? "Guardando…" : "Guardar disposición"}
+              {save.busy ? "Saving…" : "Save layout"}
             </button>
           )}
         </div>
@@ -511,12 +511,12 @@ export function DesignEditor({
 
       {save.error !== null && (
         <p className="error" role="alert">
-          {save.error} El borrador se conserva.
+          {save.error} The draft is kept.
         </p>
       )}
 
       <div className="editor-main">
-        <Suspense fallback={<p className="hint">Cargando lienzo…</p>}>
+        <Suspense fallback={<p className="hint">Loading canvas…</p>}>
           <DesignCanvas
             nodes={nodes}
             edges={edges}
@@ -528,25 +528,25 @@ export function DesignEditor({
             onSelectEdge={(id) =>
               setSelection(id === null ? null : { kind: "edge", index: Number(id.slice(1)) })
             }
-            ariaLabel={`Editor de ${artifactId}`}
+            ariaLabel={`Editor of ${artifactId}`}
           />
         </Suspense>
 
         <aside className="editor-inspector" aria-label="Inspector">
           {stalePins.length > 0 && (
-            <section className="stale-panel" aria-label="Fuentes obsoletas">
-              <h4>Fuentes obsoletas</h4>
+            <section className="stale-panel" aria-label="Stale sources">
+              <h4>Stale sources</h4>
               <p className="hint">
-                Estas fuentes cambiaron desde la versión fijada. Guardar con las fijadas se
-                bloqueará: adopta explícitamente las actuales (no implica que el contenido sea
-                correcto; sigue requiriendo tu revisión).
+                These sources changed since the pinned version. Saving with the pinned ones
+                will be blocked: explicitly adopt the current ones (this does not imply the
+                content is correct; it still requires your review).
               </p>
               <ul>
                 {stalePins.map((source) => (
                   <li key={source.artifactId}>
                     <code>{source.artifactId}</code>: {source.usedVersionId} →{" "}
                     {source.currentVersionId}
-                    {!source.currentApproved && " (actual sin revisar)"}
+                    {!source.currentApproved && " (current unreviewed)"}
                   </li>
                 ))}
               </ul>
@@ -560,31 +560,31 @@ export function DesignEditor({
                   onAdoptPins(activeDraft.pins.map((pin) => currents.get(pin) ?? pin));
                 }}
               >
-                Usar versiones actuales
+                Use current versions
               </button>
             </section>
           )}
           {unapprovedCurrents.length > 0 && (
             <p className="hint">
-              La versión actual de {unapprovedCurrents.map((s) => s.artifactId).join(", ")} está sin
-              revisar (informativo): puedes guardar y seguir diseñando.
+              The current version of {unapprovedCurrents.map((s) => s.artifactId).join(", ")} is
+              unreviewed (informational): you can save and keep designing.
             </p>
           )}
 
           {validation.errors.length > 0 && (
-            <section aria-label="Errores del borrador">
-              <h4>Errores ({validation.errors.length})</h4>
+            <section aria-label="Draft errors">
+              <h4>Errors ({validation.errors.length})</h4>
               <ul className="issue-list errors">
                 {validation.errors.map((issue, i) => (
                   <li key={i}>{issue.message}</li>
                 ))}
               </ul>
-              <p className="hint">La validación autoritativa es Rust al guardar.</p>
+              <p className="hint">The authoritative validation is Rust on save.</p>
             </section>
           )}
           {validation.warnings.length > 0 && (
-            <section aria-label="Avisos del borrador">
-              <h4>Avisos ({validation.warnings.length})</h4>
+            <section aria-label="Draft warnings">
+              <h4>Warnings ({validation.warnings.length})</h4>
               <ul className="issue-list warnings">
                 {validation.warnings.map((issue, i) => (
                   <li key={i}>{issue.message}</li>
@@ -623,7 +623,7 @@ export function DesignEditor({
           />
 
           <details>
-            <summary>JSON del borrador (solo lectura)</summary>
+            <summary>Draft JSON (read-only)</summary>
             <pre className="readonly-box">{draftText}</pre>
           </details>
         </aside>

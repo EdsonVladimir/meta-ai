@@ -10,7 +10,7 @@
       "content": [
         {
           "type": "output_text",
-          "text": "{\"title\": \"Ventas y stock\", \"entities\": [{\"name\": \"VENTA\", \"attributes\": [{\"name\": \"id\", \"key\": true}, {\"name\": \"estado\", \"key\": false}], \"requirements\": [\"req-3\"]}, {\"name\": \"LINEA\", \"attributes\": [{\"name\": \"id\", \"key\": true}, {\"name\": \"cantidad\", \"key\": false}], \"requirements\": []}], \"relations\": [{\"from\": \"VENTA\", \"to\": \"LINEA\", \"label\": \"contiene\", \"from_card\": \"1\", \"to_card\": \"N\"}], \"explanation\": \"Una venta agrupa líneas con cantidades.\", \"questions\": []}"
+          "text": "{\"title\": \"Sales and stock\", \"entities\": [{\"name\": \"SALE\", \"attributes\": [{\"name\": \"id\", \"key\": true}, {\"name\": \"status\", \"key\": false}], \"requirements\": [\"req-3\"]}, {\"name\": \"LINE\", \"attributes\": [{\"name\": \"id\", \"key\": true}, {\"name\": \"quantity\", \"key\": false}], \"requirements\": []}], \"relations\": [{\"from\": \"SALE\", \"to\": \"LINE\", \"label\": \"contains\", \"from_card\": \"1\", \"to_card\": \"N\"}], \"explanation\": \"A sale groups lines with quantities.\", \"questions\": []}"
         }
       ]
     }

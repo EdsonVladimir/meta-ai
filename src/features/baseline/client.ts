@@ -1,6 +1,6 @@
-// Adaptador Tauri para baselines y exportación. Las reglas viven en Rust;
-// aquí solo se invocan comandos y se abre el diálogo nativo de guardado.
-// El frontend nunca escribe en disco directamente.
+// Tauri adapter for baselines and export. Rules live in Rust; here only
+// commands are invoked and the native save dialog opens. The frontend
+// never writes to disk directly.
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { isTauriEnvironment } from "../../lib/env";
@@ -23,13 +23,13 @@ function ensureTauri(action: string): void {
   if (!isTauriEnvironment()) {
     throw {
       kind: "not_tauri",
-      message: `${action} requiere ejecutar Ruth IDE como escritorio (Tauri).`,
+      message: `${action} requires running Ruth IDE as a desktop app (Tauri).`,
     } satisfies CoreApiError;
   }
 }
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  ensureTauri("Las baselines");
+  ensureTauri("Baselines");
   try {
     return await invoke<T>(command, args);
   } catch (raw) {
@@ -125,14 +125,15 @@ export function exportDeliverySave(input: {
 }
 
 /**
- * Diálogo nativo para elegir dónde guardar el ZIP. Devuelve la ruta o
- * `null` si el usuario cancela (cancelar no escribe ni informa éxito).
+ * Native dialog to pick where to save the ZIP. Returns the path, or
+ * `null` when the user cancels (cancelling writes nothing and reports
+ * no success).
  */
 export async function pickZipDestination(defaultName: string): Promise<string | null> {
-  ensureTauri("Guardar el ZIP");
+  ensureTauri("Saving the ZIP");
   try {
     const chosen = await save({
-      title: "Guardar entrega como ZIP",
+      title: "Save delivery as ZIP",
       defaultPath: defaultName,
       filters: [{ name: "ZIP", extensions: ["zip"] }],
     });

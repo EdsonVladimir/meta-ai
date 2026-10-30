@@ -1,12 +1,12 @@
-// Coordinación pura de la vista de diseño: fusionar instantáneas de Rust,
-// decidir acciones, editar JSON y retener el último render válido.
-// Sin React ni Tauri: se prueba con vitest sin DOM.
+// Pure design-view coordination: merging Rust snapshots, deciding
+// actions, editing JSON and retaining the last valid render. No React
+// or Tauri: tested with vitest without DOM.
 import type { ArtifactDto, RequirementDetail } from "../requirements/types";
 import type { DesignGenerationDto, DesignKind, DesignProposalDto } from "./types";
 
 /**
- * Inserta o sustituye una generación manteniendo el orden de registro.
- * Las respuestas tardías se filtran antes (por módulo); aquí solo se fusiona.
+ * Inserts or replaces a generation keeping registration order. Late
+ * responses are filtered earlier (per module); only merging happens here.
  */
 export function upsertDesignGeneration(
   generations: DesignGenerationDto[],
@@ -17,7 +17,7 @@ export function upsertDesignGeneration(
   return generations.map((g, i) => (i === index ? incoming : g));
 }
 
-/** ¿Acepta acciones esta propuesta? Solo pendiente, fresca y sin trabajo. */
+/** Does this proposal accept actions? Only pending, fresh and idle. */
 export function isDesignActionable(
   proposal: DesignProposalDto,
   stale: boolean,
@@ -26,12 +26,12 @@ export function isDesignActionable(
   return proposal.state === "pending" && !stale && !busy;
 }
 
-/** Artefactos de diseño del tipo pedido, candidatos a versionar al aceptar. */
+/** Design artifacts of the requested kind, candidates for versioning on accept. */
 export function designTargets(artifacts: ArtifactDto[], kind: DesignKind): ArtifactDto[] {
   return artifacts.filter((a) => a.kind === kind);
 }
 
-/** ¿La generación propone actualizar un diseño existente (no crear)? */
+/** Does the generation propose updating an existing design (not creating)? */
 export function isUpdateGeneration(generation: DesignGenerationDto): boolean {
   return (
     generation.targetArtifactId !== null &&
@@ -40,7 +40,7 @@ export function isUpdateGeneration(generation: DesignGenerationDto): boolean {
   );
 }
 
-/** Propuestas guardadas que actualizan un artefacto, en orden de registro. */
+/** Saved proposals updating an artifact, in registration order. */
 export function updateGenerationsFor(
   generations: DesignGenerationDto[],
   artifactId: string,
@@ -48,7 +48,7 @@ export function updateGenerationsFor(
   return generations.filter((g) => g.targetArtifactId === artifactId);
 }
 
-/** La más reciente pendiente y fresca, si la hay (para retomar). */
+/** The most recent pending and fresh one, if any (to resume). */
 export function resumableUpdate(
   generations: DesignGenerationDto[],
   artifactId: string,
@@ -59,7 +59,7 @@ export function resumableUpdate(
   return candidates.length === 0 ? null : candidates[candidates.length - 1];
 }
 
-/** Texto canónico para el editor JSON (2 espacios, estable). */
+/** Canonical text for the JSON editor (2 spaces, stable). */
 export function prettySpec(spec: unknown): string {
   return JSON.stringify(spec, null, 2);
 }
@@ -68,20 +68,20 @@ export type ParsedSpec =
   | { ok: true; value: unknown }
   | { ok: false; error: string };
 
-/** Parseo local previo: si el JSON no parsea, ni se llama a Rust. */
+/** Prior local parse: when the JSON does not parse, Rust is not even called. */
 export function parseSpecText(text: string): ParsedSpec {
   try {
     return { ok: true, value: JSON.parse(text) as unknown };
   } catch (raw) {
-    const detail = raw instanceof Error ? raw.message : "JSON inválido";
-    return { ok: false, error: `El texto no es JSON válido: ${detail}` };
+    const detail = raw instanceof Error ? raw.message : "invalid JSON";
+    return { ok: false, error: `The text is not valid JSON: ${detail}` };
   }
 }
 
-/** Estado de un diagrama: conserva el último SVG válido ante errores. */
+/** Diagram state: keeps the last valid SVG on errors. */
 export interface RenderState {
   status: "idle" | "loading" | "ready" | "error";
-  /** Último SVG válido (se mantiene al fallar un render posterior). */
+  /** Last valid SVG (kept when a later render fails). */
   svg: string | null;
   error: string | null;
 }
@@ -101,7 +101,7 @@ export function renderReducer(state: RenderState, action: RenderAction): RenderS
     case "ok":
       return { status: "ready", svg: action.svg, error: null };
     case "fail":
-      // El último render válido se conserva; solo se anota el error.
+      // The last valid render is kept; only the error is recorded.
       return { ...state, status: "error", error: action.error };
     case "reset":
       return EMPTY_RENDER;
@@ -109,22 +109,22 @@ export function renderReducer(state: RenderState, action: RenderAction): RenderS
 }
 
 /**
- * Vínculo diseño→requisito derivado de fuentes exactas registradas (versión
- * usada frente a versión actual). Nunca por coincidencias de texto.
+ * Design→requirement link derived from registered exact sources (used
+ * version vs current version). Never from text matches.
  */
 export interface DesignLink {
   artifactId: string;
   kind: string;
   link: "direct" | "transitive";
-  /** Usa alguna versión que ya no es la actual del requisito. */
+  /** Uses some version that is no longer the requirement current one. */
   stale: boolean;
-  /** Versiones del requisito fijadas por el diseño. */
+  /** Requirement versions pinned by the design. */
   pinnedVersions: string[];
-  /** Diseños intermedios (solo transitivos). */
+  /** Intermediate designs (transitive only). */
   via: string[];
 }
 
-/** Fuente fijada con su vigencia calculada. */
+/** Pinned source with its calculated freshness. */
 export interface SourcePin {
   versionId: string;
   artifactId: string | null;
@@ -133,11 +133,11 @@ export interface SourcePin {
 }
 
 export interface LinkIndex {
-  /** Diseños vinculados por requisito (directos y transitivos). */
+  /** Designs linked per requirement (direct and transitive). */
   byRequirement: Record<string, DesignLink[]>;
-  /** Vigencia por diseño según sus fuentes fijadas. */
+  /** Freshness per design from its pinned sources. */
   freshness: Record<string, { stale: boolean; pins: SourcePin[] }>;
-  /** Versión actual por artefacto conocido. */
+  /** Current version per known artifact. */
   currentByArtifact: Record<string, string>;
 }
 
@@ -146,9 +146,9 @@ function currentOf(detail: RequirementDetail) {
 }
 
 /**
- * Construye el índice de vínculos desde detalles autoritativos. Todo sale
- * de `sources` exactas y versiones actuales; un ID de versión desconocido
- * (ajeno al conjunto cargado) no genera vínculos ni marcas.
+ * Builds the link index from authoritative details. Everything comes
+ * from exact `sources` and current versions; an unknown version ID
+ * (foreign to the loaded set) generates no links or marks.
  */
 export function buildLinkIndex(details: RequirementDetail[]): LinkIndex {
   const versionToArtifact = new Map<string, string>();
@@ -161,7 +161,7 @@ export function buildLinkIndex(details: RequirementDetail[]): LinkIndex {
   }
   const designs = details.filter((d) => d.artifact.kind !== "requirement");
   const pinsByDesign = new Map<string, SourcePin[]>();
-  // Aristas diseño→diseño y diseño→requisito desde la versión actual.
+  // Design→design and design→requirement edges from the current version.
   const designToDesign = new Map<string, string[]>();
   const directReqs = new Map<string, Map<string, string[]>>();
   for (const design of designs) {
@@ -191,7 +191,7 @@ export function buildLinkIndex(details: RequirementDetail[]): LinkIndex {
   for (const [id, pins] of pinsByDesign) {
     freshness[id] = { stale: pins.some((p) => p.stale), pins };
   }
-  // Transitivos: diseños alcanzables vía otros diseños (BFS por requisito).
+  // Transitives: designs reachable via other designs (BFS per requirement).
   const byRequirement: Record<string, DesignLink[]> = {};
   const requirementIds = details
     .filter((d) => d.artifact.kind === "requirement")
@@ -199,7 +199,7 @@ export function buildLinkIndex(details: RequirementDetail[]): LinkIndex {
   for (const reqId of requirementIds) {
     const links: DesignLink[] = [];
     const seen = new Set<string>();
-    // Directos primero, en orden de artefacto.
+    // Directs first, in artifact order.
     for (const design of designs) {
       const pinned = directReqs.get(design.artifact.id)?.get(reqId);
       if (!pinned) continue;
@@ -213,7 +213,7 @@ export function buildLinkIndex(details: RequirementDetail[]): LinkIndex {
         via: [],
       });
     }
-    // Transitivos por BFS sobre diseño→diseño, sin repetir ni ciclos.
+    // Transitives via BFS over design→design, no repeats or cycles.
     const queue: Array<{ id: string; path: string[] }> = links.map((l) => ({
       id: l.artifactId,
       path: [l.artifactId],
@@ -236,7 +236,7 @@ export function buildLinkIndex(details: RequirementDetail[]): LinkIndex {
         queue.push({ id: designId, path: [...head.path, designId] });
       }
     }
-    // Orden estable: directos por id, luego transitivos por id.
+    // Stable order: directs by id, then transitives by id.
     transitives.sort((a, b) => (a.artifactId < b.artifactId ? -1 : 1));
     byRequirement[reqId] = [...links, ...transitives];
   }

@@ -1,11 +1,11 @@
-// Coordinación pura del panel de generación: fusionar instantáneas de Rust
-// sin perder ediciones locales, y decidir qué acciones ofrece cada propuesta.
-// Sin React ni Tauri: se prueba con vitest sin DOM.
+// Pure generation-panel coordination: merge Rust snapshots without losing
+// local edits, and decide which actions each proposal offers. No React, no
+// Tauri: tested with vitest without DOM.
 import type { GenerationDto, ProposalDto } from "./types";
 
 /**
- * Inserta o sustituye una generación manteniendo el orden de registro.
- * Las respuestas tardías se filtran antes (por módulo); aquí solo se fusiona.
+ * Inserts or replaces a generation keeping the registration order. Late
+ * responses filter out earlier (per module); here only merging happens.
  */
 export function upsertGeneration(
   generations: GenerationDto[],
@@ -17,8 +17,8 @@ export function upsertGeneration(
 }
 
 /**
- * ¿Acepta acciones esta propuesta? Solo pendiente, fresca, sin trabajo y con
- * el módulo activo: lo archivado se consulta, no se opera.
+ * Does this proposal take actions? Only when pending, fresh, idle and with
+ * an active module: archived items are read, not operated.
  */
 export function isActionable(
   proposal: ProposalDto,
@@ -29,7 +29,7 @@ export function isActionable(
   return proposal.state === "pending" && !stale && !busy && !moduleArchived;
 }
 
-/** Borrador editable de una tarjeta: los criterios van uno por línea. */
+/** Editable card draft: criteria go one per line. */
 export interface ProposalEdit {
   title: string;
   description: string;
@@ -46,7 +46,7 @@ export function editFromProposal(proposal: ProposalDto): ProposalEdit {
   };
 }
 
-/** Parte un área multilínea en elementos no vacíos para enviar a Rust. */
+/** Splits a multiline area into non-empty items to send to Rust. */
 export function splitItems(text: string): string[] {
   return text
     .split("\n")

@@ -1,21 +1,20 @@
-//! Disposiciones visuales del editor de diseños (hito 10).
+//! Visual layouts of the design editor (milestone 10).
 //!
-//! Presentación pura: posiciones de elementos por artefacto y versión. No
-//! forman parte del dominio (no influyen en validación, vigencia,
-//! aprobaciones ni exportaciones) y el núcleo no las conoce. Se guardan junto
-//! a la versión en la misma transacción para que reabrir conserve contenido
-//! y disposición; si no hay disposición guardada, el editor usa su trazado
-//! automático determinista.
+//! Pure presentation: element positions per artifact and version. Not
+//! part of the domain (no influence on validation, currency, approvals
+//! or exports) and unknown to the core. Saved with the version in the
+//! same transaction so reopening preserves content and layout; with no
+//! saved layout, the editor uses its deterministic automatic placement.
 //!
-//! El adaptador guarda el JSON verbatim, sin interpretarlo (no depende de
-//! serde): la higienización vive en `ruth-api`, que es quien acepta o
-//! rechaza disposiciones candidatas. Las filas manipuladas a mano se cargan
-//! igual y se interpretan al leer: una disposición ilegible equivale a "sin
-//! disposición" y nunca rompe la apertura.
+//! The adapter stores the JSON verbatim, without interpreting it (no
+//! serde dependency): sanitization lives in `ruth-api`, which accepts or
+//! rejects candidate layouts. Hand-tampered rows load the same and are
+//! interpreted on read: an illegible layout equals "no layout" and never
+//! breaks opening.
 
 use std::collections::HashMap;
 
-/// Registro en memoria, espejo del último commit confirmado.
+/// In-memory log, mirror of the last confirmed commit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LayoutLog {
     layouts: HashMap<(String, String), String>,
@@ -26,15 +25,15 @@ impl LayoutLog {
         Self::default()
     }
 
-    /// Disposición guardada para la versión, si existe.
+    /// Saved layout for the version, if any.
     pub fn get(&self, artifact_id: &str, version_id: &str) -> Option<&str> {
         self.layouts
             .get(&(artifact_id.to_string(), version_id.to_string()))
             .map(String::as_str)
     }
 
-    /// Fija la disposición ya persistida. Solo la llama el camino de
-    /// guardado, después de confirmar la transacción.
+    /// Pins the already persisted layout. Only called by the save path,
+    /// after committing the transaction.
     pub fn set(&mut self, artifact_id: &str, version_id: &str, layout_json: &str) {
         self.layouts.insert(
             (artifact_id.to_string(), version_id.to_string()),
@@ -42,8 +41,8 @@ impl LayoutLog {
         );
     }
 
-    /// Rehidrata una fila cargada de la base, verbatim. Filas con claves
-    /// vacías se ignoran; el contenido se interpreta al leer.
+    /// Rehydrates a row loaded from the database, verbatim. Rows with empty
+    /// keys are ignored; content is interpreted on read.
     pub fn rehydrate(&mut self, artifact_id: String, version_id: String, layout_json: String) {
         if artifact_id.trim().is_empty() || version_id.trim().is_empty() {
             return;
@@ -75,8 +74,8 @@ mod tests {
         log.rehydrate(
             "a".to_string(),
             "v".to_string(),
-            "ni-siquiera-json".to_string(),
+            "not-even-json".to_string(),
         );
-        assert_eq!(log.get("a", "v"), Some("ni-siquiera-json"));
+        assert_eq!(log.get("a", "v"), Some("not-even-json"));
     }
 }

@@ -17,8 +17,10 @@
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.12.0",
     "mermaid": "^12.2.0",
+    "monaco-editor": "^0.57.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "ts-compiler": "npm:typescript@^5.9.3",
     "zustand": "^5.0.16"
   },
   "devDependencies": {

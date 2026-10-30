@@ -1,5 +1,5 @@
-// Editor visual: adaptadores, operaciones, validación e historial.
-// Puros y deterministas; el lienzo (React Flow) se verifica aparte.
+// Visual editor: adapters, operations, validation and history. Pure
+// and deterministic; the canvas (React Flow) is verified separately.
 import { describe, expect, test } from "vitest";
 import {
   addAttribute,
@@ -48,14 +48,14 @@ import {
   type VisualDraftState,
 } from "./visualDraft";
 
-const META: DesignMeta = { title: "Diseño", explanation: "Explicación.", questions: [] };
+const META: DesignMeta = { title: "Design", explanation: "Explanation.", questions: [] };
 
 const FLOW: FlowSpec = {
   nodes: [
-    { id: "inicio", kind: "start", label: "Inicio", requirements: ["req-1"] },
-    { id: "fin", kind: "end", label: "Fin", requirements: [] },
+    { id: "start", kind: "start", label: "Start", requirements: ["req-1"], mockups: [] },
+    { id: "end", kind: "end", label: "End", requirements: [], mockups: [] },
   ],
-  edges: [{ from: "inicio", to: "fin" }],
+  edges: [{ from: "start", to: "end" }],
 };
 
 const ER: ErSpec = {
@@ -66,14 +66,14 @@ const ER: ErSpec = {
         { name: "id", key: true },
         { name: "total", key: false },
       ],
-      requirements: ["req-1"],
+      requirements: ["req-1"], mockups: [],
     },
   ],
   relations: [],
 };
 
-describe("parseo y serialización", () => {
-  test("flujo: ida y vuelta sin pérdida semántica", () => {
+describe("parsing and serialization", () => {
+  test("flow: round trip without semantic loss", () => {
     const canonical = serializeFlowSpec(FLOW, META);
     expect(canonical).toContain('"kind":"flow"');
     const parsed = parseFlowSpec(JSON.parse(canonical));
@@ -83,13 +83,35 @@ describe("parseo y serialización", () => {
     expect(serializeFlowSpec(parsed!.spec, parsed!.meta)).toBe(canonical);
   });
 
-  test("ER: ida y vuelta sin pérdida semántica", () => {
+  test("mockup citations survive the round trip", () => {
+    const cited: FlowSpec = {
+      ...FLOW,
+      nodes: FLOW.nodes.map((n, i) => (i === 0 ? { ...n, mockups: ["mockup-1/f_name"] } : n)),
+    };
+    const canonical = serializeFlowSpec(cited, META);
+    expect(canonical).toContain('"mockups":["mockup-1/f_name"]');
+    expect(parseFlowSpec(JSON.parse(canonical))?.spec).toEqual(cited);
+    // Empties are omitted like in Rust: the previous canonical form is unchanged.
+    expect(serializeFlowSpec(FLOW, META)).not.toContain("mockups");
+    const citedEr: ErSpec = {
+      ...ER,
+      entities: ER.entities.map((e) => ({ ...e, mockups: ["mockup-1/tb"] })),
+    };
+    const erCanonical = serializeErSpec(citedEr, META);
+    expect(erCanonical).toContain('"mockups":["mockup-1/tb"]');
+    expect(parseErSpec(JSON.parse(erCanonical))?.spec).toEqual(citedEr);
+    // Older content without the key: tolerated as empty.
+    const legacy = JSON.parse(serializeFlowSpec(FLOW, META));
+    expect(parseFlowSpec(legacy)?.spec.nodes[0].mockups).toEqual([]);
+  });
+
+  test("ER: round trip without semantic loss", () => {
     const canonical = serializeErSpec(ER, META);
     expect(canonical).toContain('"kind":"data_model"');
     const parsed = parseErSpec(JSON.parse(canonical));
     expect(parsed?.spec).toEqual(ER);
     expect(serializeErSpec(parsed!.spec, parsed!.meta)).toBe(canonical);
-    // Las cardinalidades viajan en snake_case.
+    // Cardinalities travel in snake_case.
     const withRelation: ErSpec = {
       ...ER,
       relations: [{ from: "Venta", to: "Venta", fromCard: "1", toCard: "N" }],
@@ -100,7 +122,7 @@ describe("parseo y serialización", () => {
     expect(parseErSpec(JSON.parse(rel))?.spec).toEqual(withRelation);
   });
 
-  test("formas ajenas se rechazan", () => {
+  test("foreign shapes are rejected", () => {
     expect(parseFlowSpec(null)).toBeNull();
     expect(parseFlowSpec({})).toBeNull();
     expect(parseFlowSpec({ title: "x", explanation: "y", questions: [], nodes: {}, edges: [] })).toBeNull();
@@ -109,31 +131,31 @@ describe("parseo y serialización", () => {
     expect(parseErSpec({ title: "x", explanation: "y", questions: "no", entities: [], relations: [] })).toBeNull();
   });
 
-  test("disposición tolerante: solo posiciones válidas", () => {
+  test("tolerant layout: only valid positions", () => {
     expect(parseLayout(null)).toEqual({});
-    expect(parseLayout({ a: { x: 1, y: 2 }, b: { x: "mal" }, "": { x: 0, y: 0 } })).toEqual({
+    expect(parseLayout({ a: { x: 1, y: 2 }, b: { x: "bad" }, "": { x: 0, y: 0 } })).toEqual({
       a: { x: 1, y: 2 },
     });
   });
 });
 
-describe("adaptadores al lienzo", () => {
-  test("la disposición guardada manda; el resto usa trazado automático", () => {
-    const { nodes, edges } = flowToGraph(FLOW, { fin: { x: 500, y: 500 } });
-    expect(nodes.find((n) => n.id === "fin")).toMatchObject({ x: 500, y: 500 });
-    expect(nodes.find((n) => n.id === "inicio")).toMatchObject({ x: 60, y: 60 });
-    expect(edges).toEqual([{ id: "e0", from: "inicio", to: "fin" }]);
-    // Las capas siguen el sentido de las conexiones.
-    expect(nodes.find((n) => n.id === "fin")!.x).toBeGreaterThan(
-      nodes.find((n) => n.id === "inicio")!.x - 500,
+describe("canvas adapters", () => {
+  test("the saved layout wins; the rest uses auto layout", () => {
+    const { nodes, edges } = flowToGraph(FLOW, { end: { x: 500, y: 500 } });
+    expect(nodes.find((n) => n.id === "end")).toMatchObject({ x: 500, y: 500 });
+    expect(nodes.find((n) => n.id === "start")).toMatchObject({ x: 60, y: 60 });
+    expect(edges).toEqual([{ id: "e0", from: "start", to: "end" }]);
+    // Layers follow the connection direction.
+    expect(nodes.find((n) => n.id === "end")!.x).toBeGreaterThan(
+      nodes.find((n) => n.id === "start")!.x - 500,
     );
   });
 
-  test("el trazado automático es determinista y seguro ante ciclos", () => {
+  test("auto layout is deterministic and cycle-safe", () => {
     const cyclic: FlowSpec = {
       nodes: [
-        { id: "a", kind: "step", label: "A", requirements: [] },
-        { id: "b", kind: "step", label: "B", requirements: [] },
+        { id: "a", kind: "step", label: "A", requirements: [], mockups: [] },
+        { id: "b", kind: "step", label: "B", requirements: [], mockups: [] },
       ],
       edges: [
         { from: "a", to: "b" },
@@ -146,11 +168,11 @@ describe("adaptadores al lienzo", () => {
     expect(first.nodes).toHaveLength(2);
   });
 
-  test("ER usa rejilla estable en el orden de la especificación", () => {
+  test("ER uses a stable grid in spec order", () => {
     const spec: ErSpec = {
       entities: [
-        { name: "B", attributes: [{ name: "id", key: true }], requirements: [] },
-        { name: "A", attributes: [{ name: "id", key: true }], requirements: [] },
+        { name: "B", attributes: [{ name: "id", key: true }], requirements: [], mockups: [] },
+        { name: "A", attributes: [{ name: "id", key: true }], requirements: [], mockups: [] },
       ],
       relations: [],
     };
@@ -160,37 +182,37 @@ describe("adaptadores al lienzo", () => {
     expect(erToGraph(spec, {})).toEqual(erToGraph(spec, {}));
   });
 
-  test("renombrar reubica la posición guardada", () => {
+  test("renaming relocates the saved position", () => {
     expect(remapLayout({ a: { x: 1, y: 1 } }, "a", "b")).toEqual({ b: { x: 1, y: 1 } });
     expect(remapLayout({ a: { x: 1, y: 1 } }, "a", "a")).toEqual({ a: { x: 1, y: 1 } });
   });
 
-  test("detecta renombrados únicos e ignora altas y bajas", () => {
-    const renamed = renameFlowNodeId(FLOW, "inicio", "arranque").spec;
-    expect(detectRename("flow", FLOW, renamed)).toEqual(["inicio", "arranque"]);
+  test("detects single renames and ignores additions and removals", () => {
+    const renamed = renameFlowNodeId(FLOW, "start", "launch").spec;
+    expect(detectRename("flow", FLOW, renamed)).toEqual(["start", "launch"]);
     expect(detectRename("flow", FLOW, addFlowNode(FLOW, "step").spec)).toBeNull();
     expect(detectRename("flow", FLOW, FLOW)).toBeNull();
     const renamedEr = renameEntity(ER, "Venta", "Ticket").spec;
     expect(detectRename("data_model", ER, renamedEr)).toEqual(["Venta", "Ticket"]);
   });
 
-  test("deriva artefactos de versiones con forma conocida", () => {
+  test("derives artifacts from known-shape versions", () => {
     expect(artifactOfVersion("req-1-v2")).toBe("req-1");
     expect(artifactOfVersion("flujo-1-v10")).toBe("flujo-1");
-    expect(artifactOfVersion("rara")).toBeNull();
+    expect(artifactOfVersion("odd")).toBeNull();
     expect(artifactOfVersion("")).toBeNull();
   });
 
-  test("las ramas de una decisión salen por derecha, izquierda y abajo", () => {
+  test("decision branches exit right, left and bottom", () => {
     const spec: FlowSpec = {
       nodes: [
-        { id: "d", kind: "decision", label: "¿Stock?", requirements: [] },
-        { id: "a", kind: "step", label: "A", requirements: [] },
-        { id: "b", kind: "step", label: "B", requirements: [] },
-        { id: "c", kind: "step", label: "C", requirements: [] },
+        { id: "d", kind: "decision", label: "Stock?", requirements: [], mockups: [] },
+        { id: "a", kind: "step", label: "A", requirements: [], mockups: [] },
+        { id: "b", kind: "step", label: "B", requirements: [], mockups: [] },
+        { id: "c", kind: "step", label: "C", requirements: [], mockups: [] },
       ],
       edges: [
-        { from: "d", to: "a", label: "Sí" },
+        { from: "d", to: "a", label: "Yes" },
         { from: "d", to: "b", label: "No" },
         { from: "d", to: "c" },
         { from: "a", to: "b" },
@@ -199,24 +221,24 @@ describe("adaptadores al lienzo", () => {
     expect(decisionBranchHandles(spec)).toEqual(["right", "left", "bottom", null]);
   });
 
-  test("una decisión con una sola rama sale por abajo", () => {
+  test("a decision with a single branch exits at the bottom", () => {
     const spec: FlowSpec = {
       nodes: [
-        { id: "d", kind: "decision", label: "¿Sigo?", requirements: [] },
-        { id: "a", kind: "step", label: "A", requirements: [] },
+        { id: "d", kind: "decision", label: "Continue?", requirements: [], mockups: [] },
+        { id: "a", kind: "step", label: "A", requirements: [], mockups: [] },
       ],
       edges: [{ from: "d", to: "a" }],
     };
     expect(decisionBranchHandles(spec)).toEqual(["bottom"]);
   });
 
-  test("cada decisión reparte sus propias ramas sin interferir", () => {
+  test("each decision distributes its own branches without interference", () => {
     const spec: FlowSpec = {
       nodes: [
-        { id: "d1", kind: "decision", label: "Una", requirements: [] },
-        { id: "d2", kind: "decision", label: "Dos", requirements: [] },
-        { id: "a", kind: "step", label: "A", requirements: [] },
-        { id: "b", kind: "step", label: "B", requirements: [] },
+        { id: "d1", kind: "decision", label: "One", requirements: [], mockups: [] },
+        { id: "d2", kind: "decision", label: "Two", requirements: [], mockups: [] },
+        { id: "a", kind: "step", label: "A", requirements: [], mockups: [] },
+        { id: "b", kind: "step", label: "B", requirements: [], mockups: [] },
       ],
       edges: [
         { from: "d1", to: "a" },
@@ -228,74 +250,74 @@ describe("adaptadores al lienzo", () => {
   });
 });
 
-describe("operaciones de flujo", () => {
-  test("añadir nodos genera identidades libres", () => {
+describe("flow operations", () => {
+  test("adding nodes generates free identities", () => {
     const first = addFlowNode(FLOW, "step");
-    expect(first.id).toBe("paso");
+    expect(first.id).toBe("step");
     const second = addFlowNode(first.spec, "step");
-    expect(second.id).toBe("paso_2");
+    expect(second.id).toBe("step_2");
     expect(second.spec.nodes).toHaveLength(4);
     expect(FLOW.nodes).toHaveLength(2);
   });
 
-  test("editar etiqueta, tipo y citas", () => {
-    const next = updateFlowNode(FLOW, "fin", { label: "Cierre", kind: "step", requirements: ["req-2"] });
-    expect(next.nodes[1]).toMatchObject({ label: "Cierre", kind: "step", requirements: ["req-2"] });
+  test("editing label, kind and citations", () => {
+    const next = updateFlowNode(FLOW, "end", { label: "Closure", kind: "step", requirements: ["req-2"], mockups: [] });
+    expect(next.nodes[1]).toMatchObject({ label: "Closure", kind: "step", requirements: ["req-2"], mockups: [] });
   });
 
-  test("renombrar identidad reescribe aristas", () => {
-    const renamed = renameFlowNodeId(FLOW, "inicio", "arranque");
+  test("renaming identity rewrites edges", () => {
+    const renamed = renameFlowNodeId(FLOW, "start", "launch");
     expect(renamed.ok).toBe(true);
-    expect(renamed.spec.edges).toEqual([{ from: "arranque", to: "fin" }]);
+    expect(renamed.spec.edges).toEqual([{ from: "launch", to: "end" }]);
   });
 
-  test("renombrar rechaza duplicados e inválidos sin mutar", () => {
-    expect(renameFlowNodeId(FLOW, "inicio", "fin")).toMatchObject({ ok: false });
-    expect(renameFlowNodeId(FLOW, "inicio", "con espacios")).toMatchObject({ ok: false });
-    expect(renameFlowNodeId(FLOW, "inicio", "")).toMatchObject({ ok: false });
-    const rejected = renameFlowNodeId(FLOW, "inicio", "fin");
+  test("renaming rejects duplicates and invalid ids without mutating", () => {
+    expect(renameFlowNodeId(FLOW, "start", "end")).toMatchObject({ ok: false });
+    expect(renameFlowNodeId(FLOW, "start", "with spaces")).toMatchObject({ ok: false });
+    expect(renameFlowNodeId(FLOW, "start", "")).toMatchObject({ ok: false });
+    const rejected = renameFlowNodeId(FLOW, "start", "end");
     expect(rejected.spec).toBe(FLOW);
   });
 
-  test("eliminar nodo informa conexiones caídas", () => {
-    const removed = removeFlowNode(FLOW, "inicio");
-    expect(removed.spec.nodes.map((n) => n.id)).toEqual(["fin"]);
+  test("deleting a node reports fallen connections", () => {
+    const removed = removeFlowNode(FLOW, "start");
+    expect(removed.spec.nodes.map((n) => n.id)).toEqual(["end"]);
     expect(removed.removedEdges).toBe(1);
-    expect(flowDeleteConsequences(FLOW, "inicio")).toEqual([
-      "Elimina el nodo «inicio».",
-      "Elimina 1 conexión que lo toca.",
-      "Sus citas a requisitos desaparecen con él (los requisitos no cambian).",
+    expect(flowDeleteConsequences(FLOW, "start")).toEqual([
+      "Deletes node \"start\".",
+      "Deletes 1 connection touching it.",
+      "Its citations disappear with it (requirements and mockups unchanged).",
     ]);
   });
 
-  test("conexiones: crear, etiquetar y eliminar", () => {
-    const added = addFlowEdge(FLOW, "fin", "inicio");
+  test("connections: create, label and delete", () => {
+    const added = addFlowEdge(FLOW, "end", "start");
     expect(added.index).toBe(1);
-    const labeled = updateFlowEdge(added.spec, 1, "reintento");
-    expect(labeled.edges[1]).toMatchObject({ label: "reintento" });
+    const labeled = updateFlowEdge(added.spec, 1, "retry");
+    expect(labeled.edges[1]).toMatchObject({ label: "retry" });
     const cleared = updateFlowEdge(labeled, 1, null);
-    expect(cleared.edges[1]).toEqual({ from: "fin", to: "inicio" });
+    expect(cleared.edges[1]).toEqual({ from: "end", to: "start" });
     expect(removeFlowEdge(cleared, 0).edges).toHaveLength(1);
   });
 
-  test("suggestId salta ocupados", () => {
-    expect(suggestId("paso", new Set(["paso", "paso_2"]))).toBe("paso_3");
-    expect(suggestId("", new Set())).toBe("elemento");
+  test("suggestId skips taken ids", () => {
+    expect(suggestId("step", new Set(["step", "step_2"]))).toBe("step_3");
+    expect(suggestId("", new Set())).toBe("element");
   });
 });
 
-describe("operaciones ER", () => {
-  test("añadir entidad trae atributo inicial", () => {
+describe("ER operations", () => {
+  test("adding an entity brings an initial attribute", () => {
     const added = addEntity(ER);
-    expect(added.name).toBe("Entidad");
-    const entity = added.spec.entities.find((e) => e.name === "Entidad");
+    expect(added.name).toBe("Entity");
+    const entity = added.spec.entities.find((e) => e.name === "Entity");
     expect(entity?.attributes).toHaveLength(1);
   });
 
-  test("renombrar entidad reescribe relaciones", () => {
+  test("renaming an entity rewrites relations", () => {
     const spec: ErSpec = {
       ...ER,
-      entities: [...ER.entities, { name: "Linea", attributes: [{ name: "id", key: true }], requirements: [] }],
+      entities: [...ER.entities, { name: "Linea", attributes: [{ name: "id", key: true }], requirements: [], mockups: [] }],
       relations: [{ from: "Venta", to: "Linea", fromCard: "1", toCard: "0..N" }],
     };
     const renamed = renameEntity(spec, "Venta", "Ticket");
@@ -304,22 +326,22 @@ describe("operaciones ER", () => {
     expect(renameEntity(spec, "Venta", "Linea").ok).toBe(false);
   });
 
-  test("eliminar entidad informa atributos y relaciones", () => {
+  test("deleting an entity reports attributes and relations", () => {
     const spec: ErSpec = {
       ...ER,
-      entities: [...ER.entities, { name: "Linea", attributes: [{ name: "id", key: true }], requirements: [] }],
+      entities: [...ER.entities, { name: "Linea", attributes: [{ name: "id", key: true }], requirements: [], mockups: [] }],
       relations: [{ from: "Venta", to: "Linea", fromCard: "1", toCard: "0..N" }],
     };
     const removed = removeEntity(spec, "Venta");
     expect(removed.removedAttributes).toBe(2);
     expect(removed.removedRelations).toBe(1);
-    expect(erDeleteConsequences(spec, "Venta")).toContain("Elimina 2 atributos.");
+    expect(erDeleteConsequences(spec, "Venta")).toContain("Deletes 2 attributes.");
   });
 
-  test("atributos: añadir, renombrar, clave y eliminar", () => {
+  test("attributes: add, rename, key and delete", () => {
     const added = addAttribute(ER, "Venta");
-    expect(added.name).toBe("atributo");
-    const renamed = renameAttribute(added.spec, "Venta", "atributo", "codigo");
+    expect(added.name).toBe("attribute");
+    const renamed = renameAttribute(added.spec, "Venta", "attribute", "codigo");
     expect(renamed.ok).toBe(true);
     expect(renameAttribute(renamed.spec, "Venta", "codigo", "id").ok).toBe(false);
     const keyed = setAttributeKey(renamed.spec, "Venta", "codigo", true);
@@ -328,49 +350,49 @@ describe("operaciones ER", () => {
     expect(removed.entities[0].attributes.map((a) => a.name)).toEqual(["id", "total"]);
   });
 
-  test("relaciones: crear con N:N, editar y eliminar", () => {
+  test("relations: create with N:N, edit and delete", () => {
     const added = addRelation(ER, "Venta", "Venta");
     expect(added.spec.relations[0]).toMatchObject({ fromCard: "0..N", toCard: "0..N" });
-    const updated = updateRelation(added.spec, 0, { label: "agrupa", fromCard: "1", toCard: "N" });
-    expect(updated.relations[0]).toMatchObject({ label: "agrupa", fromCard: "1", toCard: "N" });
+    const updated = updateRelation(added.spec, 0, { label: "groups", fromCard: "1", toCard: "N" });
+    expect(updated.relations[0]).toMatchObject({ label: "groups", fromCard: "1", toCard: "N" });
     const unlabeled = updateRelation(updated, 0, { label: null });
     expect(unlabeled.relations[0].label).toBeUndefined();
     expect(removeRelation(unlabeled, 0).relations).toHaveLength(0);
   });
 
-  test("metadatos del diseño", () => {
-    expect(updateMeta(META, { title: "Nuevo" })).toMatchObject({ title: "Nuevo", explanation: "Explicación." });
+  test("design metadata", () => {
+    expect(updateMeta(META, { title: "New" })).toMatchObject({ title: "New", explanation: "Explanation." });
   });
 });
 
-describe("validación orientativa", () => {
-  test("borrador válido no informa nada", () => {
+describe("orientative validation", () => {
+  test("a valid draft reports nothing", () => {
     expect(validateDraft("flow", FLOW, META, ["req-1"])).toEqual({ errors: [], warnings: [] });
     expect(validateDraft("data_model", ER, META, ["req-1"])).toEqual({ errors: [], warnings: [] });
   });
 
-  test("errores estructurales con elemento implicado", () => {
+  test("structural errors with element involved", () => {
     const dup: FlowSpec = { nodes: [...FLOW.nodes, { ...FLOW.nodes[0] }], edges: [] };
     const result = validateDraft("flow", dup, META, ["req-1"]);
-    expect(result.errors.some((e) => e.code === "node-id" && e.element === "inicio")).toBe(true);
+    expect(result.errors.some((e) => e.code === "node-id" && e.element === "start")).toBe(true);
   });
 
-  test("citas fuera del conjunto se señalan", () => {
+  test("out-of-set citations are flagged", () => {
     const result = validateDraft("flow", FLOW, META, ["req-9"]);
     expect(result.errors.some((e) => e.code === "refs")).toBe(true);
   });
 
-  test("metadatos obligatorios", () => {
+  test("mandatory metadata", () => {
     const result = validateDraft("flow", FLOW, { title: "", explanation: "", questions: [] }, ["req-1"]);
     expect(result.errors.map((e) => e.code)).toContain("title");
     expect(result.errors.map((e) => e.code)).toContain("explanation");
   });
 
-  test("avisos sin prohibir: ciclos válidos, inicios y decisiones", () => {
+  test("warnings without forbidding: valid cycles, starts and decisions", () => {
     const cyclic: FlowSpec = {
       nodes: [
-        { id: "a", kind: "step", label: "A", requirements: [] },
-        { id: "b", kind: "decision", label: "B", requirements: [] },
+        { id: "a", kind: "step", label: "A", requirements: [], mockups: [] },
+        { id: "b", kind: "decision", label: "B", requirements: [], mockups: [] },
       ],
       edges: [
         { from: "a", to: "b" },
@@ -384,11 +406,11 @@ describe("validación orientativa", () => {
     expect(result.warnings.some((w) => w.code === "unreachable")).toBe(false);
   });
 
-  test("avisos ER: sin clave y aisladas", () => {
+  test("ER warnings: no key and isolated", () => {
     const spec: ErSpec = {
       entities: [
-        { name: "A", attributes: [{ name: "x", key: false }], requirements: [] },
-        { name: "B", attributes: [{ name: "id", key: true }], requirements: [] },
+        { name: "A", attributes: [{ name: "x", key: false }], requirements: [], mockups: [] },
+        { name: "B", attributes: [{ name: "id", key: true }], requirements: [], mockups: [] },
       ],
       relations: [],
     };
@@ -398,13 +420,14 @@ describe("validación orientativa", () => {
     expect(result.warnings.map((w) => w.code)).toContain("isolated");
   });
 
-  test("topes del subconjunto", () => {
+  test("subset limits", () => {
     const many: FlowSpec = {
       nodes: Array.from({ length: 25 }, (_, i) => ({
         id: `n${i}`,
         kind: "step" as const,
         label: `N${i}`,
         requirements: [],
+        mockups: [],
       })),
       edges: [],
     };
@@ -413,7 +436,7 @@ describe("validación orientativa", () => {
   });
 });
 
-describe("borrador elevado", () => {
+describe("lifted draft", () => {
   const BASE = '{"title":"Base"}';
   function init(): VisualDraftState {
     const state = visualDraftReducer(null, {
@@ -425,44 +448,44 @@ describe("borrador elevado", () => {
       allowed: ["req-1"],
       pins: ["req-1-v1"],
     });
-    if (state === null) throw new Error("inicia");
+    if (state === null) throw new Error("inits");
     return state;
   }
 
-  test("inicia limpio y conserva la clave", () => {
+  test("starts clean and keeps the key", () => {
     const state = init();
     expect(visualSemanticDirty(state)).toBe(false);
     expect(visualLayoutDirty(state)).toBe(false);
     expect(visualDraftReducer(state, { type: "reset" })).toBeNull();
   });
 
-  test("mover solo ensucia la disposición; editar, la semántica", () => {
+  test("moving dirties only layout; editing, semantics", () => {
     let state: VisualDraftState | null = init();
     state = visualDraftReducer(state, { type: "move", id: "a", x: 5, y: 5 });
     expect(visualSemanticDirty(state)).toBe(false);
     expect(visualLayoutDirty(state)).toBe(true);
-    state = visualDraftReducer(state, { type: "apply", spec: '{"title":"Cambio"}' });
+    state = visualDraftReducer(state, { type: "apply", spec: '{"title":"Change"}' });
     expect(visualSemanticDirty(state)).toBe(true);
     state = visualDraftReducer(state, { type: "undo" });
     expect(visualSemanticDirty(state)).toBe(false);
     expect(visualLayoutDirty(state)).toBe(true);
   });
 
-  test("guardar disposición limpia solo lo visual; el guard pide confirmar", () => {
+  test("saving layout clears only the visual part; the guard asks to confirm", () => {
     let state: VisualDraftState | null = init();
     state = visualDraftReducer(state, { type: "move", id: "a", x: 5, y: 5 });
-    if (state === null) throw new Error("mueve");
+    if (state === null) throw new Error("moves");
     state = visualDraftReducer(state, { type: "savedLayout", layout: state.layout });
     expect(visualLayoutDirty(state)).toBe(false);
-    state = visualDraftReducer(state, { type: "apply", spec: '{"title":"Cambio"}' });
+    state = visualDraftReducer(state, { type: "apply", spec: '{"title":"Change"}' });
     expect(needsVisualConfirm(state, "flujo-1", "flujo-2")).toBe(true);
     expect(needsVisualConfirm(state, "flujo-1", "flujo-1")).toBe(false);
     expect(needsVisualConfirm(null, "flujo-1", "flujo-2")).toBe(false);
   });
 
-  test("el resultado tardío no limpia lo editado durante el guardado", () => {
+  test("a late result does not clear edits made during the save", () => {
     const fresh = init();
-    // Sin cambios durante la petición: limpia (null, el detalle avanzó).
+    // No changes during the request: clears (null, the detail moved on).
     expect(
       visualDraftReducer(fresh, {
         type: "saved",
@@ -471,9 +494,9 @@ describe("borrador elevado", () => {
         allowed: fresh.allowed,
       }),
     ).toBeNull();
-    // Con edición intermedia: se conserva para resolver el conflicto.
+    // With an intermediate edit: kept for conflict resolution.
     let moved: VisualDraftState | null = init();
-    moved = visualDraftReducer(moved, { type: "apply", spec: '{"title":"Nuevo"}' });
+    moved = visualDraftReducer(moved, { type: "apply", spec: '{"title":"New"}' });
     const kept = visualDraftReducer(moved, {
       type: "saved",
       present: BASE,
@@ -482,7 +505,7 @@ describe("borrador elevado", () => {
     });
     expect(kept).not.toBeNull();
     expect(visualSemanticDirty(kept)).toBe(true);
-    // Lo movido durante el guardado de disposición sigue pendiente.
+    // Moves made during the layout save stay pending.
     let layout: VisualDraftState | null = init();
     layout = visualDraftReducer(layout, { type: "move", id: "a", x: 5, y: 5 });
     const staleLayout = visualDraftReducer(layout, {
@@ -493,8 +516,8 @@ describe("borrador elevado", () => {
   });
 });
 
-describe("historial", () => {
-  test("deshacer y rehacer recorren cambios semánticos", () => {
+describe("history", () => {
+  test("undo and redo walk semantic changes", () => {
     let history = createHistory("v1");
     expect(canUndo(history)).toBe(false);
     history = pushHistory(history, "v2");
@@ -511,13 +534,13 @@ describe("historial", () => {
     expect(canUndo(history)).toBe(false);
   });
 
-  test("un cambio nuevo descarta el rehacer y respeta el tope", () => {
+  test("a new change discards redo and respects the cap", () => {
     let history = createHistory("v0");
     for (let i = 1; i <= 60; i++) history = pushHistory(history, `v${i}`);
     expect(history.past.length).toBeLessThanOrEqual(50);
     history = undoHistory(history);
-    history = pushHistory(history, "rama");
+    history = pushHistory(history, "branch");
     expect(canRedo(history)).toBe(false);
-    expect(history.present).toBe("rama");
+    expect(history.present).toBe("branch");
   });
 });

@@ -1,5 +1,5 @@
-//! Generaciones asistidas sin red: el "generador falso" construye la salida
-//! validada a mano; la red real solo existe en el comando Tauri.
+//! Assisted generations without network: the "fake generator" builds the
+//! validated output by hand; real network only exists in the Tauri command.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,7 +9,9 @@ use ruth_api::{
     GenerationContextInput, IdGen, ListGenerationsInput, RecordInput, SaveVersionInput,
 };
 use ruth_core::application::Store;
-use ruth_meta::generation::{GenerationContextItem, ProposalDraft, ValidatedGeneration};
+use ruth_meta::generation::{
+    GenerationContextItem, ProposalDraft, ValidatedGeneration, TEMPLATE_VERSION,
+};
 use ruth_store::{DbActor, ProposalLog};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -51,7 +53,7 @@ fn baby() -> Baby {
     let mut store = Store::new();
     let mut ids = IdGen::new();
     let project = ruth_api::create_project(&mut store, &mut ids)
-        .expect("proyecto")
+        .expect("project")
         .id;
     let module = ruth_api::create_module(
         &mut store,
@@ -60,7 +62,7 @@ fn baby() -> Baby {
             project_id: project.clone(),
         },
     )
-    .expect("módulo")
+    .expect("module")
     .id;
     let req = ruth_api::create_requirement(
         &mut store,
@@ -72,7 +74,7 @@ fn baby() -> Baby {
             author: "ana".to_string(),
         },
     )
-    .expect("requisito")
+    .expect("requirement")
     .artifact
     .id;
     Baby {
@@ -85,32 +87,32 @@ fn baby() -> Baby {
     }
 }
 
-/// Generador falso: salida ya validada, como la entregaría `ruth-meta`.
+/// Fake generator: already validated output, as `ruth-meta` would deliver it.
 fn fake_validated() -> ValidatedGeneration {
     ValidatedGeneration {
         proposals: vec![
             ProposalDraft {
                 temp_id: "p1".to_string(),
-                title: "Reservar antes de confirmar".to_string(),
-                description: "Una venta puede reservar stock.".to_string(),
-                acceptance: vec!["Reservar bloquea unidades".to_string()],
+                title: "Reserve before confirming".to_string(),
+                description: "A sale may reserve stock.".to_string(),
+                acceptance: vec!["Reserving holds units".to_string()],
                 assumptions: vec![],
             },
             ProposalDraft {
                 temp_id: "p2".to_string(),
-                title: "Liberar al cancelar".to_string(),
-                description: "Cancelar libera la reserva.".to_string(),
-                acceptance: vec!["Cancelar libera".to_string()],
-                assumptions: vec!["Sin caducidad".to_string()],
+                title: "Release on cancel".to_string(),
+                description: "Canceling frees the reservation.".to_string(),
+                acceptance: vec!["Canceling frees".to_string()],
+                assumptions: vec!["No expiry".to_string()],
             },
         ],
-        questions: vec!["¿Caducan las reservas?".to_string()],
+        questions: vec!["Do reservations expire?".to_string()],
     }
 }
 
 fn record_input(baby: &Baby, validated: ValidatedGeneration) -> RecordInput {
     let context =
-        ruth_api::snapshot_context(&baby.store, &baby.project, &baby.module).expect("contexto");
+        ruth_api::snapshot_context(&baby.store, &baby.project, &baby.module).expect("context");
     RecordInput {
         project_id: baby.project.clone(),
         module_id: baby.module.clone(),
@@ -129,27 +131,26 @@ fn accept_input(generation_id: &str, temp_id: &str) -> AcceptProposalInput {
     AcceptProposalInput {
         generation_id: generation_id.to_string(),
         temp_id: temp_id.to_string(),
-        title: "Reservar antes de confirmar (editado)".to_string(),
-        description: "Una venta puede reservar stock antes de confirmarse.".to_string(),
-        acceptance: vec!["Reservar bloquea unidades".to_string()],
+        title: "Reserve before confirming (edited)".to_string(),
+        description: "A sale may reserve stock before confirmation.".to_string(),
+        acceptance: vec!["Reserving holds units".to_string()],
         assumptions: vec![],
     }
 }
 
 #[test]
 fn record_and_list_roundtrip_with_reopen() {
-    let tmp = TempDb::new("registro");
+    let tmp = TempDb::new("record");
     let mut baby = baby();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let input = record_input(&baby, fake_validated());
     let dto = ruth_api::record_generation(&baby.store, &mut baby.ids, &mut baby.log, &db, input)
-        .expect("registrar");
+        .expect("record");
     assert!(!dto.stale);
     assert_eq!(dto.proposals.len(), 2);
     assert_eq!(dto.questions.len(), 1);
-    assert_eq!(dto.template_version, 1);
+    assert_eq!(dto.template_version, TEMPLATE_VERSION);
     let listed = ruth_api::list_generations(
         &baby.store,
         &baby.log,
@@ -158,13 +159,13 @@ fn record_and_list_roundtrip_with_reopen() {
             module_id: baby.module.clone(),
         },
     )
-    .expect("listar");
+    .expect("list");
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, dto.id);
     db.close();
 
-    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
-    let again = loaded.proposals.generation(&dto.id).expect("generación");
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reopen");
+    let again = loaded.proposals.generation(&dto.id).expect("generation");
     assert_eq!(again.proposals.len(), 2);
     assert_eq!(again.context_version_ids, dto.context_version_ids);
     db2.close();
@@ -172,22 +173,21 @@ fn record_and_list_roundtrip_with_reopen() {
 
 #[test]
 fn context_change_marks_stale_and_blocks_accept() {
-    let tmp = TempDb::new("caducidad");
+    let tmp = TempDb::new("staleness");
     let mut baby = baby();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let input = record_input(&baby, fake_validated());
     let dto = ruth_api::record_generation(&baby.store, &mut baby.ids, &mut baby.log, &db, input)
-        .expect("registrar");
-    // Cambia una fuente del contexto: nueva versión del requisito.
+        .expect("record");
+    // Change a context source: new version of the requirement.
     let detail = ruth_api::get_requirement(
         &baby.store,
         ruth_api::GetRequirementInput {
             artifact_id: baby.req.clone(),
         },
     )
-    .expect("detalle");
+    .expect("detail");
     ruth_api::transact(&mut baby.store, &mut baby.ids, &db, |s, _| {
         ruth_api::save_version(
             s,
@@ -200,7 +200,7 @@ fn context_change_marks_stale_and_blocks_accept() {
             },
         )
     })
-    .expect("nueva versión");
+    .expect("new version");
     let listed = ruth_api::list_generations(
         &baby.store,
         &baby.log,
@@ -209,9 +209,9 @@ fn context_change_marks_stale_and_blocks_accept() {
             module_id: baby.module.clone(),
         },
     )
-    .expect("listar");
+    .expect("list");
     assert!(listed[0].stale);
-    // El resultado se conserva vinculado a su contexto original.
+    // The result stays linked to its original context.
     assert_eq!(listed[0].context_version_ids, dto.context_version_ids);
 
     let before = baby.store.clone();
@@ -222,7 +222,7 @@ fn context_change_marks_stale_and_blocks_accept() {
         &db,
         accept_input(&dto.id, "p1"),
     )
-    .expect_err("aceptar bloqueado");
+    .expect_err("accept blocked");
     assert_eq!(err.kind, "generation_stale");
     assert_eq!(baby.store, before);
     db.close();
@@ -230,14 +230,13 @@ fn context_change_marks_stale_and_blocks_accept() {
 
 #[test]
 fn accept_creates_unapproved_ai_draft_with_definitive_id() {
-    let tmp = TempDb::new("aceptar");
+    let tmp = TempDb::new("accept");
     let mut baby = baby();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let input = record_input(&baby, fake_validated());
     let dto = ruth_api::record_generation(&baby.store, &mut baby.ids, &mut baby.log, &db, input)
-        .expect("registrar");
+        .expect("record");
     let detail = ruth_api::accept_proposal(
         &mut baby.store,
         &mut baby.ids,
@@ -245,25 +244,25 @@ fn accept_creates_unapproved_ai_draft_with_definitive_id() {
         &db,
         accept_input(&dto.id, "p1"),
     )
-    .expect("aceptar");
-    // Identificador definitivo de la app, no el temporal del modelo.
+    .expect("accept");
+    // The app's definitive identifier, not the model's temp one.
     assert!(detail.artifact.id.starts_with("req-"));
     assert_eq!(detail.versions.len(), 1);
     assert_eq!(detail.versions[0].provenance.kind, "ai");
     assert!(detail.versions[0].provenance.by.contains("ruth-gen"));
-    // Borrador: sin aprobación. Aceptar no equivale a aprobar.
+    // Draft: no approval. Accepting does not equal approving.
     assert!(detail.approvals.is_empty());
-    // Sin fuentes: el contexto no es dependencia de negocio.
+    // No sources: the context is not a business dependency.
     assert!(detail.versions[0].sources.is_empty());
-    // Contenido compuesto desde los campos editados.
+    // Content composed from the edited fields.
     assert!(detail.versions[0]
         .content
-        .contains("Reservar antes de confirmar (editado)"));
+        .contains("Reserve before confirming (edited)"));
     assert!(detail.versions[0]
         .content
-        .contains("- Reservar bloquea unidades"));
-    // La propuesta quedó marcada con artefacto y contenido final.
-    let stored = baby.log.generation(&dto.id).expect("generación");
+        .contains("- Reserving holds units"));
+    // The proposal stayed marked with artifact and final content.
+    let stored = baby.log.generation(&dto.id).expect("generation");
     assert!(matches!(
         &stored.proposals[0].state,
         ruth_store::ProposalState::Accepted { artifact_id, content }
@@ -274,14 +273,13 @@ fn accept_creates_unapproved_ai_draft_with_definitive_id() {
 
 #[test]
 fn accept_is_idempotent_without_duplicates() {
-    let tmp = TempDb::new("idempotente");
+    let tmp = TempDb::new("idempotent");
     let mut baby = baby();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let input = record_input(&baby, fake_validated());
     let dto = ruth_api::record_generation(&baby.store, &mut baby.ids, &mut baby.log, &db, input)
-        .expect("registrar");
+        .expect("record");
     let first = ruth_api::accept_proposal(
         &mut baby.store,
         &mut baby.ids,
@@ -289,7 +287,7 @@ fn accept_is_idempotent_without_duplicates() {
         &db,
         accept_input(&dto.id, "p1"),
     )
-    .expect("aceptar");
+    .expect("accept");
     let count = baby
         .store
         .artifacts_of(
@@ -297,7 +295,7 @@ fn accept_is_idempotent_without_duplicates() {
             &ruth_core::domain::ModuleId::new(baby.module.clone()).expect("id"),
         )
         .len();
-    // Doble clic / reintento: mismo detalle, sin duplicar.
+    // Double click / retry: same detail, no duplicates.
     let second = ruth_api::accept_proposal(
         &mut baby.store,
         &mut baby.ids,
@@ -305,7 +303,7 @@ fn accept_is_idempotent_without_duplicates() {
         &db,
         accept_input(&dto.id, "p1"),
     )
-    .expect("reintento");
+    .expect("retry");
     assert_eq!(second.artifact.id, first.artifact.id);
     assert_eq!(
         baby.store
@@ -321,14 +319,13 @@ fn accept_is_idempotent_without_duplicates() {
 
 #[test]
 fn discard_blocks_accept_and_accept_blocks_discard() {
-    let tmp = TempDb::new("descarte");
+    let tmp = TempDb::new("discard");
     let mut baby = baby();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let input = record_input(&baby, fake_validated());
     let dto = ruth_api::record_generation(&baby.store, &mut baby.ids, &mut baby.log, &db, input)
-        .expect("registrar");
+        .expect("record");
     ruth_api::discard_proposal(
         &mut baby.log,
         &db,
@@ -337,7 +334,7 @@ fn discard_blocks_accept_and_accept_blocks_discard() {
             temp_id: "p2".to_string(),
         },
     )
-    .expect("descartar");
+    .expect("discard");
     let err = ruth_api::accept_proposal(
         &mut baby.store,
         &mut baby.ids,
@@ -345,7 +342,7 @@ fn discard_blocks_accept_and_accept_blocks_discard() {
         &db,
         accept_input(&dto.id, "p2"),
     )
-    .expect_err("descartada no se acepta");
+    .expect_err("discarded is not accepted");
     assert_eq!(err.kind, "proposal_discarded");
     ruth_api::accept_proposal(
         &mut baby.store,
@@ -354,7 +351,7 @@ fn discard_blocks_accept_and_accept_blocks_discard() {
         &db,
         accept_input(&dto.id, "p1"),
     )
-    .expect("aceptar");
+    .expect("accept");
     let err = ruth_api::discard_proposal(
         &mut baby.log,
         &db,
@@ -363,31 +360,30 @@ fn discard_blocks_accept_and_accept_blocks_discard() {
             temp_id: "p1".to_string(),
         },
     )
-    .expect_err("aceptada no se descarta");
+    .expect_err("accepted is not discarded");
     assert_eq!(err.kind, "storage_error");
     db.close();
 }
 
 #[test]
 fn invalid_edits_are_rejected_without_side_effects() {
-    let tmp = TempDb::new("edicion-invalida");
+    let tmp = TempDb::new("invalid-edit");
     let mut baby = baby();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let input = record_input(&baby, fake_validated());
     let dto = ruth_api::record_generation(&baby.store, &mut baby.ids, &mut baby.log, &db, input)
-        .expect("registrar");
+        .expect("record");
     let before = baby.store.clone();
     let mut bad = accept_input(&dto.id, "p1");
     bad.title = "  ".to_string();
     let err = ruth_api::accept_proposal(&mut baby.store, &mut baby.ids, &mut baby.log, &db, bad)
-        .expect_err("título vacío");
+        .expect_err("empty title");
     assert_eq!(err.kind, "invalid_proposal");
     let mut bad = accept_input(&dto.id, "p1");
     bad.acceptance.clear();
     let err = ruth_api::accept_proposal(&mut baby.store, &mut baby.ids, &mut baby.log, &db, bad)
-        .expect_err("sin criterios");
+        .expect_err("no criteria");
     assert_eq!(err.kind, "invalid_proposal");
     assert_eq!(baby.store, before);
     db.close();
@@ -395,28 +391,27 @@ fn invalid_edits_are_rejected_without_side_effects() {
 
 #[test]
 fn persistence_failure_accepts_nothing_partially() {
-    let tmp = TempDb::new("fallo-disco");
+    let tmp = TempDb::new("disk-failure");
     let mut baby = baby();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let input = record_input(&baby, fake_validated());
     let dto = ruth_api::record_generation(&baby.store, &mut baby.ids, &mut baby.log, &db, input)
-        .expect("registrar");
+        .expect("record");
     db.close();
-    // Divergencia disco/memoria: en disco la propuesta deja de estar pendiente.
+    // Disk/memory divergence: on disk the proposal stops being pending.
     {
         let raw = rusqlite::Connection::open(&tmp.path).expect("raw");
         raw.execute(
             "UPDATE proposals SET state = 'discarded' WHERE generation_id = ? AND temp_id = 'p1'",
             [&dto.id],
         )
-        .expect("forzar");
+        .expect("force");
     }
-    let (db2, _) = DbActor::spawn(&tmp.path).expect("reabrir");
+    let (db2, _) = DbActor::spawn(&tmp.path).expect("reopen");
     let before_store = baby.store.clone();
     let before_log = baby.log.clone();
-    // En memoria sigue pendiente, pero el disco rechaza: nada se publica.
+    // In memory it stays pending, but disk rejects: nothing is published.
     let err = ruth_api::accept_proposal(
         &mut baby.store,
         &mut baby.ids,
@@ -424,7 +419,7 @@ fn persistence_failure_accepts_nothing_partially() {
         &db2,
         accept_input(&dto.id, "p1"),
     )
-    .expect_err("el disco manda");
+    .expect_err("disk rules");
     assert_eq!(err.kind, "storage_error");
     assert_eq!(baby.store, before_store);
     assert_eq!(baby.log, before_log);
@@ -439,13 +434,13 @@ fn description_and_preview_are_validated() {
     );
     assert_eq!(
         ruth_api::validate_description("   ")
-            .expect_err("vacía")
+            .expect_err("empty")
             .kind,
         "empty_description"
     );
     assert_eq!(
         ruth_api::validate_description(&"x".repeat(4001))
-            .expect_err("larga")
+            .expect_err("long")
             .kind,
         "description_too_long"
     );
@@ -457,7 +452,7 @@ fn description_and_preview_are_validated() {
             module_id: baby.module.clone(),
         },
     )
-    .expect("vista previa");
+    .expect("preview");
     assert_eq!(preview.len(), 1);
     assert_eq!(preview[0].artifact_id, baby.req);
     assert!(preview[0].chars > 0);
@@ -468,7 +463,7 @@ fn description_and_preview_are_validated() {
 fn context_snapshot_holds_exact_current_versions() {
     let baby = baby();
     let context =
-        ruth_api::snapshot_context(&baby.store, &baby.project, &baby.module).expect("foto");
+        ruth_api::snapshot_context(&baby.store, &baby.project, &baby.module).expect("snapshot");
     assert_eq!(context.len(), 1);
     assert_eq!(
         context[0],

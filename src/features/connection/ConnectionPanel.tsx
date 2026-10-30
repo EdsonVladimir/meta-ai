@@ -20,8 +20,8 @@ export function ConnectionPanel() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const checkingRef = useRef(false);
 
-  // Solo lectura local del entorno nativo (¿hay clave? ¿qué modelo?).
-  // No genera tráfico de red ni llama a Meta.
+  // Local read of the native environment only (key present? which model?).
+  // No network traffic; never calls Meta.
   useEffect(() => {
     if (!isNative) return;
     let cancelled = false;
@@ -33,7 +33,7 @@ export function ConnectionPanel() {
       })
       .catch(() => {
         if (cancelled) return;
-        setStatusError("No se pudo leer el estado del entorno nativo.");
+        setStatusError("Could not read the native environment status.");
       });
     return () => {
       cancelled = true;
@@ -63,7 +63,7 @@ export function ConnectionPanel() {
   return (
     <section className="panel" aria-labelledby="connection-title">
       <div className="panel-head">
-        <h2 id="connection-title">Conexión con Meta</h2>
+        <h2 id="connection-title">Meta connection</h2>
         <p className="status" role="status" aria-live="polite">
           <span className={`dot dot-${state}`} aria-hidden="true" />
           {stateLabel(state)}
@@ -72,20 +72,20 @@ export function ConnectionPanel() {
 
       {!isNative && (
         <p className="notice">
-          Estás en un navegador. La prueba de conexión es nativa y requiere
-          ejecutar Ruth IDE como aplicación de escritorio (Tauri). No se
-          simula la prueba ni se expone ninguna clave en la web.
+          You are in a browser. The connection test is native and requires
+          running Ruth IDE as a desktop application (Tauri). The test is
+          never simulated and no key is exposed on the web.
         </p>
       )}
 
       {isNative && status && (
         <dl className="facts">
           <div>
-            <dt>Clave configurada</dt>
-            <dd>{status.configured ? "Sí" : "No (META_API_KEY)"}</dd>
+            <dt>Key configured</dt>
+            <dd>{status.configured ? "Yes" : "No (META_API_KEY)"}</dd>
           </div>
           <div>
-            <dt>Modelo</dt>
+            <dt>Model</dt>
             <dd>
               <code>{status.model}</code>
             </dd>
@@ -100,28 +100,28 @@ export function ConnectionPanel() {
         onClick={handleTest}
         disabled={!isNative || state === "checking"}
       >
-        {state === "checking" ? "Comprobando…" : "Probar conexión"}
+        {state === "checking" ? "Checking…" : "Test connection"}
       </button>
       <p className="hint">
-        La prueba envía una petición mínima a Meta Model API y muestra el
-        texto, el modelo y el uso de tokens. Nada se ejecuta al arrancar: solo
-        al pulsar el botón.
+        The test sends a minimal request to Meta Model API and shows the
+        text, the model and the token usage. Nothing runs at startup: only
+        when the button is pressed.
       </p>
 
       {outcome && (
         <div className="result">
           {outcome.ok ? (
             <>
-              <h3>Prueba correcta</h3>
+              <h3>Test passed</h3>
               <dl className="facts">
                 <div>
-                  <dt>Respuesta</dt>
+                  <dt>Response</dt>
                   <dd>
                     <code>{outcome.value.text}</code>
                   </dd>
                 </div>
                 <div>
-                  <dt>Modelo</dt>
+                  <dt>Model</dt>
                   <dd>
                     <code>{outcome.value.model}</code>
                   </dd>
@@ -133,26 +133,26 @@ export function ConnectionPanel() {
               </dl>
               {outcome.value.truncated && (
                 <p className="notice">
-                  La API devolvió la respuesta sin completar (límite de salida
-                  mínimo de la prueba). La conexión funciona.
+                  The API returned the response unfinished (the test&apos;s
+                  minimal output limit). The connection works.
                 </p>
               )}
             </>
           ) : (
             <>
-              <h3>Prueba fallida: {kindLabel(outcome.error.kind)}</h3>
+              <h3>Test failed: {kindLabel(outcome.error.kind)}</h3>
               <p>{outcome.error.message}</p>
               {outcome.error.kind === "rate_limit" &&
                 outcome.error.retryAfterSecs != null && (
                   <p className="notice">
-                    La API pide esperar {outcome.error.retryAfterSecs} segundos
-                    antes de reintentar.
+                    The API asks to wait {outcome.error.retryAfterSecs} seconds
+                    before retrying.
                   </p>
                 )}
               {outcome.error.retryable &&
                 outcome.error.kind !== "rate_limit" && (
                   <p className="notice">
-                    Es un error transitorio: puedes reintentar con el botón.
+                    This is a transient error: you can retry with the button.
                   </p>
                 )}
             </>
@@ -166,6 +166,6 @@ export function ConnectionPanel() {
 function formatUsage(
   usage: { inputTokens: number; outputTokens: number; totalTokens: number } | null,
 ): string {
-  if (!usage) return "No proporcionado por la API";
-  return `entrada ${usage.inputTokens} · salida ${usage.outputTokens} · total ${usage.totalTokens}`;
+  if (!usage) return "Not provided by the API";
+  return `input ${usage.inputTokens} · output ${usage.outputTokens} · total ${usage.totalTokens}`;
 }

@@ -1,8 +1,8 @@
-//! Lógica de comandos: traduce entradas a casos de uso y casos de uso a DTOs.
+//! Command logic: translates inputs to use cases and use cases to DTOs.
 //!
-//! Sin Tauri ni E/S: recibe `Store`, `IdGen` y la fecha actual como entradas,
-//! así que es testeable sin tiempo de ejecución nativo. Toda mutación pasa
-//! por los casos de uso existentes; aquí no se duplican reglas.
+//! No Tauri or I/O: takes `Store`, `IdGen` and the current date as inputs,
+//! so it is testable without native runtime. Every mutation goes
+//! through the existing use cases; no rules duplicated here.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{
@@ -102,7 +102,7 @@ pub fn list_requirements(
         .collect())
 }
 
-/// Todos los artefactos del módulo, de cualquier tipo, para el navegador.
+/// All module artifacts, of any kind, for the browser.
 pub fn list_artifacts(
     store: &Store,
     input: ListArtifactsInput,
@@ -153,8 +153,8 @@ pub fn save_version(
     detail(store, &artifact)
 }
 
-/// Aprueba la versión actual y devuelve el detalle autoritativo actualizado.
-/// `now` es la fecha generada en la frontera (el dominio no lee el reloj).
+/// Approves the current version and returns the updated authoritative detail.
+/// `now` is the boundary-generated date (the domain reads no clock).
 pub fn approve_version(
     store: &mut Store,
     input: ApproveVersionInput,
@@ -186,7 +186,7 @@ fn detail(
         .collect();
     let Some(current) = versions.last() else {
         return Err(ApiError::internal(format!(
-            "el requisito {artifact} no tiene versiones"
+            "requirement {artifact} has no versions"
         )));
     };
     let current_version_id = current.id.clone();
@@ -296,7 +296,7 @@ mod tests {
     }
 
     fn baby_requirement(store: &mut Store, ids: &mut IdGen) -> RequirementDetail {
-        let project = create_project(store, ids).expect("proyecto");
+        let project = create_project(store, ids).expect("project");
         let module = create_module(
             store,
             ids,
@@ -304,7 +304,7 @@ mod tests {
                 project_id: project.id.clone(),
             },
         )
-        .expect("módulo");
+        .expect("module");
         create_requirement(
             store,
             ids,
@@ -315,7 +315,7 @@ mod tests {
                 author: "ana".to_string(),
             },
         )
-        .expect("requisito")
+        .expect("requirement")
     }
 
     #[test]
@@ -336,7 +336,7 @@ mod tests {
                 author: "ana".to_string(),
             },
         )
-        .expect("guardar");
+        .expect("save");
         assert_eq!(saved.versions.len(), 2);
         assert_eq!(
             saved.versions[0].content,
@@ -354,7 +354,7 @@ mod tests {
             },
             "2026-10-27T10:00:00Z",
         )
-        .expect("aprobar");
+        .expect("approve");
         assert_eq!(approved.approvals.len(), 1);
         assert_eq!(approved.approvals[0].approved_by, "bruno");
         assert_eq!(approved.approvals[0].version_id, saved.current_version_id);
@@ -371,11 +371,11 @@ mod tests {
                 project_id: detail.artifact.project_id.clone(),
                 artifact_id: detail.artifact.id.clone(),
                 expected_version_id: "req-3-v99".to_string(),
-                content: "cambio con base obsoleta".to_string(),
+                content: "change on a stale base".to_string(),
                 author: "ana".to_string(),
             },
         )
-        .expect_err("debe fallar");
+        .expect_err("must fail");
         assert_eq!(err.kind, "stale_version");
         assert_eq!(store, before);
     }
@@ -383,7 +383,7 @@ mod tests {
     #[test]
     fn empty_content_is_rejected() {
         let (mut store, mut ids) = setup();
-        let project = create_project(&mut store, &mut ids).expect("proyecto");
+        let project = create_project(&mut store, &mut ids).expect("project");
         let module = create_module(
             &mut store,
             &mut ids,
@@ -391,7 +391,7 @@ mod tests {
                 project_id: project.id.clone(),
             },
         )
-        .expect("módulo");
+        .expect("module");
         let err = create_requirement(
             &mut store,
             &mut ids,
@@ -402,7 +402,7 @@ mod tests {
                 author: "ana".to_string(),
             },
         )
-        .expect_err("debe fallar");
+        .expect_err("must fail");
         assert_eq!(err.kind, "empty_content");
     }
 
@@ -417,7 +417,7 @@ mod tests {
                 project_id: detail.artifact.project_id.clone(),
             },
         )
-        .expect("módulos");
+        .expect("modules");
         assert_eq!(modules.len(), 1);
         let reqs = list_requirements(
             &store,
@@ -426,7 +426,7 @@ mod tests {
                 module_id: detail.artifact.module_id.clone(),
             },
         )
-        .expect("requisitos");
+        .expect("requirements");
         assert_eq!(reqs.len(), 1);
         assert_eq!(reqs[0].kind, "requirement");
     }
@@ -440,7 +440,7 @@ mod tests {
                 project_id: "proy-9".to_string(),
             },
         )
-        .expect_err("debe fallar");
+        .expect_err("must fail");
         assert_eq!(err.kind, "project_not_found");
     }
 }

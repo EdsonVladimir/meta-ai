@@ -1,8 +1,8 @@
-//! Guardado y carga de instantáneas completas.
+//! Saving and loading complete snapshots.
 //!
-//! `save` reescribe la base entera en una transacción inmediata: o se guarda
-//! todo o no se guarda nada. `load` reconstruye con los constructores
-//! falibles del dominio y `Store::reconstitute`, sin generar nada nuevo.
+//! `save` rewrites the whole database in an immediate transaction: either
+//! everything is saved or nothing is. `load` rebuilds with the fallible
+//! domain constructors and `Store::reconstitute`, without generating anything new.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -16,10 +16,16 @@ use ruth_core::domain::{
 };
 
 use crate::baseline_meta::{BaselineMeta, BaselineMetaLog};
+use crate::code_links::CodeLinkLog;
+use crate::code_roots::CodeRootLog;
+use crate::codegen::CodeGenLog;
 use crate::design::{DesignLog, StoredDesignGeneration, StoredDesignProposal};
 use crate::error::StoreError;
 use crate::layout::LayoutLog;
+use crate::mockups::{MockupLog, StoredMockupGeneration, StoredMockupProposal};
 use crate::proposals::{ProposalLog, ProposalState, StoredGeneration, StoredProposal};
+use crate::recents::RecentLog;
+use crate::snapshots::SnapshotLog;
 
 fn invalid(message: impl Into<String>) -> StoreError {
     StoreError::InvalidData {
@@ -33,9 +39,9 @@ fn core(err: CoreError) -> StoreError {
     }
 }
 
-/// Guarda el estado íntegro (dominio + contador de ids) en una transacción.
-/// Si falla, la base conserva la instantánea anterior. No toca las tablas de
-/// generaciones: conviven con el dominio y tienen sus propias operaciones.
+/// Saves the whole state (domain + id counter) in one transaction. On
+/// failure, the database keeps the previous snapshot. Generation tables are
+/// untouched: they coexist with the domain and have their own operations.
 pub(crate) fn save(
     conn: &mut Connection,
     path: &Path,
@@ -50,17 +56,41 @@ pub(crate) fn save(
     Ok(())
 }
 
-/// Reescritura total del dominio dentro de una transacción ya abierta.
-/// Compartida por `save` y por la aceptación atómica de propuestas.
+/// Structure replication in ONE transaction: domain (new project +
+/// modules) + roots (association) + module↔path links. On failure the
+/// database keeps the previous snapshot: never half a project, never
+/// modules without a link.
+pub(crate) fn save_replication(
+    conn: &mut Connection,
+    path: &Path,
+    store: &Store,
+    roots: &[ruth_code::CodeRoot],
+    links: &[crate::code_links::StoredCodeLink],
+    next_id: u64,
+) -> Result<(), StoreError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| StoreError::convert(path, e))?;
+    save_domain(&tx, path, store, next_id)?;
+    crate::code_roots::write_code_roots(&tx, path, roots)?;
+    for link in links {
+        crate::code_links::insert_code_link(&tx, path, link)?;
+    }
+    tx.commit().map_err(|e| StoreError::convert(path, e))?;
+    Ok(())
+}
+
+/// Total domain rewrite inside an already open transaction. Shared by
+/// `save` and by atomic proposal acceptance.
 fn save_domain(
     tx: &Transaction,
     path: &Path,
     store: &Store,
     next_id: u64,
 ) -> Result<(), StoreError> {
-    // Orden de borrado hijo→padre: `baselines` referencia a `projects`,
-    // así que debe vaciarse antes que él (hasta el hito 9 la tabla estaba
-    // siempre vacía y el orden erróneo nunca se notó).
+    // Child→parent deletion order: `baselines` references `projects`, so
+    // it must be emptied before it (until milestone 9 the table was always
+    // empty and the wrong order never showed).
     for table in [
         "baseline_entries",
         "baselines",
@@ -130,8 +160,8 @@ fn save_domain(
             }
         }
     }
-    // Segunda pasada: las fuentes pueden apuntar a versiones de artefactos
-    // posteriores en el orden de inserción.
+    // Second pass: sources may point to versions of artifacts later in
+    // insertion order.
     for (version, pos, source) in &pending_sources {
         tx.execute(
             "INSERT INTO version_sources(version_id, pos, source_id) VALUES (?, ?, ?)",
@@ -202,8 +232,8 @@ fn save_domain(
             .map_err(|e| StoreError::convert(path, e))?;
         }
     }
-    // Historial de títulos con posición global: la carga lo reconstruye
-    // en el orden exacto de registro.
+    // Title history with global position: loading rebuilds it in the
+    // exact registration order.
     for (pos, change) in store.title_changes().iter().enumerate() {
         tx.execute(
             "INSERT INTO title_history(artifact_id, pos, title, changed_by, at) VALUES (?, ?, ?, ?, ?)",
@@ -225,17 +255,25 @@ fn save_domain(
     Ok(())
 }
 
-/// Registra una generación validada con sus propuestas pendientes, en una
-/// transacción. Si falla, no queda rastro parcial.
+/// Registers a validated generation with its pending proposals, in one
+/// transaction. On failure, no partial trace remains.
 pub(crate) fn save_generation(
     conn: &mut Connection,
     path: &Path,
     generation: &StoredGeneration,
+    next_id: u64,
 ) -> Result<(), StoreError> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| StoreError::convert(path, e))?;
     insert_generation(&tx, path, generation)?;
+    // The `gen-N` ID consumes the shared counter: persisting it here avoids
+    // reusing it after restart.
+    tx.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('next_id', ?)",
+        [next_id.to_string()],
+    )
+    .map_err(|e| StoreError::convert(path, e))?;
     tx.commit().map_err(|e| StoreError::convert(path, e))?;
     Ok(())
 }
@@ -280,7 +318,7 @@ fn insert_generation(
     }
     for proposal in &generation.proposals {
         if !matches!(proposal.state, ProposalState::Pending) {
-            return Err(invalid("las propuestas nuevas deben estar pendientes"));
+            return Err(invalid("new proposals must be pending"));
         }
         tx.execute(
             "INSERT INTO proposals(generation_id, temp_id, title, description, state)
@@ -331,10 +369,11 @@ fn insert_items(
     Ok(())
 }
 
-/// Aceptación atómica: reescribe el dominio (con el requisito ya creado) y
-/// marca la propuesta como aceptada en la MISMA transacción. Si la propuesta
-/// no está pendiente, todo se revierte y memoria y disco quedan intactos.
-// Ocho parámetros explícitos en vez de un struct de un solo uso.
+/// Atomic acceptance: rewrites the domain (with the requirement already
+/// created) and marks the proposal accepted in the SAME transaction. If the
+/// proposal is not pending, everything rolls back and memory and disk stay
+/// intact.
+// Eight explicit parameters instead of a single-use struct.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn accept_proposal(
     conn: &mut Connection,
@@ -359,15 +398,15 @@ pub(crate) fn accept_proposal(
         .map_err(|e| StoreError::convert(path, e))?;
     if changed != 1 {
         return Err(invalid(format!(
-            "la propuesta {temp_id} no está pendiente de aceptar"
+            "proposal {temp_id} is not pending acceptance"
         )));
     }
     tx.commit().map_err(|e| StoreError::convert(path, e))?;
     Ok(())
 }
 
-/// Descarta una propuesta pendiente, en una transacción. Idempotente si ya
-/// estaba descartada; rechaza si ya se aceptó o no existe.
+/// Discards a pending proposal, in one transaction. Idempotent when
+/// already discarded; rejects when already accepted or missing.
 pub(crate) fn discard_proposal(
     conn: &mut Connection,
     path: &Path,
@@ -396,23 +435,24 @@ pub(crate) fn discard_proposal(
         Some("discarded") => {}
         Some("accepted") => {
             return Err(invalid(format!(
-                "la propuesta {temp_id} ya se aceptó y no puede descartarse"
+                "proposal {temp_id} was already accepted and cannot be discarded"
             )));
         }
         _ => {
-            return Err(invalid(format!("propuesta desconocida: {temp_id}")));
+            return Err(invalid(format!("unknown proposal: {temp_id}")));
         }
     }
     tx.commit().map_err(|e| StoreError::convert(path, e))?;
     Ok(())
 }
 
-/// Registra una generación de diseño validada con su propuesta pendiente, en
-/// una transacción. Si falla, no queda rastro parcial.
+/// Registers a validated design generation with its pending proposal, in
+/// one transaction. On failure, no partial trace remains.
 pub(crate) fn save_design_generation(
     conn: &mut Connection,
     path: &Path,
     generation: &StoredDesignGeneration,
+    next_id: u64,
 ) -> Result<(), StoreError> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -454,9 +494,7 @@ pub(crate) fn save_design_generation(
         .map_err(&convert)?;
     }
     if !matches!(generation.proposal.state, ProposalState::Pending) {
-        return Err(invalid(
-            "las propuestas de diseño nuevas deben estar pendientes",
-        ));
+        return Err(invalid("new design proposals must be pending"));
     }
     tx.execute(
         "INSERT INTO design_proposals(generation_id, title, spec_json, explanation, state)
@@ -469,13 +507,18 @@ pub(crate) fn save_design_generation(
         ],
     )
     .map_err(&convert)?;
+    tx.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('next_id', ?)",
+        [next_id.to_string()],
+    )
+    .map_err(&convert)?;
     tx.commit().map_err(|e| StoreError::convert(path, e))?;
     Ok(())
 }
 
-/// Aceptación atómica de diseño: reescribe el dominio (con el artefacto ya
-/// creado o versionado) y marca la propuesta como aceptada en la MISMA
-/// transacción. Si no está pendiente, todo se revierte.
+/// Atomic design acceptance: rewrites the domain (with the artifact
+/// already created or versioned) and marks the proposal accepted in the
+/// SAME transaction. If not pending, everything rolls back.
 pub(crate) fn accept_design_proposal(
     conn: &mut Connection,
     path: &Path,
@@ -498,16 +541,161 @@ pub(crate) fn accept_design_proposal(
         .map_err(|e| StoreError::convert(path, e))?;
     if changed != 1 {
         return Err(invalid(format!(
-            "la propuesta de diseño {generation_id} no está pendiente de aceptar"
+            "design proposal {generation_id} is not pending acceptance"
         )));
     }
     tx.commit().map_err(|e| StoreError::convert(path, e))?;
     Ok(())
 }
 
-/// Guardado de revisión manual de diseño: dominio + disposición visual en
-/// una sola transacción. Sin disposición (`None`), solo se guarda el
-/// dominio; la disposición anterior de otras versiones queda intacta.
+/// Registers a validated screen generation with its pending proposals,
+/// in one transaction. On failure, no partial trace remains.
+pub(crate) fn save_mockup_generation(
+    conn: &mut Connection,
+    path: &Path,
+    generation: &StoredMockupGeneration,
+    next_id: u64,
+) -> Result<(), StoreError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| StoreError::convert(path, e))?;
+    let convert = |e| StoreError::convert(path, e);
+    tx.execute(
+        "INSERT INTO mockup_generations(id, project_id, module_id, model,
+         template_version, input_tokens, output_tokens, total_tokens, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![
+            generation.id,
+            generation.project_id,
+            generation.module_id,
+            generation.model,
+            generation.template_version,
+            generation.input_tokens,
+            generation.output_tokens,
+            generation.total_tokens,
+            generation.created_at,
+        ],
+    )
+    .map_err(&convert)?;
+    for (pos, version) in generation.context_version_ids.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO mockup_context(generation_id, pos, version_id) VALUES (?, ?, ?)",
+            rusqlite::params![generation.id, pos as u32, version],
+        )
+        .map_err(&convert)?;
+    }
+    for (pos, question) in generation.questions.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO mockup_questions(generation_id, pos, question) VALUES (?, ?, ?)",
+            rusqlite::params![generation.id, pos as u32, question],
+        )
+        .map_err(&convert)?;
+    }
+    for proposal in &generation.proposals {
+        if !matches!(proposal.state, ProposalState::Pending) {
+            return Err(invalid("new screen proposals must be pending"));
+        }
+        tx.execute(
+            "INSERT INTO mockup_proposals(generation_id, temp_id, title, spec_json,
+             explanation, state)
+             VALUES (?, ?, ?, ?, ?, 'pending')",
+            rusqlite::params![
+                generation.id,
+                proposal.temp_id,
+                proposal.title,
+                proposal.spec_json,
+                proposal.explanation,
+            ],
+        )
+        .map_err(&convert)?;
+    }
+    tx.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('next_id', ?)",
+        [next_id.to_string()],
+    )
+    .map_err(&convert)?;
+    tx.commit().map_err(|e| StoreError::convert(path, e))?;
+    Ok(())
+}
+
+/// Atomic screen acceptance: rewrites the domain (with the mockup
+/// already created) and marks the proposal accepted in the SAME
+/// transaction. If not pending, everything rolls back.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn accept_mockup_proposal(
+    conn: &mut Connection,
+    path: &Path,
+    store: &Store,
+    next_id: u64,
+    generation_id: &str,
+    temp_id: &str,
+    artifact_id: &str,
+    content: &str,
+) -> Result<(), StoreError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| StoreError::convert(path, e))?;
+    save_domain(&tx, path, store, next_id)?;
+    let changed = tx
+        .execute(
+            "UPDATE mockup_proposals SET state = 'accepted', artifact_id = ?, accepted_content = ?
+             WHERE generation_id = ? AND temp_id = ? AND state = 'pending'",
+            rusqlite::params![artifact_id, content, generation_id, temp_id],
+        )
+        .map_err(|e| StoreError::convert(path, e))?;
+    if changed != 1 {
+        return Err(invalid(format!(
+            "screen {temp_id} is not pending acceptance"
+        )));
+    }
+    tx.commit().map_err(|e| StoreError::convert(path, e))?;
+    Ok(())
+}
+
+/// Discards a pending screen, in one transaction. Idempotent when
+/// already discarded; rejects when already accepted or missing.
+pub(crate) fn discard_mockup_proposal(
+    conn: &mut Connection,
+    path: &Path,
+    generation_id: &str,
+    temp_id: &str,
+) -> Result<(), StoreError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| StoreError::convert(path, e))?;
+    let state: Option<String> = tx
+        .query_row(
+            "SELECT state FROM mockup_proposals WHERE generation_id = ? AND temp_id = ?",
+            rusqlite::params![generation_id, temp_id],
+            |row| row.get(0),
+        )
+        .ok();
+    match state.as_deref() {
+        Some("pending") => {
+            tx.execute(
+                "UPDATE mockup_proposals SET state = 'discarded'
+                 WHERE generation_id = ? AND temp_id = ?",
+                rusqlite::params![generation_id, temp_id],
+            )
+            .map_err(|e| StoreError::convert(path, e))?;
+        }
+        Some("discarded") => {}
+        Some("accepted") => {
+            return Err(invalid(format!(
+                "screen {temp_id} was already accepted and cannot be discarded"
+            )));
+        }
+        _ => {
+            return Err(invalid(format!("unknown screen: {temp_id}")));
+        }
+    }
+    tx.commit().map_err(|e| StoreError::convert(path, e))?;
+    Ok(())
+}
+
+/// Manual design review save: domain + visual layout in a single
+/// transaction. Without a layout (`None`), only the domain is saved;
+/// the previous layout of other versions stays intact.
 pub(crate) fn save_design_layout(
     conn: &mut Connection,
     path: &Path,
@@ -534,8 +722,8 @@ pub(crate) fn save_design_layout(
     Ok(())
 }
 
-/// Guarda solo una disposición, sin tocar el dominio. Sin disposición
-/// (`None`), no escribe nada: equivale a "nada que guardar".
+/// Saves only a layout, without touching the domain. Without a layout
+/// (`None`), writes nothing: equivalent to "nothing to save".
 pub(crate) fn upsert_design_layout(
     conn: &mut Connection,
     path: &Path,
@@ -560,8 +748,8 @@ pub(crate) fn upsert_design_layout(
     Ok(())
 }
 
-/// Descarta una propuesta de diseño pendiente, en una transacción.
-/// Idempotente si ya estaba descartada; rechaza si ya se aceptó o no existe.
+/// Discards a pending design proposal, in one transaction. Idempotent
+/// when already discarded; rejects when already accepted or missing.
 pub(crate) fn discard_design_proposal(
     conn: &mut Connection,
     path: &Path,
@@ -588,12 +776,12 @@ pub(crate) fn discard_design_proposal(
         Some("discarded") => {}
         Some("accepted") => {
             return Err(invalid(format!(
-                "la propuesta de diseño {generation_id} ya se aceptó y no puede descartarse"
+                "design proposal {generation_id} was already accepted and cannot be discarded"
             )));
         }
         _ => {
             return Err(invalid(format!(
-                "generación de diseño desconocida: {generation_id}"
+                "unknown design generation: {generation_id}"
             )));
         }
     }
@@ -601,32 +789,35 @@ pub(crate) fn discard_design_proposal(
     Ok(())
 }
 
-/// Carga y valida la instantánea completa (dominio + generaciones). No
-/// escribe nada: ante cualquier problema la base queda intacta. Las bases v1
-/// (sin tablas de generaciones) cargan con el registro vacío; la migración
-/// posterior añade las tablas sin tocar los datos.
-pub(crate) fn load(
-    conn: &Connection,
-    path: &Path,
-) -> Result<
-    (
-        Store,
-        u64,
-        ProposalLog,
-        DesignLog,
-        BaselineMetaLog,
-        LayoutLog,
-    ),
-    StoreError,
-> {
+/// Snapshot validated on open: domain, counter and logs.
+pub(crate) type LoadedState = (
+    Store,
+    u64,
+    ProposalLog,
+    DesignLog,
+    BaselineMetaLog,
+    LayoutLog,
+    MockupLog,
+    CodeRootLog,
+    CodeLinkLog,
+    SnapshotLog,
+    CodeGenLog,
+    RecentLog,
+);
+
+/// Loads and validates the complete snapshot (domain + generations).
+/// Writes nothing: on any problem the database stays intact. v1 databases
+/// (without generation tables) load with an empty log; the later migration
+/// adds the tables without touching the data.
+pub(crate) fn load(conn: &Connection, path: &Path) -> Result<LoadedState, StoreError> {
     let convert = |e| StoreError::convert(path, e);
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(&convert)?;
     verify_tables(conn, path, version)?;
-    // Nombres (v8): en esquemas anteriores la columna no existe y el nombre
-    // es el ID (valor por defecto del constructor); la migración la añade y
-    // la rellena después. Los literales NULL/0 evitan triplicar ramas.
+    // Names (v8): on earlier schemas the column does not exist and the name
+    // is the ID (constructor default); the migration adds and backfills it
+    // later. The NULL/0 literals avoid tripling branches.
     let mut projects = Vec::new();
     let project_select = if version >= 8 {
         "SELECT id, name FROM projects"
@@ -646,8 +837,8 @@ pub(crate) fn load(
         }
         projects.push(project);
     }
-    // Archivado (v7): en esquemas anteriores la columna no existe y todo se
-    // considera activo; la migración la añade con defecto 0 después.
+    // Archiving (v7): on earlier schemas the column does not exist and
+    // everything counts as active; the migration adds it with default 0 later.
     let mut modules = Vec::new();
     let module_select = if version >= 8 {
         "SELECT id, project_id, name, archived FROM modules"
@@ -706,7 +897,7 @@ pub(crate) fn load(
             parse_kind(&kind)?,
         );
         let mut artifact = with_archived_artifact(artifact, archived)?;
-        // NULL = sin título propio (registros anteriores o sin titular).
+        // NULL = no own title (older logs or untitled).
         if let Some(title) = title {
             artifact.set_title(Some(Name::new(title).map_err(core)?));
         }
@@ -746,7 +937,7 @@ pub(crate) fn load(
         .map_err(&convert)?;
     for (id, artifact, number, content, provenance_kind, provenance_by) in rows {
         let number = u32::try_from(number)
-            .map_err(|_| invalid(format!("número de versión inválido en {id}")))?;
+            .map_err(|_| invalid(format!("invalid version number in {id}")))?;
         let sources = sources_by_version
             .remove(&id)
             .unwrap_or_default()
@@ -764,7 +955,7 @@ pub(crate) fn load(
         ));
     }
     if let Some(dangling) = sources_by_version.keys().next() {
-        return Err(invalid(format!("fuentes huérfanas de {dangling}")));
+        return Err(invalid(format!("orphan sources of {dangling}")));
     }
     let mut approvals = Vec::new();
     let mut rows = conn
@@ -817,7 +1008,7 @@ pub(crate) fn load(
         let mut titles = HashMap::new();
         for (artifact, version, title) in entries_by_baseline.remove(&id).unwrap_or_default() {
             let artifact_id = ArtifactId::new(artifact).map_err(core)?;
-            // Título fijado al crear la baseline; se valida como nombre.
+            // Title pinned at baseline creation; validated as a name.
             let title = title
                 .map(Name::new)
                 .transpose()
@@ -834,7 +1025,7 @@ pub(crate) fn load(
             Date::new(at).map_err(core)?,
         ));
     }
-    // Historial de títulos (v8): en esquemas anteriores la tabla no existe.
+    // Title history (v8): on earlier schemas the table does not exist.
     let mut title_history = Vec::new();
     if version >= 8 {
         let mut stmt = conn
@@ -856,9 +1047,9 @@ pub(crate) fn load(
             ));
         }
     }
-    // Entregas de trabajo (v9): las tablas no existen en esquemas
-    // anteriores (sin entregas que conservar).
-    // Fila de `work_deliveries`: id, proyecto, nombre, descripción, alcance, fecha.
+    // Work deliveries (v9): the tables do not exist on earlier schemas
+    // (no deliveries to preserve).
+    // `work_deliveries` row: id, project, name, description, scope, date.
     type DeliveryRow = (
         String,
         String,
@@ -938,10 +1129,10 @@ pub(crate) fn load(
         .query_row("SELECT value FROM meta WHERE key = 'next_id'", [], |row| {
             row.get(0)
         })
-        .map_err(|_| invalid("falta el contador de identificadores"))?;
+        .map_err(|_| invalid("missing identifier counter"))?;
     let next_id: u64 = next_id
         .parse()
-        .map_err(|_| invalid("contador de identificadores inválido"))?;
+        .map_err(|_| invalid("invalid identifier counter"))?;
     let store = Store::reconstitute(Snapshot {
         projects,
         modules,
@@ -973,12 +1164,55 @@ pub(crate) fn load(
     } else {
         LayoutLog::new()
     };
-    Ok((store, next_id, proposals, designs, baseline_meta, layouts))
+    let mockups = if version >= 10 {
+        load_mockups(conn, path, &store)?
+    } else {
+        MockupLog::new()
+    };
+    let code_roots = if version >= 11 {
+        crate::code_roots::load_code_roots(conn, path, &store, version >= 12)?
+    } else {
+        CodeRootLog::new()
+    };
+    let code_links = if version >= 12 {
+        crate::code_links::load_code_links(conn, path, &store, &code_roots)?
+    } else {
+        CodeLinkLog::new()
+    };
+    let snapshots = if version >= 12 {
+        crate::snapshots::load_snapshots(conn, path, &store)?
+    } else {
+        SnapshotLog::new()
+    };
+    let codegen = if version >= 13 {
+        crate::codegen::load_codegen(conn, path, &store, version >= 14)?
+    } else {
+        CodeGenLog::new()
+    };
+    let recents = if version >= 15 {
+        crate::recents::load_recents(conn, path)?
+    } else {
+        RecentLog::new()
+    };
+    Ok((
+        store,
+        next_id,
+        proposals,
+        designs,
+        baseline_meta,
+        layouts,
+        mockups,
+        code_roots,
+        code_links,
+        snapshots,
+        codegen,
+        recents,
+    ))
 }
 
-/// Todas las tablas esperadas existen; si no, la base está manipulada. Las
-/// tablas de generaciones solo se exigen desde la v2, las de diseño desde
-/// la v3 y los metadatos de baselines desde la v5.
+/// All expected tables exist; otherwise the database was tampered with.
+/// Generation tables are only required since v2, design ones since v3 and
+/// baseline metadata since v5.
 fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), StoreError> {
     const EXPECTED_V1: [&str; 9] = [
         "projects",
@@ -1016,7 +1250,7 @@ fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), Sto
     for table in EXPECTED_V1 {
         if !found.iter().any(|name| name == table) {
             return Err(StoreError::Corrupt {
-                message: format!("falta la tabla {table}"),
+                message: format!("missing table {table}"),
             });
         }
     }
@@ -1024,7 +1258,7 @@ fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), Sto
         for table in EXPECTED_V2 {
             if !found.iter().any(|name| name == table) {
                 return Err(StoreError::Corrupt {
-                    message: format!("falta la tabla {table}"),
+                    message: format!("missing table {table}"),
                 });
             }
         }
@@ -1033,7 +1267,7 @@ fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), Sto
         for table in EXPECTED_V3 {
             if !found.iter().any(|name| name == table) {
                 return Err(StoreError::Corrupt {
-                    message: format!("falta la tabla {table}"),
+                    message: format!("missing table {table}"),
                 });
             }
         }
@@ -1050,19 +1284,19 @@ fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), Sto
         for column in ["target_artifact_id", "target_version_id"] {
             if !columns.iter().any(|name| name == column) {
                 return Err(StoreError::Corrupt {
-                    message: format!("falta la columna {column}"),
+                    message: format!("missing column {column}"),
                 });
             }
         }
     }
     if version >= 5 && !found.iter().any(|name| name == "baseline_meta") {
         return Err(StoreError::Corrupt {
-            message: "falta la tabla baseline_meta".to_string(),
+            message: "missing table baseline_meta".to_string(),
         });
     }
     if version >= 6 && !found.iter().any(|name| name == "design_layouts") {
         return Err(StoreError::Corrupt {
-            message: "falta la tabla design_layouts".to_string(),
+            message: "missing table design_layouts".to_string(),
         });
     }
     if version >= 7 {
@@ -1077,7 +1311,7 @@ fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), Sto
                 .map_err(|e| StoreError::convert(path, e))?;
             if !columns.iter().any(|name| name == "archived") {
                 return Err(StoreError::Corrupt {
-                    message: format!("falta la columna archived en {table}"),
+                    message: format!("missing column archived in {table}"),
                 });
             }
         }
@@ -1099,13 +1333,13 @@ fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), Sto
                 .map_err(|e| StoreError::convert(path, e))?;
             if !columns.iter().any(|name| name == column) {
                 return Err(StoreError::Corrupt {
-                    message: format!("falta la columna {column} en {table}"),
+                    message: format!("missing column {column} in {table}"),
                 });
             }
         }
         if !found.iter().any(|name| name == "title_history") {
             return Err(StoreError::Corrupt {
-                message: "falta la tabla title_history".to_string(),
+                message: "missing table title_history".to_string(),
             });
         }
     }
@@ -1113,20 +1347,80 @@ fn verify_tables(conn: &Connection, path: &Path, version: i64) -> Result<(), Sto
         for table in ["work_deliveries", "work_delivery_entries"] {
             if !found.iter().any(|name| name == table) {
                 return Err(StoreError::Corrupt {
-                    message: format!("falta la tabla {table}"),
+                    message: format!("missing table {table}"),
                 });
             }
         }
     }
+    if version >= 10 {
+        for table in [
+            "mockup_generations",
+            "mockup_context",
+            "mockup_questions",
+            "mockup_proposals",
+        ] {
+            if !found.iter().any(|name| name == table) {
+                return Err(StoreError::Corrupt {
+                    message: format!("missing table {table}"),
+                });
+            }
+        }
+    }
+    if version >= 11 && !found.iter().any(|name| name == "code_roots") {
+        return Err(StoreError::Corrupt {
+            message: "missing table code_roots".to_string(),
+        });
+    }
+    if version >= 12 {
+        for table in ["code_links", "structure_snapshots"] {
+            if !found.iter().any(|name| name == table) {
+                return Err(StoreError::Corrupt {
+                    message: format!("missing table {table}"),
+                });
+            }
+        }
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(code_roots)")
+            .map_err(|e| StoreError::convert(path, e))?;
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get(1))
+            .map_err(|e| StoreError::convert(path, e))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| StoreError::convert(path, e))?;
+        if !columns.iter().any(|name| name == "project_id") {
+            return Err(StoreError::Corrupt {
+                message: "missing column project_id in code_roots".to_string(),
+            });
+        }
+    }
+    if version >= 13 {
+        for table in [
+            "code_generations",
+            "code_gen_scope",
+            "code_gen_notes",
+            "code_proposal_files",
+        ] {
+            if !found.iter().any(|name| name == table) {
+                return Err(StoreError::Corrupt {
+                    message: format!("missing table {table}"),
+                });
+            }
+        }
+    }
+    if version >= 14 && !found.iter().any(|name| name == "code_gen_screen_sources") {
+        return Err(StoreError::Corrupt {
+            message: "missing table code_gen_screen_sources".to_string(),
+        });
+    }
     Ok(())
 }
 
-/// Carga las generaciones con sus propuestas y verifica su integridad contra
-/// el dominio (proyecto, módulo y artefacto aceptado existentes). Las
-/// referencias a versiones de contexto no se exigen: si una fuente cambió o
-/// falta, la generación se marca desactualizada al consultar, no al cargar.
-/// Fila de `generations`: identidad, proyecto, módulo, modelo, descripción,
-/// plantilla, uso (3) y fecha.
+/// Loads the generations with their proposals and verifies their integrity
+/// against the domain (existing project, module and accepted artifact).
+/// Context-version references are not required: if a source changed or is
+/// missing, the generation is marked stale at query time, not at load.
+/// `generations` row: identity, project, module, model, description,
+/// template, usage (3) and date.
 type GenerationRow = (
     String,
     String,
@@ -1140,8 +1434,8 @@ type GenerationRow = (
     String,
 );
 
-/// Fila de `proposals`: generación, temporal, título, descripción, estado y
-/// aceptación (2).
+/// `proposals` row: generation, temp, title, description, state and
+/// acceptance (2).
 type ProposalRow = (
     String,
     String,
@@ -1221,7 +1515,7 @@ fn load_proposals(
             },
             (other, _, _) => {
                 return Err(invalid(format!(
-                    "estado de propuesta inválido: {other} en {temp_id}"
+                    "invalid proposal state: {other} in {temp_id}"
                 )));
             }
         };
@@ -1253,7 +1547,7 @@ fn load_proposals(
     ) in rows
     {
         let template_version = u32::try_from(template_version)
-            .map_err(|_| invalid(format!("plantilla inválida en {id}")))?;
+            .map_err(|_| invalid(format!("invalid template in {id}")))?;
         let generation = StoredGeneration {
             id: id.clone(),
             project_id,
@@ -1273,26 +1567,26 @@ fn load_proposals(
         log.record(generation)?;
     }
     if let Some(dangling) = by_generation.keys().next() {
-        return Err(invalid(format!("propuestas huérfanas de {dangling}")));
+        return Err(invalid(format!("orphan proposals of {dangling}")));
     }
     Ok(log)
 }
 
-/// La generación apunta a proyecto y módulo existentes, y cada propuesta
-/// aceptada a un artefacto existente. Sin estas FK en SQL (ver esquema v2),
-/// la carga es quien lo exige.
+/// The generation points to existing project and module, and each accepted
+/// proposal to an existing artifact. Without these SQL FKs (see schema v2),
+/// loading is what enforces it.
 fn verify_generation_refs(store: &Store, generation: &StoredGeneration) -> Result<(), StoreError> {
     let project = ProjectId::new(generation.project_id.clone()).map_err(core)?;
     let module = ModuleId::new(generation.module_id.clone()).map_err(core)?;
     if store.project(&project).is_none() {
         return Err(invalid(format!(
-            "la generación {} apunta a un proyecto inexistente",
+            "generation {} points to a missing project",
             generation.id
         )));
     }
     if store.module(&module).is_none() {
         return Err(invalid(format!(
-            "la generación {} apunta a un módulo inexistente",
+            "generation {} points to a missing module",
             generation.id
         )));
     }
@@ -1301,7 +1595,7 @@ fn verify_generation_refs(store: &Store, generation: &StoredGeneration) -> Resul
             let artifact = ArtifactId::new(artifact_id.clone()).map_err(core)?;
             if store.artifact(&artifact).is_none() {
                 return Err(invalid(format!(
-                    "la propuesta {} aceptó un artefacto inexistente",
+                    "proposal {} accepted a missing artifact",
                     proposal.temp_id
                 )));
             }
@@ -1310,8 +1604,8 @@ fn verify_generation_refs(store: &Store, generation: &StoredGeneration) -> Resul
     Ok(())
 }
 
-/// Fila de `design_generations`: identidad, proyecto, módulo, tipo, modelo,
-/// plantilla, uso (3) y fecha.
+/// `design_generations` row: identity, project, module, kind, model,
+/// template, usage (3) and date.
 type DesignRow = (
     String,
     String,
@@ -1325,8 +1619,8 @@ type DesignRow = (
     String,
 );
 
-/// Fila de `design_proposals`: generación, título, especificación,
-/// explicación, estado y aceptación (2).
+/// `design_proposals` row: generation, title, spec, explanation, state
+/// and acceptance (2).
 type DesignProposalRow = (
     String,
     String,
@@ -1337,10 +1631,10 @@ type DesignProposalRow = (
     Option<String>,
 );
 
-/// Carga las generaciones de diseño y verifica su integridad contra el
-/// dominio. Como en propuestas, el contexto no se exige versión a versión.
-/// Las columnas de objetivo (v4) se leen aparte: en v3 no existen y quedan
-/// a nulo (la migración las añade después de cargar).
+/// Loads the design generations and verifies their integrity against the
+/// domain. As with proposals, the context is not enforced version by
+/// version. The target columns (v4) are read separately: on v3 they do not
+/// exist and stay null (the migration adds them after loading).
 fn load_designs(
     conn: &Connection,
     path: &Path,
@@ -1425,7 +1719,7 @@ fn load_designs(
             },
             (other, _, _) => {
                 return Err(invalid(format!(
-                    "estado de propuesta de diseño inválido: {other} en {generation_id}"
+                    "invalid design proposal state: {other} in {generation_id}"
                 )));
             }
         };
@@ -1442,7 +1736,7 @@ fn load_designs(
             .is_some()
         {
             return Err(invalid(format!(
-                "propuesta de diseño duplicada en {generation_id}"
+                "duplicate design proposal in {generation_id}"
             )));
         }
     }
@@ -1461,10 +1755,10 @@ fn load_designs(
     ) in rows
     {
         let template_version = u32::try_from(template_version)
-            .map_err(|_| invalid(format!("plantilla inválida en {id}")))?;
+            .map_err(|_| invalid(format!("invalid template in {id}")))?;
         let proposal = by_generation
             .remove(&id)
-            .ok_or_else(|| invalid(format!("generación de diseño {id} sin propuesta")))?;
+            .ok_or_else(|| invalid(format!("design generation {id} without a proposal")))?;
         let (target_artifact_id, target_version_id) = targets.remove(&id).unwrap_or((None, None));
         let generation = StoredDesignGeneration {
             id: id.clone(),
@@ -1487,15 +1781,13 @@ fn load_designs(
         log.record(generation)?;
     }
     if let Some(dangling) = by_generation.keys().next() {
-        return Err(invalid(format!(
-            "propuesta de diseño huérfana de {dangling}"
-        )));
+        return Err(invalid(format!("orphan design proposal of {dangling}")));
     }
     Ok(log)
 }
 
-/// La generación de diseño apunta a proyecto y módulo existentes, y su
-/// propuesta aceptada a un artefacto existente.
+/// The design generation points to existing project and module, and its
+/// accepted proposal to an existing artifact.
 fn verify_design_refs(
     store: &Store,
     generation: &StoredDesignGeneration,
@@ -1504,13 +1796,13 @@ fn verify_design_refs(
     let module = ModuleId::new(generation.module_id.clone()).map_err(core)?;
     if store.project(&project).is_none() {
         return Err(invalid(format!(
-            "la generación de diseño {} apunta a un proyecto inexistente",
+            "design generation {} points to a missing project",
             generation.id
         )));
     }
     if store.module(&module).is_none() {
         return Err(invalid(format!(
-            "la generación de diseño {} apunta a un módulo inexistente",
+            "design generation {} points to a missing module",
             generation.id
         )));
     }
@@ -1518,7 +1810,7 @@ fn verify_design_refs(
         let artifact = ArtifactId::new(artifact_id.clone()).map_err(core)?;
         if store.artifact(&artifact).is_none() {
             return Err(invalid(format!(
-                "la propuesta de diseño {} aceptó un artefacto inexistente",
+                "design proposal {} accepted a missing artifact",
                 generation.id
             )));
         }
@@ -1533,14 +1825,14 @@ fn verify_design_refs(
             let target_version = VersionId::new(target_version).map_err(core)?;
             if store.artifact(&artifact).is_none() || store.version(&target_version).is_none() {
                 return Err(invalid(format!(
-                    "la propuesta de diseño {} apunta a un objetivo inexistente",
+                    "design proposal {} points to a missing target",
                     generation.id
                 )));
             }
         }
         _ => {
             return Err(invalid(format!(
-                "la propuesta de diseño {} fija medio objetivo",
+                "design proposal {} pins half a target",
                 generation.id
             )));
         }
@@ -1548,8 +1840,197 @@ fn verify_design_refs(
     Ok(())
 }
 
-/// Carga los metadatos de baselines y verifica que cada uno apunta a una
-/// baseline existente del dominio. Solo se llama desde la v5.
+/// `mockup_generations` row: identity, project, module, model, template,
+/// usage (3) and date.
+type MockupRow = (
+    String,
+    String,
+    String,
+    String,
+    i64,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    String,
+);
+
+/// `mockup_proposals` row: generation, temp, title, spec, explanation,
+/// state and acceptance (2).
+type MockupProposalRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+);
+
+/// Loads the screen generations and verifies their integrity against the
+/// domain. Only called since v10; earlier databases load with an empty
+/// log and the migration adds the tables later.
+fn load_mockups(conn: &Connection, path: &Path, store: &Store) -> Result<MockupLog, StoreError> {
+    let convert = |e| StoreError::convert(path, e);
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, project_id, module_id, model, template_version,
+             input_tokens, output_tokens, total_tokens, created_at
+             FROM mockup_generations ORDER BY rowid",
+        )
+        .map_err(&convert)?;
+    let rows: Vec<MockupRow> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+            ))
+        })
+        .map_err(&convert)?
+        .collect::<Result<_, _>>()
+        .map_err(&convert)?;
+    let context = load_ordered(conn, &convert, "mockup_context", "version_id")?;
+    let questions = load_ordered(conn, &convert, "mockup_questions", "question")?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT generation_id, temp_id, title, spec_json, explanation,
+             state, artifact_id, accepted_content
+             FROM mockup_proposals ORDER BY generation_id, rowid",
+        )
+        .map_err(&convert)?;
+    let proposal_rows: Vec<MockupProposalRow> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+            ))
+        })
+        .map_err(&convert)?
+        .collect::<Result<_, _>>()
+        .map_err(&convert)?;
+    let mut by_generation: HashMap<String, Vec<StoredMockupProposal>> = HashMap::new();
+    for (
+        generation_id,
+        temp_id,
+        title,
+        spec_json,
+        explanation,
+        state,
+        artifact_id,
+        accepted_content,
+    ) in proposal_rows
+    {
+        let state = match (state.as_str(), artifact_id, accepted_content) {
+            ("pending", None, None) => ProposalState::Pending,
+            ("discarded", None, None) => ProposalState::Discarded,
+            ("accepted", Some(artifact), Some(content)) => ProposalState::Accepted {
+                artifact_id: artifact,
+                content,
+            },
+            (other, _, _) => {
+                return Err(invalid(format!(
+                    "invalid screen state: {other} in {temp_id}"
+                )));
+            }
+        };
+        by_generation
+            .entry(generation_id)
+            .or_default()
+            .push(StoredMockupProposal {
+                temp_id,
+                title,
+                spec_json,
+                explanation,
+                state,
+            });
+    }
+    let mut log = MockupLog::new();
+    for (
+        id,
+        project_id,
+        module_id,
+        model,
+        template_version,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        created_at,
+    ) in rows
+    {
+        let template_version = u32::try_from(template_version)
+            .map_err(|_| invalid(format!("invalid template in {id}")))?;
+        let generation = StoredMockupGeneration {
+            id: id.clone(),
+            project_id,
+            module_id,
+            model,
+            context_version_ids: context.get(&id).cloned().unwrap_or_default(),
+            template_version,
+            input_tokens: opt_u32(input_tokens, &id)?,
+            output_tokens: opt_u32(output_tokens, &id)?,
+            total_tokens: opt_u32(total_tokens, &id)?,
+            created_at,
+            questions: questions.get(&id).cloned().unwrap_or_default(),
+            proposals: by_generation.remove(&id).unwrap_or_default(),
+        };
+        verify_mockup_refs(store, &generation)?;
+        log.record(generation)?;
+    }
+    if let Some(dangling) = by_generation.keys().next() {
+        return Err(invalid(format!("orphan screens of {dangling}")));
+    }
+    Ok(log)
+}
+
+/// The screen generation points to existing project and module, and each
+/// accepted screen to an existing artifact.
+fn verify_mockup_refs(
+    store: &Store,
+    generation: &StoredMockupGeneration,
+) -> Result<(), StoreError> {
+    let project = ProjectId::new(generation.project_id.clone()).map_err(core)?;
+    let module = ModuleId::new(generation.module_id.clone()).map_err(core)?;
+    if store.project(&project).is_none() {
+        return Err(invalid(format!(
+            "screen generation {} points to a missing project",
+            generation.id
+        )));
+    }
+    if store.module(&module).is_none() {
+        return Err(invalid(format!(
+            "screen generation {} points to a missing module",
+            generation.id
+        )));
+    }
+    for proposal in &generation.proposals {
+        if let ProposalState::Accepted { artifact_id, .. } = &proposal.state {
+            let artifact = ArtifactId::new(artifact_id.clone()).map_err(core)?;
+            if store.artifact(&artifact).is_none() {
+                return Err(invalid(format!(
+                    "screen {} accepted a missing artifact",
+                    proposal.temp_id
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Loads the baseline metadata and verifies each one points to an
+/// existing domain baseline. Only called since v5.
 fn load_baseline_meta(
     conn: &Connection,
     path: &Path,
@@ -1580,7 +2061,7 @@ fn load_baseline_meta(
         let id = ruth_core::domain::BaselineId::new(meta.baseline_id.clone()).map_err(core)?;
         if store.baseline(&id).is_none() {
             return Err(invalid(format!(
-                "los metadatos {} apuntan a una baseline inexistente",
+                "metadata {} points to a missing baseline",
                 meta.baseline_id
             )));
         }
@@ -1588,7 +2069,7 @@ fn load_baseline_meta(
             let module = ModuleId::new(scope.clone()).map_err(core)?;
             if store.module(&module).is_none() {
                 return Err(invalid(format!(
-                    "los metadatos {} apuntan a un módulo inexistente",
+                    "metadata {} points to a missing module",
                     meta.baseline_id
                 )));
             }
@@ -1601,9 +2082,9 @@ fn load_baseline_meta(
     Ok(log)
 }
 
-/// Carga las disposiciones visuales guardadas. No se verifican contra el
-/// dominio (es presentación): se rehidratan verbatim y se interpretan al
-/// leer; una fila ilegible equivale a "sin disposición" sin romper la carga.
+/// Loads the saved visual layouts. They are not verified against the
+/// domain (it is presentation): rehydrated verbatim and interpreted on
+/// read; an illegible row equals "no layout" without breaking the load.
 fn load_layouts(conn: &Connection, path: &Path) -> Result<LayoutLog, StoreError> {
     let convert = |e| StoreError::convert(path, e);
     let mut stmt = conn
@@ -1621,8 +2102,8 @@ fn load_layouts(conn: &Connection, path: &Path) -> Result<LayoutLog, StoreError>
     Ok(log)
 }
 
-/// Creación atómica: dominio (con la baseline) y sus metadatos en una sola
-/// transacción. O se guarda todo o no se guarda nada.
+/// Atomic creation: domain (with the baseline) and its metadata in a
+/// single transaction. Either everything is saved or nothing is.
 pub(crate) fn create_baseline(
     conn: &mut Connection,
     path: &Path,
@@ -1652,7 +2133,7 @@ pub(crate) fn create_baseline(
 
 fn opt_u32(value: Option<i64>, id: &str) -> Result<Option<u32>, StoreError> {
     value
-        .map(|n| u32::try_from(n).map_err(|_| invalid(format!("uso de tokens inválido en {id}"))))
+        .map(|n| u32::try_from(n).map_err(|_| invalid(format!("invalid token usage in {id}"))))
         .transpose()
 }
 
@@ -1702,7 +2183,7 @@ fn load_proposal_items(
     Ok(map)
 }
 
-/// Aplica el flag leído (0/1); otro valor es manipulación.
+/// Applies the read flag (0/1); any other value is tampering.
 fn with_archived_module(mut module: Module, archived: i64) -> Result<Module, StoreError> {
     match archived {
         0 => Ok(module),
@@ -1711,7 +2192,7 @@ fn with_archived_module(mut module: Module, archived: i64) -> Result<Module, Sto
             Ok(module)
         }
         other => Err(invalid(format!(
-            "flag de archivado inválido en {}: {other}",
+            "invalid archived flag in {}: {other}",
             module.id().as_str()
         ))),
     }
@@ -1725,7 +2206,7 @@ fn with_archived_artifact(mut artifact: Artifact, archived: i64) -> Result<Artif
             Ok(artifact)
         }
         other => Err(invalid(format!(
-            "flag de archivado inválido en {}: {other}",
+            "invalid archived flag in {}: {other}",
             artifact.id().as_str()
         ))),
     }
@@ -1746,7 +2227,7 @@ fn parse_kind(kind: &str) -> Result<ArtifactType, StoreError> {
         "flow" => Ok(ArtifactType::Flow),
         "data_model" => Ok(ArtifactType::DataModel),
         "mockup" => Ok(ArtifactType::Mockup),
-        other => Err(invalid(format!("tipo de artefacto desconocido: {other}"))),
+        other => Err(invalid(format!("unknown artifact kind: {other}"))),
     }
 }
 
@@ -1766,7 +2247,7 @@ fn parse_provenance(kind: &str, by: &str) -> Result<ruth_core::domain::Provenanc
         "ai" => Ok(Provenance::AiProposal {
             agent: AgentId::new(by.to_string()).map_err(core)?,
         }),
-        other => Err(invalid(format!("procedencia desconocida: {other}"))),
+        other => Err(invalid(format!("unknown provenance: {other}"))),
     }
 }
 
@@ -1781,10 +2262,10 @@ mod tests {
         let artifact = ArtifactId::new("req-1").expect("id");
         let version = VersionId::new("req-1-v1").expect("id");
         let ana = HumanId::new("ana").expect("id");
-        store.create_project(project.clone()).expect("proyecto");
+        store.create_project(project.clone()).expect("project");
         store
             .create_module(&project, module.clone())
-            .expect("módulo");
+            .expect("module");
         store
             .create_artifact(
                 &project,
@@ -1792,14 +2273,14 @@ mod tests {
                 artifact.clone(),
                 ArtifactType::Requirement,
             )
-            .expect("requisito");
+            .expect("requirement");
         store
             .create_version(
                 &project,
                 &artifact,
                 None,
                 version.clone(),
-                Content::new("Texto.").expect("contenido"),
+                Content::new("Text.").expect("content"),
                 &ruth_core::domain::Author::Human(ana.clone()),
                 &[],
             )
@@ -1810,15 +2291,15 @@ mod tests {
                 &artifact,
                 &version,
                 &ruth_core::domain::Author::Human(ana),
-                Date::new("2026-10-28T12:00:00Z").expect("fecha"),
+                Date::new("2026-10-28T12:00:00Z").expect("date"),
             )
-            .expect("aprobar");
+            .expect("approve");
         store
             .create_baseline(
                 &project,
                 BaselineId::new("base-1").expect("id"),
                 &[(artifact, version)],
-                Date::new("2026-10-28T12:00:00Z").expect("fecha"),
+                Date::new("2026-10-28T12:00:00Z").expect("date"),
             )
             .expect("baseline");
         store
@@ -1839,44 +2320,140 @@ mod tests {
                 .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
                     row.get(0)
                 })
-                .expect("contar");
+                .expect("count");
             (table.to_string(), n)
         })
         .collect()
     }
 
+    fn tiny_root() -> ruth_code::CodeRoot {
+        ruth_code::CodeRoot {
+            id: "root-1".to_string(),
+            path: "/tmp/fe".to_string(),
+            name: "fe".to_string(),
+            project_id: Some("proj-1".to_string()),
+        }
+    }
+
+    fn tiny_link() -> crate::code_links::StoredCodeLink {
+        crate::code_links::StoredCodeLink {
+            id: "link-1".to_string(),
+            scope: crate::code_links::LinkScope::Module,
+            owner_id: "mod-1".to_string(),
+            root_id: "root-1".to_string(),
+            rel: "src/app".to_string(),
+            symbol: None,
+            kind: crate::code_links::LinkKind::Manual,
+            created_at: "2026-10-28T12:00:00Z".to_string(),
+        }
+    }
+
+    fn replication_counts(conn: &Connection) -> Vec<(String, i64)> {
+        ["projects", "modules", "code_roots", "code_links"]
+            .iter()
+            .map(|table| {
+                let n: i64 = conn
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get(0)
+                    })
+                    .expect("count");
+                (table.to_string(), n)
+            })
+            .collect()
+    }
+
     #[test]
-    fn save_domain_rolls_back_on_mid_save_error() {
-        // Un fallo SQL a mitad del guardado (tras varios DELETE e INSERT ya
-        // ejecutados) revierte la transacción: la instantánea anterior queda
-        // intacta. Es la garantía que `save` promete en su contrato.
-        let path = std::env::temp_dir().join(format!("ruth-rollback-{}", std::process::id()));
+    fn save_replication_writes_domain_roots_and_links_atomically() {
+        let path = std::env::temp_dir().join(format!("ruth-replication-{}", std::process::id()));
         let _ = std::fs::remove_file(&path);
-        let mut conn = crate::schema::open(&path).expect("abrir");
-        crate::schema::migrate(&mut conn, &path, true).expect("migrar");
-        let store = tiny_store();
-        save(&mut conn, &path, &store, 7).expect("guardar");
-        let before = counts(&conn);
-        assert_eq!(before.iter().map(|(_, n)| n).sum::<i64>(), 6);
-        // Sabotaje confirmado con la misma conexión: quitar una tabla que el
-        // guardado toca después de varios borrados ya ejecutados. Las FK se
-        // desactivan solo para el sabotaje y se reactivan después.
-        conn.execute_batch(
-            "PRAGMA foreign_keys = OFF; DROP TABLE versions; PRAGMA foreign_keys = ON;",
+        let mut conn = crate::schema::open(&path).expect("open");
+        crate::schema::migrate(&mut conn, &path, true).expect("migrate");
+        save_replication(
+            &mut conn,
+            &path,
+            &tiny_store(),
+            &[tiny_root()],
+            &[tiny_link()],
+            7,
         )
-        .expect("sabotaje");
-        let tx = conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .expect("tx");
-        let err = save_domain(&tx, &path, &store, 8).expect_err("el guardado falla");
-        assert!(matches!(err, StoreError::Sqlite { .. }), "era {err:?}");
-        drop(tx);
-        assert_eq!(counts(&conn), before, "nada a medias en disco");
+        .expect("save");
+        assert_eq!(
+            replication_counts(&conn),
+            vec![
+                ("projects".to_string(), 1),
+                ("modules".to_string(), 1),
+                ("code_roots".to_string(), 1),
+                ("code_links".to_string(), 1),
+            ]
+        );
+        // Sabotage: without the links table, replication fails and the
+        // previous snapshot (domain + roots + counter) stays intact:
+        // never half a project nor modules without a link.
+        let before = replication_counts(&conn);
+        conn.execute_batch(
+            "PRAGMA foreign_keys = OFF; DROP TABLE code_links; PRAGMA foreign_keys = ON;",
+        )
+        .expect("sabotage");
+        let err = save_replication(
+            &mut conn,
+            &path,
+            &tiny_store(),
+            &[tiny_root()],
+            &[tiny_link()],
+            8,
+        )
+        .expect_err("replication fails");
+        assert!(matches!(err, StoreError::Sqlite { .. }), "was {err:?}");
+        // code_links no longer exists: compare domain + roots by hand.
+        let projects: i64 = conn
+            .query_row("SELECT COUNT(*) FROM projects", [], |row| row.get(0))
+            .expect("count");
+        let roots: i64 = conn
+            .query_row("SELECT COUNT(*) FROM code_roots", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!((projects, roots), (before[0].1, before[2].1));
         let next: String = conn
             .query_row("SELECT value FROM meta WHERE key = 'next_id'", [], |row| {
                 row.get(0)
             })
-            .expect("contador");
+            .expect("counter");
+        assert_eq!(next, "7");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_domain_rolls_back_on_mid_save_error() {
+        // An SQL failure mid-save (after several DELETEs and INSERTs
+        // already executed) rolls the transaction back: the previous
+        // snapshot stays intact. It is the guarantee `save` promises
+        // in its contract.
+        let path = std::env::temp_dir().join(format!("ruth-rollback-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut conn = crate::schema::open(&path).expect("open");
+        crate::schema::migrate(&mut conn, &path, true).expect("migrate");
+        let store = tiny_store();
+        save(&mut conn, &path, &store, 7).expect("save");
+        let before = counts(&conn);
+        assert_eq!(before.iter().map(|(_, n)| n).sum::<i64>(), 6);
+        // Confirmed sabotage with the same connection: drop a table that
+        // saving touches after several deletes already executed. FKs are
+        // disabled only for the sabotage and re-enabled after.
+        conn.execute_batch(
+            "PRAGMA foreign_keys = OFF; DROP TABLE versions; PRAGMA foreign_keys = ON;",
+        )
+        .expect("sabotage");
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("tx");
+        let err = save_domain(&tx, &path, &store, 8).expect_err("save fails");
+        assert!(matches!(err, StoreError::Sqlite { .. }), "was {err:?}");
+        drop(tx);
+        assert_eq!(counts(&conn), before, "nothing half-written on disk");
+        let next: String = conn
+            .query_row("SELECT value FROM meta WHERE key = 'next_id'", [], |row| {
+                row.get(0)
+            })
+            .expect("counter");
         assert_eq!(next, "7");
         let _ = std::fs::remove_file(&path);
     }

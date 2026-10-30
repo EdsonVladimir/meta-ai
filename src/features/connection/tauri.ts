@@ -1,6 +1,6 @@
-// Adaptador Tauri para la prueba de conexión. Toda llamada real a Meta nace
-// aquí, solo cuando la persona pulsa "Probar conexión". `getMetaStatus` es
-// una lectura local del entorno del proceso nativo, sin red.
+// Tauri adapter for the connection test. Every real call to Meta starts
+// here, only when the person presses "Test connection". `getMetaStatus`
+// is a local read of the native process environment, no network.
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriEnvironment } from "../../lib/env";
 import {
@@ -24,7 +24,7 @@ export async function testMetaConnection(): Promise<ConnectionTestOutcome> {
       error: {
         kind: "not_tauri",
         message:
-          "La prueba nativa requiere ejecutar Ruth IDE como aplicación de escritorio (Tauri).",
+          "The native test requires running Ruth IDE as a desktop application (Tauri).",
         retryable: false,
       },
     };
@@ -56,7 +56,7 @@ function normalizeInvokeError(raw: unknown): MetaTestError {
   }
   return {
     kind: "unexpected",
-    message: "Error inesperado al invocar la prueba nativa.",
+    message: "Unexpected error invoking the native test.",
     retryable: false,
   };
 }

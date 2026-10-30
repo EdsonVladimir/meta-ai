@@ -1,14 +1,14 @@
-//! Entregas de trabajo/borrador: preparar (consulta), crear (atómico),
-//! consultar y listar.
+//! Work/draft deliveries: prepare (query), create (atomic),
+//! get and list.
 //!
-//! Foto de versiones guardadas SIN exigir aprobación (diseño vivo). La
-//! coherencia estructural la valida el núcleo
-//! (`Store::create_work_delivery`); aquí se prepara la vista previa con
-//! fuentes identificadas (incluidas las desactualizadas, sin vetar),
-//! revisiones opcionales y bloqueos solo estructurales. Sin cierre
-//! automático ni metalog separado: la entrega lleva nombre, descripción y
-//! alcance dentro. Nunca debe llamarse coherente o verificada si tiene
-//! pendientes: los contadores lo dicen en voz alta.
+//! Snapshot of saved versions WITHOUT requiring approval (living design).
+//! Structural coherence is validated by the core
+//! (`Store::create_work_delivery`); here the preview prepares with
+//! identified sources (including stale ones, without vetoing),
+//! optional reviews and structural-only blockers. No automatic
+//! closing or separate metalog: the delivery carries name, description
+//! and scope inside. It must never be called coherent or verified when
+//! it has pendings: the counters say so out loud.
 
 use std::collections::HashSet;
 
@@ -34,8 +34,8 @@ fn project_in(store: &Store, project_id: &str) -> Result<ProjectId, ApiError> {
     Ok(project)
 }
 
-/// Fuentes fijadas de una versión que ya no son las actuales de su
-/// artefacto. Informativo: identifica desactualización, no bloquea.
+/// Pinned sources of a version that are no longer their artifact's
+/// current ones. Informative: identifies staleness, never blocks.
 fn stale_sources_of(store: &Store, version: &ruth_core::domain::Version) -> Vec<String> {
     let mut stale = Vec::new();
     for source in version.sources() {
@@ -54,8 +54,8 @@ fn stale_sources_of(store: &Store, version: &ruth_core::domain::Version) -> Vec<
     stale
 }
 
-/// Vista previa consultiva: elegidos con sus versiones actuales exactas,
-/// fuentes identificadas y bloqueos solo estructurales. No muta nada.
+/// Advisory preview: chosen ones with their exact current versions,
+/// identified sources and structural-only blockers. Mutates nothing.
 pub fn prepare_work_delivery(
     store: &Store,
     input: DeliveryPrepareInput,
@@ -75,7 +75,7 @@ pub fn prepare_work_delivery(
     if input.artifact_ids.is_empty() {
         return Err(ApiError::coded(
             "empty_selection",
-            "Elige al menos un artefacto del módulo para preparar la entrega.",
+            "Pick at least one module artifact to prepare the delivery.",
         ));
     }
 
@@ -96,7 +96,7 @@ pub fn prepare_work_delivery(
             return Err(ApiError::coded(
                 "not_in_scope",
                 format!(
-                    "{} no está en el módulo {}: la entrega cubre un módulo cada vez.",
+                    "{} is not in module {}: the delivery covers one module at a time.",
                     id.as_str(),
                     scope.as_str()
                 ),
@@ -113,17 +113,17 @@ pub fn prepare_work_delivery(
         let Some(current) = store.current_version(id) else {
             blockers.push(BaselineBlockerDto {
                 code: "missing_source".to_string(),
-                message: format!("{} no tiene versión actual.", id.as_str()),
+                message: format!("{} has no current version.", id.as_str()),
                 artifact_id: Some(id.as_str().to_string()),
             });
             continue;
         };
-        // Espejo del núcleo: entradas y fuentes archivadas bloquean.
+        // Core mirror: archived entries and sources block.
         if store.is_effectively_archived(id) {
             blockers.push(BaselineBlockerDto {
                 code: "archived".to_string(),
                 message: format!(
-                    "{} está archivado: restaúralo para incluirlo en la entrega.",
+                    "{} is archived: restore it to include it in the delivery.",
                     id.as_str()
                 ),
                 artifact_id: Some(id.as_str().to_string()),
@@ -137,7 +137,7 @@ pub fn prepare_work_delivery(
                 blockers.push(BaselineBlockerDto {
                     code: "archived_source".to_string(),
                     message: format!(
-                        "{} depende de {}, que está archivada: restaura la fuente o revisa {}.",
+                        "{} depends on {}, which is archived: restore the source or review {}.",
                         id.as_str(),
                         used.as_str(),
                         id.as_str()
@@ -220,10 +220,10 @@ pub fn prepare_work_delivery(
     })
 }
 
-/// Creación explícita con nombre: revalida en Rust que cada entrada sigue
-/// siendo la actual exacta (si algo cambió desde la preparación, informa
-/// el conflicto sin crear otra entrega) y delega al núcleo. Guarda el
-/// dominio en una transacción; publica al confirmar.
+/// Explicit creation with a name: revalidates in Rust that each entry is
+/// still the exact current one (on change since preparation, reports
+/// the conflict without creating another delivery) and delegates to the core.
+/// Saves the domain in a transaction; publishes on commit.
 pub fn create_work_delivery(
     store: &mut Store,
     ids: &mut IdGen,
@@ -235,7 +235,7 @@ pub fn create_work_delivery(
     if input.entries.is_empty() {
         return Err(ApiError::coded(
             "empty_selection",
-            "La entrega necesita al menos una entrada.",
+            "The delivery needs at least one entry.",
         ));
     }
     let name = Name::new(input.name)?;
@@ -256,7 +256,7 @@ pub fn create_work_delivery(
             Some(module)
         }
     };
-    // Las entradas revisadas deben seguir siendo las actuales exactas.
+    // The reviewed entries must still be the exact current ones.
     let mut pairs = Vec::with_capacity(input.entries.len());
     for entry in &input.entries {
         let artifact = ArtifactId::new(entry.artifact_id.clone())?;
@@ -268,8 +268,8 @@ pub fn create_work_delivery(
             return Err(ApiError::coded(
                 "changed_since_preview",
                 format!(
-                    "{} cambió desde la preparación (era {}, ahora es {}): \
-                     vuelve a preparar la entrega.",
+                    "{} changed since preparation (was {}, now is {}): \
+                     prepare the delivery again.",
                     artifact.as_str(),
                     version.as_str(),
                     current.id().as_str()
@@ -303,8 +303,8 @@ pub fn create_work_delivery(
     delivery_dto(store, delivery.id())
 }
 
-/// Detalle de una entrega guardada, con revisiones y desactualización
-/// calculadas al leer (los pins son inmutables; su interpretación no).
+/// Detail of a saved delivery, with reviews and staleness computed
+/// on read (pins are immutable; their reading is not).
 pub fn get_work_delivery(
     store: &Store,
     project_id: &str,
@@ -318,7 +318,11 @@ pub fn get_work_delivery(
     if delivery.project() != &project {
         return Err(ApiError::coded(
             "delivery_not_in_project",
-            format!("{} no es del proyecto {}.", id.as_str(), project.as_str()),
+            format!(
+                "{} does not belong to project {}.",
+                id.as_str(),
+                project.as_str()
+            ),
         ));
     }
     delivery_dto(store, &id)
@@ -335,13 +339,13 @@ fn delivery_dto(store: &Store, id: &DeliveryId) -> Result<DeliveryDto, ApiError>
     for (artifact, version) in delivery.entries() {
         let Some(known) = store.artifact(artifact) else {
             return Err(ApiError::internal(format!(
-                "{} ya no existe",
+                "{} no longer exists",
                 artifact.as_str()
             )));
         };
         let Some(pinned) = store.version(version) else {
             return Err(ApiError::internal(format!(
-                "{} ya no existe",
+                "{} no longer exists",
                 version.as_str()
             )));
         };
@@ -376,7 +380,7 @@ fn delivery_dto(store: &Store, id: &DeliveryId) -> Result<DeliveryDto, ApiError>
     })
 }
 
-/// Listado del proyecto con pendientes honestos y aviso de avance.
+/// Project listing with honest pendings and an advancement notice.
 pub fn list_work_deliveries(
     store: &Store,
     project_id: &str,

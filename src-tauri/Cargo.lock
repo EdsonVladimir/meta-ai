@@ -2969,6 +2969,7 @@ name = "ruth-api"
 version = "0.1.0"
 dependencies = [
  "rusqlite",
+ "ruth-code",
  "ruth-core",
  "ruth-meta",
  "ruth-store",
@@ -2976,6 +2977,15 @@ dependencies = [
  "serde_json",
  "sha2",
  "zip",
+]
+
+[[package]]
+name = "ruth-code"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2987,11 +2997,13 @@ name = "ruth-ide"
 version = "0.1.0"
 dependencies = [
  "ruth-api",
+ "ruth-code",
  "ruth-core",
  "ruth-meta",
  "ruth-store",
  "ruth-term",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -3012,7 +3024,9 @@ version = "0.1.0"
 dependencies = [
  "rusqlite",
  "ruth-api",
+ "ruth-code",
  "ruth-core",
+ "serde_json",
 ]
 
 [[package]]

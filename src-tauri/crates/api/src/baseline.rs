@@ -1,9 +1,9 @@
-//! Baselines de entrega: preparar (consulta), crear (atómico) y listar.
+//! Delivery baselines: prepare (query), create (atomic) and list.
 //!
-//! La coherencia la valida el núcleo (`Store::create_baseline`); aquí solo
-//! se prepara la vista previa con cierre de dependencias y bloqueos
-//! explicados, se generan identidades y fechas fuera del dominio, y se
-//! guardan los metadatos humanos junto al dominio en una transacción.
+//! Coherence is validated by the core (`Store::create_baseline`); here
+//! only the preview prepares with dependency closure and explained
+//! blockers, identities and dates generate outside the domain, and
+//! human metadata saves with the domain in one transaction.
 
 use std::collections::{HashMap, HashSet};
 
@@ -60,9 +60,9 @@ fn project_in(store: &Store, project_id: &str) -> Result<ProjectId, ApiError> {
     Ok(project)
 }
 
-/// Vista previa consultiva de la entrega: elegidos con sus versiones
-/// actuales exactas, cierre transitivo de dependencias, lo que queda fuera
-/// y bloqueos concretos. No muta nada.
+/// Advisory delivery preview: chosen ones with their exact current
+/// versions, transitive dependency closure, what stays out and
+/// concrete blockers. Mutates nothing.
 pub fn prepare_baseline(
     store: &Store,
     input: BaselinePrepareInput,
@@ -82,11 +82,11 @@ pub fn prepare_baseline(
     if input.artifact_ids.is_empty() {
         return Err(ApiError::coded(
             "empty_selection",
-            "Elige al menos un artefacto del módulo para preparar la entrega.",
+            "Pick at least one module artifact to prepare the delivery.",
         ));
     }
 
-    // Selección validada: existe, es del proyecto y está en el alcance.
+    // Validated selection: exists, belongs to the project and is in scope.
     let mut selected = HashSet::new();
     for raw in &input.artifact_ids {
         let id = ArtifactId::new(raw.clone())?;
@@ -104,7 +104,7 @@ pub fn prepare_baseline(
             return Err(ApiError::coded(
                 "not_in_scope",
                 format!(
-                    "{} no está en el módulo {}: la entrega cubre un módulo cada vez.",
+                    "{} is not in module {}: the delivery covers one module at a time.",
                     id.as_str(),
                     scope.as_str()
                 ),
@@ -113,8 +113,8 @@ pub fn prepare_baseline(
         selected.insert(id);
     }
 
-    // Cierre transitivo sobre versiones actuales: cada fuente incluida debe
-    // SER la actual de su artefacto (si no, el dependiente está pendiente).
+    // Transitive closure over current versions: each included source must
+    // BE its artifact's current one (otherwise the dependent is pending).
     let mut included: HashMap<ArtifactId, bool> = HashMap::new();
     for id in &selected {
         included.insert(id.clone(), false);
@@ -126,7 +126,7 @@ pub fn prepare_baseline(
         let Some(current) = store.current_version(&id) else {
             blockers.push(BaselineBlockerDto {
                 code: "missing_source".to_string(),
-                message: format!("{} no tiene versión actual.", id.as_str()),
+                message: format!("{} has no current version.", id.as_str()),
                 artifact_id: Some(id.as_str().to_string()),
             });
             continue;
@@ -140,25 +140,25 @@ pub fn prepare_baseline(
                 code: "draft".to_string(),
                 message: if any {
                     format!(
-                        "{} no está aprobado en su versión actual ({}): apruébalo primero.",
+                        "{} is not approved at its current version ({}): approve it first.",
                         id.as_str(),
                         current.id().as_str()
                     )
                 } else {
                     format!(
-                        "{} es un borrador sin aprobar: revísalo y apruébalo primero.",
+                        "{} is an unapproved draft: review and approve it first.",
                         id.as_str()
                     )
                 },
                 artifact_id: Some(id.as_str().to_string()),
             });
         }
-        // Espejo del núcleo: entradas y fuentes archivadas bloquean la entrega.
+        // Core mirror: archived entries and sources block the delivery.
         if store.is_effectively_archived(&id) {
             blockers.push(BaselineBlockerDto {
                 code: "archived".to_string(),
                 message: format!(
-                    "{} está archivado: restaúralo para incluirlo en la entrega.",
+                    "{} is archived: restore it to include it in the delivery.",
                     id.as_str()
                 ),
                 artifact_id: Some(id.as_str().to_string()),
@@ -168,11 +168,7 @@ pub fn prepare_baseline(
             let Some(used_version) = store.version(used) else {
                 blockers.push(BaselineBlockerDto {
                     code: "missing_source".to_string(),
-                    message: format!(
-                        "{} fija una fuente inexistente ({}).",
-                        id.as_str(),
-                        used.as_str()
-                    ),
+                    message: format!("{} pins a missing source ({}).", id.as_str(), used.as_str()),
                     artifact_id: Some(id.as_str().to_string()),
                 });
                 continue;
@@ -182,7 +178,7 @@ pub fn prepare_baseline(
                 blockers.push(BaselineBlockerDto {
                     code: "archived_source".to_string(),
                     message: format!(
-                        "{} depende de {}, que está archivada: restaura la fuente o revisa {}.",
+                        "{} depends on {}, which is archived: restore the source or review {}.",
                         id.as_str(),
                         used.as_str(),
                         id.as_str()
@@ -194,7 +190,7 @@ pub fn prepare_baseline(
             let Some(source_current) = store.current_version(&source_artifact) else {
                 blockers.push(BaselineBlockerDto {
                     code: "missing_source".to_string(),
-                    message: format!("{} no tiene versión actual.", source_artifact.as_str()),
+                    message: format!("{} has no current version.", source_artifact.as_str()),
                     artifact_id: Some(source_artifact.as_str().to_string()),
                 });
                 continue;
@@ -203,8 +199,8 @@ pub fn prepare_baseline(
                 blockers.push(BaselineBlockerDto {
                     code: "stale_sources".to_string(),
                     message: format!(
-                        "{} usa una fuente desactualizada ({}; la actual es {}): \
-                         actualízalo primero.",
+                        "{} uses a stale source ({}; the current one is {}): \
+                         update it first.",
                         id.as_str(),
                         used.as_str(),
                         source_current.id().as_str()
@@ -262,7 +258,7 @@ pub fn prepare_baseline(
         });
     }
     other_modules.sort_by(|a, b| a.id.cmp(&b.id));
-    // Fuera del alcance: lo del módulo que ni se eligió ni entró por cierre.
+    // Out of scope: module items neither chosen nor pulled in by closure.
     let mut unselected: Vec<String> = store
         .artifacts_of(&project, &scope)
         .iter()
@@ -290,10 +286,10 @@ pub fn prepare_baseline(
     })
 }
 
-/// Creación explícita con nombre: revalida en Rust que cada entrada sigue
-/// siendo la actual (si algo cambió desde la preparación, informa el
-/// conflicto sin crear otra entrega) y delega la coherencia al núcleo.
-/// Guarda dominio y metadatos en una transacción; publica al confirmar.
+/// Explicit creation with a name: revalidates in Rust that each entry is
+/// still current (on change since preparation, reports the conflict
+/// without creating another delivery) and delegates coherence to the core.
+/// Saves domain and metadata in one transaction; publishes on commit.
 pub fn create_baseline(
     store: &mut Store,
     ids: &mut IdGen,
@@ -306,7 +302,7 @@ pub fn create_baseline(
     if input.entries.is_empty() {
         return Err(ApiError::coded(
             "empty_selection",
-            "La baseline necesita al menos una entrada.",
+            "The baseline needs at least one entry.",
         ));
     }
     if let Some(scope) = &input.scope_module_id {
@@ -322,7 +318,7 @@ pub fn create_baseline(
             .into());
         }
     }
-    // Las entradas revisadas deben seguir siendo las actuales exactas.
+    // The reviewed entries must still be the exact current ones.
     let mut pairs = Vec::with_capacity(input.entries.len());
     for entry in &input.entries {
         let artifact = ArtifactId::new(entry.artifact_id.clone())?;
@@ -334,8 +330,8 @@ pub fn create_baseline(
             return Err(ApiError::coded(
                 "changed_since_preview",
                 format!(
-                    "{} cambió desde la preparación (era {}, ahora es {}): \
-                     vuelve a preparar la entrega.",
+                    "{} changed since preparation (was {}, now is {}): \
+                     prepare the delivery again.",
                     artifact.as_str(),
                     version.as_str(),
                     current.id().as_str()
@@ -375,7 +371,7 @@ pub fn create_baseline(
     baseline_dto(store, metalog, baseline.id())
 }
 
-/// Detalle de una baseline guardada, con aprobaciones y procedencia.
+/// Detail of a saved baseline, with approvals and provenance.
 pub fn get_baseline(
     store: &Store,
     metalog: &BaselineMetaLog,
@@ -390,7 +386,11 @@ pub fn get_baseline(
     if baseline.project() != &project {
         return Err(ApiError::coded(
             "baseline_not_in_project",
-            format!("{} no es del proyecto {}.", id.as_str(), project.as_str()),
+            format!(
+                "{} does not belong to project {}.",
+                id.as_str(),
+                project.as_str()
+            ),
         ));
     }
     baseline_dto(store, metalog, &id)
@@ -409,25 +409,25 @@ fn baseline_dto(
     };
     let meta = metalog
         .get(id.as_str())
-        .ok_or_else(|| ApiError::internal(format!("{} no tiene metadatos", id.as_str())))?;
+        .ok_or_else(|| ApiError::internal(format!("{} has no metadata", id.as_str())))?;
     let mut entries = Vec::with_capacity(baseline.entries().len());
     for (artifact, version) in baseline.entries() {
         let Some(known) = store.artifact(artifact) else {
             return Err(ApiError::internal(format!(
-                "{} ya no existe",
+                "{} no longer exists",
                 artifact.as_str()
             )));
         };
         let Some(pinned) = store.version(version) else {
             return Err(ApiError::internal(format!(
-                "{} ya no existe",
+                "{} no longer exists",
                 version.as_str()
             )));
         };
         entries.push(BaselineEntryDto {
             artifact: artifact_dto(store, artifact)?,
             kind: kind_str(known.artifact_type()).to_string(),
-            // Fijado en la baseline, jamás el título actual.
+            // Pinned in the baseline, never the current title.
             title: baseline.title_of(artifact).flatten().map(str::to_string),
             version_id: version.as_str().to_string(),
             number: pinned.number(),
@@ -455,8 +455,8 @@ fn baseline_dto(
     })
 }
 
-/// Listado del proyecto con aviso de avance: qué baselines siguen siendo
-/// las actuales y cuáles quedaron atrás.
+/// Project listing with an advancement notice: which baselines are still
+/// current and which ones fell behind.
 pub fn list_baselines(
     store: &Store,
     metalog: &BaselineMetaLog,

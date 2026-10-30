@@ -1,8 +1,8 @@
-//! Comandos de renombrado: envoltorios finos sobre `ruth-api`.
+//! Rename commands: thin wrappers over `ruth-api`.
 //!
-//! Renombrar no toca identidades, versiones, fuentes ni aprobaciones; exige
-//! el nombre esperado y pasa por `transact`: validar con el núcleo,
-//! persistir en una transacción y publicar solo tras confirmar.
+//! Renaming touches no identities, versions, sources or approvals; it
+//! requires the expected name and goes through `transact`: validate with
+//! the core, persist in one transaction and publish only after commit.
 
 use tauri::State;
 

@@ -1,14 +1,14 @@
-//! Comandos de terminal integrada: envoltorios finos sobre `ruth-term`.
+//! Integrated terminal commands: thin wrappers over `ruth-term`.
 //!
-//! La interfaz pide crear/escribir/redimensionar/cerrar sesiones; la salida
-//! y los avisos de fin viajan por eventos (`ruth-terminal-output`,
-//! `ruth-terminal-exit`), nunca por polling. Los comandos no ejecutan nada
-//! por sí mismos: solo hablan con el PTY de una sesión existente.
+//! The UI asks to create/write/resize/close sessions; output
+//! and exit notices travel by events (`ruth-terminal-output`,
+//! `ruth-terminal-exit`), never by polling. The commands execute nothing
+//! by themselves: they only talk to an existing session's PTY.
 //!
-//! Al cerrar la ventana con sesiones en marcha, `lib.rs` frena el cierre y
-//! emite `ruth-terminal-close-requested`; la persona confirma y entonces
-//! `term_quit_app` mata las sesiones y sale (sin huérfanos por el camino
-//! feliz). Nada de terminal se persiste: ni contenido ni credenciales.
+//! When closing the window with running sessions, `lib.rs` holds the
+//! close and emits `ruth-terminal-close-requested`; the person confirms and
+//! then `term_quit_app` kills the sessions and exits (no orphans on the
+//! happy path). Nothing terminal-related persists: neither content nor credentials.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -17,8 +17,8 @@ use ruth_api::ApiError;
 use ruth_term::{EventSink, SessionInfo, TerminalManager};
 use tauri::{AppHandle, Emitter, State};
 
-/// Estado gestionado: el gestor de sesiones con su sumidero de eventos.
-/// Candado separado del núcleo: la terminal no toca el dominio.
+/// Managed state: the session manager with its event sink.
+/// Separate lock from the core: the terminal never touches the domain.
 pub struct TerminalState {
     inner: Mutex<TerminalManager>,
 }
@@ -45,7 +45,7 @@ fn lock<'a>(
     state
         .inner
         .lock()
-        .map_err(|_| ApiError::internal("terminales bloqueadas"))
+        .map_err(|_| ApiError::internal("terminals locked"))
 }
 
 fn term_err(err: ruth_term::TermError) -> ApiError {
@@ -101,8 +101,8 @@ impl EventSink for TauriSink {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTerminalInput {
-    /// Carpeta inicial elegida por la persona (diálogo nativo) o null para
-    /// su carpeta personal. Se muestra tal cual; nunca cambia sola.
+    /// Starting folder chosen by the person (native dialog) or null for
+    /// their home folder. Shown as is; never changes on its own.
     pub cwd: Option<String>,
     pub cols: u16,
     pub rows: u16,
@@ -167,8 +167,8 @@ pub fn term_close(state: State<TerminalState>, input: TerminalIdInput) -> Result
     lock(&state)?.close(&input.id).map_err(term_err)
 }
 
-/// Salida confirmada con terminales abiertas: mata todas las sesiones y
-/// termina el proceso. Solo se invoca desde el diálogo de confirmación.
+/// Confirmed exit with open terminals: kills all sessions and
+/// ends the process. Only invoked from the confirmation dialog.
 #[tauri::command]
 pub fn term_quit_app(app: AppHandle, state: State<TerminalState>) -> Result<(), ApiError> {
     lock(&state)?.shutdown();

@@ -1,5 +1,5 @@
-//! Renombrado sin E/S real: los cuatro tipos, validación, conflictos,
-//! archivado y títulos fijados en baselines.
+//! Renaming without real I/O: the four kinds, validation, conflicts,
+//! archiving and baseline-pinned titles.
 
 use ruth_api::{
     ApproveVersionInput, CreateModuleInput, CreateRequirementInput, IdGen, RenameArtifactInput,
@@ -22,7 +22,7 @@ fn baby() -> Baby {
     let mut store = Store::new();
     let mut ids = IdGen::new();
     let project = ruth_api::create_project(&mut store, &mut ids)
-        .expect("proyecto")
+        .expect("project")
         .id;
     let module = ruth_api::create_module(
         &mut store,
@@ -31,7 +31,7 @@ fn baby() -> Baby {
             project_id: project.clone(),
         },
     )
-    .expect("módulo")
+    .expect("module")
     .id;
     let detail = ruth_api::create_requirement(
         &mut store,
@@ -43,7 +43,7 @@ fn baby() -> Baby {
             author: "ana".to_string(),
         },
     )
-    .expect("requisito");
+    .expect("requirement");
     let v1 = detail.current_version_id.clone();
     Baby {
         store,
@@ -75,7 +75,7 @@ fn rename_project_module_and_requirement() {
             name: "Ventas 2026".to_string(),
         },
     )
-    .expect("proyecto");
+    .expect("project");
     assert_eq!(project.id, baby.project);
     assert_eq!(project.name, "Ventas 2026");
     let module = ruth_api::rename_module(
@@ -87,14 +87,14 @@ fn rename_project_module_and_requirement() {
             name: "Mostrador".to_string(),
         },
     )
-    .expect("módulo");
+    .expect("module");
     assert_eq!(module.id, baby.module);
     assert_eq!(module.name, "Mostrador");
     let input = artifact_input(&baby, None, "Descontar stock");
-    let detail = ruth_api::rename_requirement(&mut baby.store, input, NOW).expect("requisito");
+    let detail = ruth_api::rename_requirement(&mut baby.store, input, NOW).expect("requirement");
     assert_eq!(detail.artifact.id, baby.req);
     assert_eq!(detail.artifact.title.as_deref(), Some("Descontar stock"));
-    // Sin versiones nuevas ni aprobaciones tocadas.
+    // No new versions or touched approvals.
     assert_eq!(detail.versions.len(), 1);
     assert_eq!(detail.current_version_id, baby.v1);
     assert!(detail.approvals.is_empty());
@@ -111,18 +111,18 @@ fn rename_design_and_kind_checks() {
             ruth_core::domain::ArtifactId::new(flow.clone()).expect("id"),
             ruth_core::domain::ArtifactType::Flow,
         )
-        .expect("flujo");
+        .expect("flow");
     baby.store
         .create_version(
             &ruth_core::domain::ProjectId::new(baby.project.clone()).expect("id"),
             &ruth_core::domain::ArtifactId::new(flow.clone()).expect("id"),
             None,
             ruth_core::domain::VersionId::new(format!("{flow}-v1")).expect("id"),
-            ruth_core::domain::Content::new("{\"nodes\":[]}").expect("contenido"),
+            ruth_core::domain::Content::new("{\"nodes\":[]}").expect("content"),
             &ruth_core::domain::Author::Human(ruth_core::domain::HumanId::new("ana").expect("id")),
             &[],
         )
-        .expect("versión");
+        .expect("version");
     let detail = ruth_api::rename_design(
         &mut baby.store,
         RenameArtifactInput {
@@ -134,12 +134,12 @@ fn rename_design_and_kind_checks() {
         },
         NOW,
     )
-    .expect("diseño");
+    .expect("design");
     assert_eq!(detail.artifact.title.as_deref(), Some("Flujo de caja"));
-    // Cada comando exige su tipo.
+    // Each command requires its kind.
     let input = artifact_input(&baby, None, "X");
-    let err =
-        ruth_api::rename_design(&mut baby.store, input, NOW).expect_err("requisito no es diseño");
+    let err = ruth_api::rename_design(&mut baby.store, input, NOW)
+        .expect_err("requirement is not a design");
     assert_eq!(err.kind, "not_a_design");
     let err = ruth_api::rename_requirement(
         &mut baby.store,
@@ -152,7 +152,7 @@ fn rename_design_and_kind_checks() {
         },
         NOW,
     )
-    .expect_err("diseño no es requisito");
+    .expect_err("design is not a requirement");
     assert_eq!(err.kind, "not_a_requirement");
 }
 
@@ -160,7 +160,7 @@ fn rename_design_and_kind_checks() {
 fn rename_validates_names_and_conflicts() {
     let mut baby = baby();
     let input = artifact_input(&baby, None, "   ");
-    let err = ruth_api::rename_requirement(&mut baby.store, input, NOW).expect_err("vacío");
+    let err = ruth_api::rename_requirement(&mut baby.store, input, NOW).expect_err("empty");
     assert_eq!(err.kind, "empty_name");
     let err = ruth_api::rename_project(
         &mut baby.store,
@@ -170,13 +170,13 @@ fn rename_validates_names_and_conflicts() {
             name: "x".repeat(121),
         },
     )
-    .expect_err("largo");
+    .expect_err("long");
     assert_eq!(err.kind, "name_too_long");
-    let input = artifact_input(&baby, None, "Primero");
-    ruth_api::rename_requirement(&mut baby.store, input, NOW).expect("primero");
+    let input = artifact_input(&baby, None, "First");
+    ruth_api::rename_requirement(&mut baby.store, input, NOW).expect("first");
     let before = baby.store.clone();
-    let input = artifact_input(&baby, None, "Segundo");
-    let err = ruth_api::rename_requirement(&mut baby.store, input, NOW).expect_err("obsoleto");
+    let input = artifact_input(&baby, None, "Second");
+    let err = ruth_api::rename_requirement(&mut baby.store, input, NOW).expect_err("stale");
     assert_eq!(err.kind, "stale_name");
     assert_eq!(baby.store, before);
 }
@@ -190,21 +190,21 @@ fn rename_is_blocked_on_archived_elements() {
             &ruth_core::domain::ModuleId::new(baby.module.clone()).expect("id"),
             true,
         )
-        .expect("archivar");
+        .expect("archive");
     let err = ruth_api::rename_module(
         &mut baby.store,
         RenameModuleInput {
             project_id: baby.project.clone(),
             module_id: baby.module.clone(),
             expected_name: baby.module.clone(),
-            name: "Nuevo".to_string(),
+            name: "New".to_string(),
         },
     )
-    .expect_err("módulo archivado");
+    .expect_err("archived module");
     assert_eq!(err.kind, "archived_module");
-    let input = artifact_input(&baby, None, "Nuevo");
+    let input = artifact_input(&baby, None, "New");
     let err =
-        ruth_api::rename_requirement(&mut baby.store, input, NOW).expect_err("contexto archivado");
+        ruth_api::rename_requirement(&mut baby.store, input, NOW).expect_err("archived context");
     assert_eq!(err.kind, "archived_artifact");
 }
 
@@ -221,9 +221,9 @@ fn baseline_detail_serves_pinned_titles_not_latest() {
         },
         NOW,
     )
-    .expect("aprobar");
-    let input = artifact_input(&baby, None, "Título original");
-    ruth_api::rename_requirement(&mut baby.store, input, NOW).expect("titular");
+    .expect("approve");
+    let input = artifact_input(&baby, None, "Original title");
+    ruth_api::rename_requirement(&mut baby.store, input, NOW).expect("title");
     let project = ruth_core::domain::ProjectId::new(baby.project.clone()).expect("id");
     let artifact = ruth_core::domain::ArtifactId::new(baby.req.clone()).expect("id");
     let version = ruth_core::domain::VersionId::new(baby.v1.clone()).expect("id");
@@ -233,29 +233,29 @@ fn baseline_detail_serves_pinned_titles_not_latest() {
             &project,
             ruth_core::domain::BaselineId::new("base-1").expect("id"),
             &[(artifact, version)],
-            ruth_core::domain::Date::new("2026-10-28").expect("fecha"),
+            ruth_core::domain::Date::new("2026-10-28").expect("date"),
         )
         .expect("baseline");
     let mut metalog = BaselineMetaLog::new();
     metalog
         .record(ruth_store::BaselineMeta {
             baseline_id: baseline.id().as_str().to_string(),
-            name: "Entrega 1".to_string(),
+            name: "Delivery 1".to_string(),
             description: None,
             scope_module: Some(baby.module.clone()),
             created_at: NOW.to_string(),
         })
         .expect("meta");
-    // Renombrar después no mueve a la histórica.
-    let input = artifact_input(&baby, Some("Título original"), "Título nuevo");
-    ruth_api::rename_requirement(&mut baby.store, input, NOW).expect("renombrar");
+    // Renaming later does not move the historic one.
+    let input = artifact_input(&baby, Some("Original title"), "New title");
+    ruth_api::rename_requirement(&mut baby.store, input, NOW).expect("rename");
     let detail =
-        ruth_api::get_baseline(&baby.store, &metalog, &baby.project, "base-1").expect("detalle");
+        ruth_api::get_baseline(&baby.store, &metalog, &baby.project, "base-1").expect("detail");
     assert_eq!(detail.entries.len(), 1);
-    assert_eq!(detail.entries[0].title.as_deref(), Some("Título original"));
+    assert_eq!(detail.entries[0].title.as_deref(), Some("Original title"));
     assert_eq!(
         detail.entries[0].artifact.title.as_deref(),
-        Some("Título nuevo"),
-        "el artefacto lleva el actual; el título fijado manda"
+        Some("New title"),
+        "the artifact carries the current one; the pinned title rules"
     );
 }

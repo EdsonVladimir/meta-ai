@@ -1,23 +1,23 @@
-//! Errores del adaptador de persistencia.
+//! Persistence adapter errors.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-/// Fallo al abrir, leer o escribir la base local. Ninguna variante escribe
-/// ni destruye datos: ante la duda, la base queda intacta.
+/// Failure opening, reading or writing the local database. No variant
+/// writes or destroys data: when in doubt, the database stays intact.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {
-    /// No se pudo crear el directorio o abrir el archivo.
+    /// The directory could not be created or the file opened.
     Io { path: PathBuf, message: String },
-    /// Error genérico de SQLite.
+    /// Generic SQLite error.
     Sqlite { message: String },
-    /// Otro proceso tiene la base abierta (segunda instancia).
+    /// Another process holds the database open (second instance).
     Locked { path: PathBuf },
-    /// El archivo no es una base válida.
+    /// The file is not a valid database.
     Corrupt { message: String },
-    /// Esquema posterior al soportado; no se escribió nada.
+    /// Schema newer than supported; nothing was written.
     FutureSchema { found: i64, supported: i64 },
-    /// Los datos no pasan la validación del dominio; no se escribió nada.
+    /// Data fails domain validation; nothing was written.
     InvalidData { message: String },
 }
 
@@ -64,23 +64,33 @@ impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io { path, message } => {
-                write!(f, "no se pudo usar la base en {}: {message}", path.display())
+                write!(
+                    f,
+                    "could not use the database at {}: {message}",
+                    path.display()
+                )
             }
-            Self::Sqlite { message } => write!(f, "error de SQLite: {message}"),
+            Self::Sqlite { message } => write!(f, "SQLite error: {message}"),
             Self::Locked { path } => write!(
                 f,
-                "la base {} está bloqueada: Ruth IDE ya está abierto en otro proceso",
+                "database {} is locked: Ruth IDE is already open in another process",
                 path.display()
             ),
             Self::Corrupt { message } => {
-                write!(f, "la base de datos está dañada ({message}); no se ha modificado nada")
+                write!(
+                    f,
+                    "the database is corrupt ({message}); nothing was modified"
+                )
             }
             Self::FutureSchema { found, supported } => write!(
                 f,
-                "la base usa el esquema v{found}, posterior a v{supported}; no se ha modificado nada"
+                "the database uses schema v{found}, newer than v{supported}; nothing was modified"
             ),
             Self::InvalidData { message } => {
-                write!(f, "los datos guardados no son válidos ({message}); no se ha modificado nada")
+                write!(
+                    f,
+                    "the saved data is not valid ({message}); nothing was modified"
+                )
             }
         }
     }

@@ -1,5 +1,5 @@
-// Adaptador Tauri para requisitos. Cada mutación devuelve la instantánea
-// autoritativa de Rust; la interfaz actualiza desde ella.
+// Tauri adapter for requirements. Every mutation returns the
+// authoritative Rust snapshot; the UI updates from it.
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriEnvironment } from "../../lib/env";
 import {
@@ -17,7 +17,7 @@ function ensureTauri(): void {
   if (!isTauriEnvironment()) {
     throw {
       kind: "not_tauri",
-      message: "Las operaciones del núcleo requieren ejecutar Ruth IDE como escritorio (Tauri).",
+      message: "Core operations require running Ruth IDE as a desktop app (Tauri).",
     } satisfies CoreApiError;
   }
 }
@@ -114,6 +114,10 @@ export function deleteModule(input: {
   moduleId: string;
 }): Promise<string> {
   return call("core_delete_module", { input });
+}
+
+export function deleteProject(input: { projectId: string }): Promise<string> {
+  return call("core_delete_project", { input });
 }
 
 export function archiveRequirement(input: {

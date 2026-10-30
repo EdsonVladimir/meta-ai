@@ -1,13 +1,14 @@
-// Índice de mockups del módulo: todos los mockups con estado y acceso,
-// más creación manual (título y autoría; el dibujo empieza en blanco).
-// La creación llama a Rust y entrega el detalle al workspace, que
-// selecciona el mockup nuevo y refresca el árbol.
+// Module mockup index: every mockup with state and access, plus manual
+// creation (title and authorship; the drawing starts blank). Creation
+// calls Rust and hands the detail to the workspace, which selects the
+// new mockup and refreshes the tree.
 import { useState } from "react";
 import type { ArtifactMeta } from "../explorer/explorerModel";
 import type { ModuleGraph } from "../explorer/useExplorerData";
 import { artifactLabel } from "../requirements/names";
 import { normalizeCoreError, type ArtifactDto, type RequirementDetail } from "../requirements/types";
 import { createMockup } from "./client";
+import { ScreenProposals } from "./ScreenProposals";
 
 interface MockupsPanelProps {
   projectId: string;
@@ -16,7 +17,7 @@ interface MockupsPanelProps {
   mockups: ArtifactDto[];
   graph: ModuleGraph | null;
   meta: Record<string, ArtifactMeta>;
-  /** Módulo archivado: índice consultable, sin crear. */
+  /** Archived module: browsable index, no creation. */
   moduleArchived: boolean;
   onOpenMockup: (mockupId: string) => void;
   onCreatedMockup: (detail: RequirementDetail) => void;
@@ -34,11 +35,12 @@ export function MockupsPanel({
   onCreatedMockup,
 }: MockupsPanelProps) {
   const [creating, setCreating] = useState(false);
+  const [proposing, setProposing] = useState(false);
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const createTitle = moduleArchived ? "Módulo archivado: restaúralo para crear" : undefined;
+  const createTitle = moduleArchived ? "Archived module: restore it to create" : undefined;
 
   async function handleCreate() {
     if (title.trim() === "" || author.trim() === "" || busy) return;
@@ -76,47 +78,67 @@ export function MockupsPanel({
           title={createTitle}
           aria-expanded={creating}
         >
-          Crear mockup
+          Create mockup
         </button>
-        <span className="hint">en {moduleName}</span>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => setProposing((v) => !v)}
+          disabled={moduleArchived}
+          title={createTitle}
+          aria-expanded={proposing}
+        >
+          Propose screens
+        </button>
+        <span className="hint">in {moduleName}</span>
       </div>
+      {proposing && (
+        <ScreenProposals
+          key={`${projectId}/${moduleId}`}
+          projectId={projectId}
+          moduleId={moduleId}
+          moduleArchived={moduleArchived}
+          onAccepted={onCreatedMockup}
+          onOpenMockup={onOpenMockup}
+        />
+      )}
       {moduleArchived && (
         <p className="notice" role="note">
-          Módulo archivado: los mockups se consultan, pero no se crean ni editan.
+          Archived module: mockups can be browsed, but not created or edited.
         </p>
       )}
       {creating && !moduleArchived && (
         <form
           className="create-form"
-          aria-label="Crear mockup"
+          aria-label="Create mockup"
           onSubmit={(e) => {
             e.preventDefault();
             void handleCreate();
           }}
         >
           <label className="field">
-            <span>Título</span>
+            <span>Title</span>
             <input
               type="text"
               value={title}
               maxLength={200}
-              placeholder="p. ej. Nueva reserva"
+              placeholder="e.g. New booking"
               autoComplete="off"
               onChange={(e) => setTitle(e.target.value)}
             />
           </label>
           <label className="field">
-            <span>Autoría</span>
+            <span>Authorship</span>
             <input
               type="text"
               value={author}
-              placeholder="Tu nombre"
+              placeholder="Your name"
               autoComplete="off"
               onChange={(e) => setAuthor(e.target.value)}
             />
           </label>
           <p className="hint">
-            Empieza en blanco: dibuja pantallas y declara sus fuentes en el editor.
+            Starts blank: draw screens and declare their sources in the editor.
           </p>
           {error !== null && (
             <p className="error" role="alert">
@@ -130,7 +152,7 @@ export function MockupsPanel({
               disabled={busy || title.trim() === "" || author.trim() === ""}
               onClick={() => void handleCreate()}
             >
-              {busy ? "Creando…" : "Crear"}
+              {busy ? "Creating…" : "Create"}
             </button>
             <button
               type="button"
@@ -141,13 +163,13 @@ export function MockupsPanel({
                 setError(null);
               }}
             >
-              Cancelar
+              Cancel
             </button>
           </div>
         </form>
       )}
       {mockups.length === 0 ? (
-        <p className="hint">Este módulo aún no tiene mockups.</p>
+        <p className="hint">This module has no mockups yet.</p>
       ) : (
         <ul className="pick-list">
           {mockups.map((mockup) => {
@@ -165,10 +187,10 @@ export function MockupsPanel({
                       </span>
                     )}
                     <span className="kind-badge">mockup</span>
-                    {stale === true && <span className="stale-badge">desactualizado</span>}
+                    {stale === true && <span className="stale-badge">stale</span>}
                     {stale === false && sources !== null && (
                       <span className="hint">
-                        {sources} {sources === 1 ? "fuente" : "fuentes"}
+                        {sources} {sources === 1 ? "source" : "sources"}
                       </span>
                     )}
                   </span>

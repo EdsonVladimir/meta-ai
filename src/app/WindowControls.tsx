@@ -1,8 +1,8 @@
-// Controles de ventana propios (la ventana no tiene decoración nativa):
-// minimizar, maximizar/restaurar y cerrar. Solo escritorio: en navegador
-// no se muestra nada. Cerrar no sale directo: avisa a App para que pase
-// por la puerta de borradores y luego por el flujo existente (que frena
-// ante terminales activas). Nunca usa salida forzada.
+// Custom window controls (the window has no native decoration):
+// minimize, maximize/restore and close. Desktop only: nothing renders in
+// the browser. Close never exits directly: it notifies App so the flow
+// goes through the drafts gate and then the existing flow (which stops
+// for active terminals). Never force-quits.
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauriEnvironment } from "../lib/env";
@@ -28,8 +28,8 @@ export function WindowControls({ onCloseRequest, onToggleMaximize }: WindowContr
         .catch(() => {});
     };
     refresh();
-    // El sistema también maximiza (arrastrar arriba, Win+Arriba…): el
-    // icono sigue al estado real, no solo a este botón.
+    // The system also maximizes (drag up, Win+Up…): the icon follows
+    // the real state, not just this button.
     let unlisten: (() => void) | null = null;
     void getCurrentWindow()
       .onResized(refresh)
@@ -46,13 +46,13 @@ export function WindowControls({ onCloseRequest, onToggleMaximize }: WindowContr
   if (!desktop) return null;
 
   return (
-    <div className="window-controls" role="toolbar" aria-label="Controles de ventana">
+    <div className="window-controls" role="toolbar" aria-label="Window controls">
       <button
         type="button"
         className="win-button"
         onClick={() => void getCurrentWindow().minimize().catch(() => {})}
-        aria-label="Minimizar"
-        title="Minimizar"
+        aria-label="Minimize"
+        title="Minimize"
       >
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
           <path d="M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -69,8 +69,8 @@ export function WindowControls({ onCloseRequest, onToggleMaximize }: WindowContr
               .catch(() => {}),
           )
         }
-        aria-label={maximized ? "Restaurar" : "Maximizar"}
-        title={maximized ? "Restaurar" : "Maximizar"}
+        aria-label={maximized ? "Restore" : "Maximize"}
+        title={maximized ? "Restore" : "Maximize"}
       >
         {maximized ? (
           <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -93,8 +93,8 @@ export function WindowControls({ onCloseRequest, onToggleMaximize }: WindowContr
         type="button"
         className="win-button win-close"
         onClick={onCloseRequest}
-        aria-label="Cerrar"
-        title="Cerrar"
+        aria-label="Close"
+        title="Close"
       >
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
           <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />

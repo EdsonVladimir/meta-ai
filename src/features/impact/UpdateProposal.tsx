@@ -1,9 +1,9 @@
-// Propuesta de actualización de un diseño pendiente, dentro del inspector
-// de impacto: vista previa del snapshot, generación explícita, comparación
-// (diagramas + diff estructural) y aceptación como nueva versión del MISMO
-// artefacto. Reutiliza el ciclo de generaciones de diseño; aquí solo vive
-// el flujo de revisión. Las ediciones JSON se elevan por props para que
-// navegar no las pierda; el resto es efímero y rederivable.
+// Design-update proposal for a pending design, inside the impact
+// inspector: snapshot preview, explicit generation, comparison (diagrams +
+// structural diff) and acceptance as a new version of the SAME artifact.
+// Reuses the design-generation cycle; only the review flow lives here.
+// JSON edits are lifted via props so navigation keeps them; the rest is
+// ephemeral and rederivable.
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   acceptDesign,
@@ -40,17 +40,17 @@ import type { ImpactedDto } from "./types";
 function diffKindLabel(kind: string): string {
   switch (kind) {
     case "title":
-      return "Título";
+      return "Title";
     case "node":
-      return "Nodo";
+      return "Node";
     case "edge":
-      return "Arista";
+      return "Edge";
     case "entity":
-      return "Entidad";
+      return "Entity";
     case "attribute":
-      return "Atributo";
+      return "Attribute";
     case "relation":
-      return "Relación";
+      return "Relation";
     default:
       return kind;
   }
@@ -94,8 +94,8 @@ export function UpdateProposal(props: Props) {
 
   const key = `${props.moduleId}/${targetId}`;
 
-  // Instantánea consultiva + propuestas guardadas. Si hay una retomable, se
-  // abre directa; si no, se muestra la vista previa para generar.
+  // Advisory snapshot + saved proposals. A resumable one opens directly;
+  // otherwise the preview shows for generation.
   useEffect(() => {
     wanted.current = key;
     setPreview(null);
@@ -132,7 +132,7 @@ export function UpdateProposal(props: Props) {
     })();
   }, [key, props.projectId, props.moduleId, targetId, props.originArtifactId, props.originFromVersionId]);
 
-  // Diagrama del diseño actual (vivo) para comparar.
+  // Live current-design diagram for comparison.
   useEffect(() => {
     if (preview === null) return;
     let cancelled = false;
@@ -153,7 +153,7 @@ export function UpdateProposal(props: Props) {
     };
   }, [preview, key]);
 
-  // Detalle vivo del objetivo: fuentes anteriores del snapshot y versión.
+  // Live target detail: snapshot previous sources and version.
   useEffect(() => {
     if (generation === null) return;
     let cancelled = false;
@@ -180,7 +180,7 @@ export function UpdateProposal(props: Props) {
     return parsed.ok ? parsed.value : null;
   }, [generation, props.edits]);
 
-  // Diff estructural actual frente a propuesta (o su edición validada).
+  // Structural diff of current vs proposal (or its validated edit).
   useEffect(() => {
     if (preview === null || generation === null || editedSpec === null) {
       setDiff(null);
@@ -249,7 +249,7 @@ export function UpdateProposal(props: Props) {
     const text = props.edits[generation.id] ?? prettySpec(generation.proposal.spec);
     const parsed = parseSpecText(text);
     if (!parsed.ok) {
-      setValidateError(`${parsed.error} Se conserva el último resultado válido.`);
+      setValidateError(`${parsed.error} The last valid result is kept.`);
       return;
     }
     setActing(true);
@@ -264,7 +264,7 @@ export function UpdateProposal(props: Props) {
       setValidated(result);
     } catch (raw) {
       if (wanted.current !== key) return;
-      setValidateError(`${normalizeCoreError(raw).message} Se conserva el último resultado válido.`);
+      setValidateError(`${normalizeCoreError(raw).message} The last valid result is kept.`);
     } finally {
       if (wanted.current === key) setActing(false);
     }
@@ -329,14 +329,14 @@ export function UpdateProposal(props: Props) {
   }, [liveDetail, generation]);
 
   return (
-    <section className="update-proposal" aria-label={`Propuesta de actualización de ${targetId}`}>
+    <section className="update-proposal" aria-label={`Update proposal for ${targetId}`}>
       <div className="button-row">
         <button type="button" className="secondary small" onClick={props.onClose}>
-          ← Volver al inspector
+          ← Back to inspector
         </button>
       </div>
 
-      {previewBusy && preview === null && <p className="hint">Cargando snapshot…</p>}
+      {previewBusy && preview === null && <p className="hint">Loading snapshot…</p>}
       {previewError !== null && (
         <p className="error" role="alert">
           {previewError}
@@ -346,15 +346,15 @@ export function UpdateProposal(props: Props) {
       {preview !== null && generation === null && (
         <>
           <h4>
-            Actualizar {targetId} <span className="hint">({kindName(preview.kind)})</span>
+            Update {targetId} <span className="hint">({kindName(preview.kind)})</span>
           </h4>
           <p className="hint">
-            Versión actual <code>{preview.currentVersionId}</code>. La propuesta conservará el
-            mismo conjunto de fuentes con sus versiones actuales; nada se añade ni elimina solo.
+            Current version <code>{preview.currentVersionId}</code>. The proposal keeps the
+            same source set with their current versions; nothing is added or removed alone.
           </p>
-          <h5>Fuentes utilizadas frente a actuales</h5>
+          <h5>Used vs current sources</h5>
           {preview.sources.length === 0 ? (
-            <p className="hint">El diseño actual no declara fuentes.</p>
+            <p className="hint">The current design declares no sources.</p>
           ) : (
             <ul className="pin-list">
               {preview.sources.map((source) => (
@@ -363,7 +363,7 @@ export function UpdateProposal(props: Props) {
                     type="button"
                     className="linklike"
                     onClick={() => props.onSelectNode(source.artifactId)}
-                    title="Seleccionar en el mapa"
+                    title="Select in the map"
                   >
                     {source.artifactId}
                   </button>{" "}
@@ -377,12 +377,12 @@ export function UpdateProposal(props: Props) {
                   {!source.currentApproved && (
                     <span
                       className="badge warn"
-                      title="Informativo: no bloquea la generación"
+                      title="Informational: does not block generation"
                     >
-                      sin revisar
+                      unreviewed
                     </span>
                   )}
-                  {!source.currentValid && <span className="badge warn">desactualizada</span>}
+                  {!source.currentValid && <span className="badge warn">outdated</span>}
                 </li>
               ))}
             </ul>
@@ -390,16 +390,16 @@ export function UpdateProposal(props: Props) {
           {preview.origin !== null && preview.origin !== undefined && (
             <>
               <h5>
-                Cambio origen · {preview.origin.artifactId} ({preview.origin.fromVersionId} →{" "}
+                Origin change · {preview.origin.artifactId} ({preview.origin.fromVersionId} →{" "}
                 {preview.origin.currentVersionId})
               </h5>
               <div className="before-after single-col">
-                <section aria-label="Antes">
-                  <h6>Antes</h6>
+                <section aria-label="Before">
+                  <h6>Before</h6>
                   <pre className="readonly-box">{preview.origin.fromContent}</pre>
                 </section>
-                <section aria-label="Ahora">
-                  <h6>Ahora</h6>
+                <section aria-label="Now">
+                  <h6>Now</h6>
                   <pre className="readonly-box">{preview.origin.currentContent}</pre>
                 </section>
               </div>
@@ -407,7 +407,7 @@ export function UpdateProposal(props: Props) {
           )}
           {preview.paths.length > 0 && (
             <>
-              <h5>Caminos relevantes</h5>
+              <h5>Relevant paths</h5>
               <ol className="path-list">
                 {preview.paths.map((path, i) => (
                   <li key={i}>{path.join(" → ")}</li>
@@ -426,7 +426,7 @@ export function UpdateProposal(props: Props) {
                       className="linklike"
                       onClick={() => props.onSelectNode(blocker.artifactId ?? null)}
                     >
-                      Ver {blocker.artifactId} en el mapa
+                      See {blocker.artifactId} on the map
                     </button>
                   )}
                 </p>
@@ -434,8 +434,8 @@ export function UpdateProposal(props: Props) {
             </div>
           )}
           <p className="notice">
-            A Meta viajan el diseño actual, las fuentes con sus dos versiones y el cambio origen.
-            No se envían archivos, secretos ni otros módulos. Sin reintentos automáticos.
+            Meta receives the current design, the sources with both versions and the origin change.
+            No files, secrets or other modules are sent. No automatic retries.
           </p>
           <div className="button-row">
             <button
@@ -444,7 +444,7 @@ export function UpdateProposal(props: Props) {
               onClick={() => void handleGenerate()}
               disabled={!preview.canGenerate || generating}
             >
-              {generating ? "Generando…" : "Generar propuesta"}
+              {generating ? "Generating…" : "Generate proposal"}
             </button>
           </div>
           {generateError !== null && (
@@ -454,9 +454,8 @@ export function UpdateProposal(props: Props) {
           )}
           {others.length > 0 && (
             <p className="hint">
-              Hay {others.length} propuesta{others.length === 1 ? "" : "s"} guardada
-              {others.length === 1 ? "" : "s"} para este diseño ({others.map((g) => g.id).join(", ")}
-              ); genera de nuevo para una propuesta fresca.
+              {others.length} saved proposal{others.length === 1 ? "" : "s"} for this design (
+              {others.map((g) => g.id).join(", ")}); generate again for a fresh one.
             </p>
           )}
         </>
@@ -465,10 +464,10 @@ export function UpdateProposal(props: Props) {
       {generation !== null && (
         <>
           <h4>
-            Propuesta <code>{generation.id}</code>
+            Proposal <code>{generation.id}</code>
           </h4>
           <p className="hint">
-            {generation.model} · plantilla v{generation.templateVersion}
+            {generation.model} · template v{generation.templateVersion}
             {generation.usage.totalTokens !== null && generation.usage.totalTokens !== undefined && (
               <span>
                 {" "}
@@ -479,17 +478,17 @@ export function UpdateProposal(props: Props) {
           </p>
           {generation.stale && generation.proposal.state === "pending" && (
             <p className="notice stale" role="note">
-              Desactualizada: el diseño o una fuente cambió durante la generación o la revisión. La
-              propuesta se conserva pero no puede aceptarse.{" "}
+              Stale: the design or a source changed during generation or review. The
+              proposal is kept but cannot be accepted.{" "}
               <button type="button" className="linklike" onClick={() => setGeneration(null)}>
-                Generar de nuevo
+                Generate again
               </button>
             </p>
           )}
           {generation.proposal.state === "accepted" && (
             <p className="notice" role="note">
-              Aceptada como borrador de <code>{generation.proposal.artifactId}</code>. La aprobación
-              sigue siendo un paso posterior desde su vista.{" "}
+              Accepted as a draft of <code>{generation.proposal.artifactId}</code>. Approval
+              remains a later step from its view.{" "}
               <button
                 type="button"
                 className="linklike"
@@ -498,28 +497,28 @@ export function UpdateProposal(props: Props) {
                   if (id !== null && id !== undefined) props.onOpenArtifact(id, generation.kind);
                 }}
               >
-                Abrir diseño
+                Open design
               </button>
             </p>
           )}
           {generation.proposal.state === "discarded" && (
             <p className="notice" role="note">
-              Descartada: no puede aceptarse.{" "}
+              Discarded: cannot be accepted.{" "}
               <button type="button" className="linklike" onClick={() => setGeneration(null)}>
-                Generar de nuevo
+                Generate again
               </button>
             </p>
           )}
           {generation.proposal.state === "pending" && !generation.stale && (
             <p className="hint">
-              Propuesta retomada de una generación anterior.{" "}
+              Proposal resumed from an earlier generation.{" "}
               <button type="button" className="linklike" onClick={() => setGeneration(null)}>
-                Generar otra propuesta
+                Generate another proposal
               </button>
             </p>
           )}
 
-          <div className="center-tabs" role="tablist" aria-label="Comparación">
+          <div className="center-tabs" role="tablist" aria-label="Comparison">
             <button
               type="button"
               role="tab"
@@ -527,7 +526,7 @@ export function UpdateProposal(props: Props) {
               className={side === "current" ? "active" : ""}
               onClick={() => setSide("current")}
             >
-              Actual
+              Current
             </button>
             <button
               type="button"
@@ -536,22 +535,22 @@ export function UpdateProposal(props: Props) {
               className={side === "proposed" ? "active" : ""}
               onClick={() => setSide("proposed")}
             >
-              Propuesta
+              Proposal
             </button>
           </div>
           {side === "current" ? (
             currentMermaid === null ? (
-              <p className="hint">El diseño actual no tiene diagrama válido.</p>
+              <p className="hint">The current design has no valid diagram.</p>
             ) : (
               <MermaidDiagram source={currentMermaid} diagramId={`upd-current-${generation.id}`} />
             )
           ) : proposedMermaid === null ? (
-            <p className="hint">Sin diagrama propuesto.</p>
+            <p className="hint">No proposed diagram.</p>
           ) : (
             <MermaidDiagram source={proposedMermaid} diagramId={`upd-proposed-${generation.id}`} />
           )}
 
-          <h5>Diferencias estructurales</h5>
+          <h5>Structural differences</h5>
           {diffError !== null && (
             <p className="error" role="alert">
               {diffError}
@@ -561,9 +560,9 @@ export function UpdateProposal(props: Props) {
             <div className="structural-diff">
               {(
                 [
-                  ["added", "Añadidos", diff.added],
-                  ["removed", "Eliminados", diff.removed],
-                  ["modified", "Modificados", diff.modified],
+                  ["added", "Added", diff.added],
+                  ["removed", "Removed", diff.removed],
+                  ["modified", "Modified", diff.modified],
                 ] as const
               ).map(([key, label, items]) => (
                 <section key={key} aria-label={label}>
@@ -588,25 +587,25 @@ export function UpdateProposal(props: Props) {
             </div>
           )}
 
-          <h5>Fuentes anteriores y nuevas</h5>
+          <h5>Previous and new sources</h5>
           <p className="hint">
-            Anteriores:{" "}
+            Previous:{" "}
             {snapshotSources === null ? (
-              "cargando…"
+              "loading…"
             ) : snapshotSources.length === 0 ? (
-              "ninguna"
+              "none"
             ) : (
               <span className="mono">{snapshotSources.join(", ")}</span>
             )}
             <br />
-            Nuevas: <span className="mono">{generation.contextVersionIds.join(", ") || "ninguna"}</span>
+            New: <span className="mono">{generation.contextVersionIds.join(", ") || "none"}</span>
           </p>
 
           <h5>{generation.proposal.title}</h5>
           <p>{generation.proposal.explanation}</p>
           {generation.questions.length > 0 && (
-            <section className="questions" aria-label="Preguntas pendientes">
-              <h6>Preguntas pendientes</h6>
+            <section className="questions" aria-label="Open questions">
+              <h6>Open questions</h6>
               <ul>
                 {generation.questions.map((question, i) => (
                   <li key={i}>{question}</li>
@@ -615,14 +614,14 @@ export function UpdateProposal(props: Props) {
             </section>
           )}
           <p className="hint">
-            La explicación es una propuesta, no evidencia de corrección: lo que cuenta es el diff
-            estructural y tu revisión.
+            The explanation is a proposal, not evidence of correctness: the structural diff
+            and your review are what count.
           </p>
 
           {generation.proposal.state === "pending" && (
             <>
               <label className="field">
-                <span>Especificación JSON (autoritativa)</span>
+                <span>JSON spec (authoritative)</span>
                 <textarea
                   className="json-editor"
                   value={props.edits[generation.id] ?? prettySpec(generation.proposal.spec)}
@@ -649,7 +648,7 @@ export function UpdateProposal(props: Props) {
                   onClick={() => void handleValidate()}
                   disabled={!actionable}
                 >
-                  Validar y previsualizar
+                  Validate and preview
                 </button>
                 <button
                   type="button"
@@ -661,16 +660,16 @@ export function UpdateProposal(props: Props) {
                   }}
                   disabled={!actionable}
                 >
-                  Restablecer
+                  Reset
                 </button>
                 <button
                   type="button"
                   className="primary small"
                   onClick={() => void handleAccept()}
                   disabled={!actionable}
-                  title="Crea una versión del mismo artefacto, sin aprobar"
+                  title="Creates a version of the same artifact, unapproved"
                 >
-                  {acting ? "Aceptando…" : "Aceptar como borrador"}
+                  {acting ? "Accepting…" : "Accept as draft"}
                 </button>
                 <button
                   type="button"
@@ -678,7 +677,7 @@ export function UpdateProposal(props: Props) {
                   onClick={() => void handleDiscard()}
                   disabled={!actionable}
                 >
-                  Descartar
+                  Discard
                 </button>
               </div>
             </>

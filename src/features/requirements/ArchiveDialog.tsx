@@ -1,7 +1,7 @@
-// Diálogo de archivo y borrado: resumen consultivo (contenido, dependientes,
-// baselines, generaciones) y confirmación explícita por separado. La
-// ejecución revalida las condiciones en Rust; ante un fallo el diálogo
-// conserva el resumen y la selección sigue intacta.
+// Archive and delete dialog: advisory summary (contents, dependents,
+// baselines, generations) with a separate explicit confirmation. Execution
+// revalidates the conditions in Rust; on failure the dialog keeps the
+// summary and the selection stays intact.
 import { useEffect } from "react";
 import type { ArchivePreviewDto } from "./types";
 import type { ArchiveAction, ArchiveTarget } from "./archive";
@@ -20,30 +20,32 @@ interface ArchiveDialogProps {
 }
 
 function targetName(target: ArchiveTarget): string {
+  if (target.kind === "project") return target.projectId;
   return target.kind === "module" ? target.moduleId : target.artifactId;
 }
 
 function targetKind(target: ArchiveTarget): string {
-  return target.kind === "module" ? "módulo" : "requisito";
+  if (target.kind === "project") return "project";
+  return target.kind === "module" ? "module" : "requirement";
 }
 
 function logLabel(log: string): string {
-  return log === "design" ? "diseño" : "requisitos";
+  return log === "design" ? "design" : "requirements";
 }
 
 function roleLabel(role: string): string {
-  if (role === "owns") return "generación del módulo";
-  if (role === "context") return "citado en su contexto";
-  if (role === "accepted") return "propuesta aceptada que lo creó";
-  if (role === "target") return "actualización dirigida a él";
+  if (role === "owns") return "module generation";
+  if (role === "context") return "quoted in its context";
+  if (role === "accepted") return "accepted proposal that created it";
+  if (role === "target") return "update aimed at it";
   return role;
 }
 
 function titleFor(target: ArchiveTarget, action: ArchiveAction): string {
   const what = `${targetKind(target)} ${targetName(target)}`;
-  if (action === "archive") return `Archivar ${what}`;
-  if (action === "restore") return `Restaurar ${what}`;
-  return `Eliminar definitivamente ${what}`;
+  if (action === "archive") return `Archive ${what}`;
+  if (action === "restore") return `Restore ${what}`;
+  return `Delete ${what} permanently`;
 }
 
 export function ArchiveDialog({
@@ -84,18 +86,18 @@ export function ArchiveDialog({
             disabled={busy}
             autoFocus
           >
-            Cerrar
+            Close
           </button>
         </div>
-        {loading && <p className="hint">Cargando resumen…</p>}
+        {loading && <p className="hint">Loading summary…</p>}
         {error !== null && preview === null && (
           <div>
             <p className="error" role="alert">
-              No se pudo cargar el resumen: {error}
+              Could not load the summary: {error}
             </p>
             <div className="modal-actions">
               <button type="button" className="primary" onClick={onRetry}>
-                Reintentar
+                Retry
               </button>
             </div>
           </div>
@@ -103,43 +105,60 @@ export function ArchiveDialog({
         {preview !== null && (
           <div>
             <p className="hint">
-              Estado actual:{" "}
+              Current state:{" "}
               <span className={preview.archived ? "archived-badge" : "review-badge ok"}>
-                {preview.archived ? "archivado" : "activo"}
+                {preview.archived ? "archived" : "active"}
               </span>{" "}
-              · {preview.versions} {preview.versions === 1 ? "versión" : "versiones"} ·{" "}
-              {preview.approvals} {preview.approvals === 1 ? "aprobación" : "aprobaciones"}
+              · {preview.versions} {preview.versions === 1 ? "version" : "versions"} ·{" "}
+              {preview.approvals} {preview.approvals === 1 ? "approval" : "approvals"}
             </p>
-            {preview.kind === "module" && (
-              <section aria-label="Contenido del módulo">
-                <h4>Contenido ({preview.contents.length})</h4>
-                {preview.contents.length === 0 ? (
-                  <p className="hint">Módulo vacío.</p>
+            {preview.kind === "project" && (
+              <section aria-label="Project modules">
+                <h4>Modules ({preview.modules.length})</h4>
+                {preview.modules.length === 0 ? (
+                  <p className="hint">Empty project.</p>
                 ) : (
                   <ul className="archive-list">
-                    {preview.contents.map((item) => (
+                    {preview.modules.map((item) => (
                       <li key={item.id}>
-                        <code>{item.id}</code> <span className="kind-badge">{item.kind}</span>
-                        {item.archived && <span className="archived-badge">archivado</span>}
+                        <code>{item.id}</code> <span className="hint">{item.name}</span>
+                        {item.archived && <span className="archived-badge">archived</span>}
                       </li>
                     ))}
                   </ul>
                 )}
               </section>
             )}
-            <section aria-label="Dependientes">
-              <h4>Dependientes ({preview.dependents.length})</h4>
+            {preview.kind === "module" && (
+              <section aria-label="Module contents">
+                <h4>Contents ({preview.contents.length})</h4>
+                {preview.contents.length === 0 ? (
+                  <p className="hint">Empty module.</p>
+                ) : (
+                  <ul className="archive-list">
+                    {preview.contents.map((item) => (
+                      <li key={item.id}>
+                        <code>{item.id}</code> <span className="kind-badge">{item.kind}</span>
+                        {item.archived && <span className="archived-badge">archived</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+            <section aria-label="Dependents">
+              <h4>Dependents ({preview.dependents.length})</h4>
               {preview.dependents.length === 0 ? (
-                <p className="hint">Ningún artefacto depende de este {targetKind(target)}.</p>
+                <p className="hint">No artifact depends on this {targetKind(target)}.</p>
               ) : (
                 <ul className="archive-list">
                   {preview.dependents.map((dep) => (
                     <li key={dep.artifact.id}>
                       <code>{dep.artifact.id}</code> <span className="kind-badge">{dep.artifact.kind}</span>{" "}
                       <span className="hint">
-                        {dep.sameModule ? "este módulo" : `módulo ${dep.artifact.moduleId}`}
+                        {dep.sameModule ? "this module" : `module ${dep.artifact.moduleId}`}
                       </span>
-                      {dep.artifact.archived && <span className="archived-badge">archivado</span>}
+                      {dep.artifact.archived && <span className="archived-badge">archived</span>}
                     </li>
                   ))}
                 </ul>
@@ -148,7 +167,7 @@ export function ArchiveDialog({
             <section aria-label="Baselines">
               <h4>Baselines ({preview.baselines.length})</h4>
               {preview.baselines.length === 0 ? (
-                <p className="hint">Ninguna baseline lo incluye.</p>
+                <p className="hint">No baseline includes it.</p>
               ) : (
                 <div>
                   <ul className="archive-list">
@@ -159,15 +178,15 @@ export function ArchiveDialog({
                     ))}
                   </ul>
                   <p className="hint">
-                    Históricas e inmutables: seguirán consultables y exportables.
+                    Historical and immutable: they stay readable and exportable.
                   </p>
                 </div>
               )}
             </section>
-            <section aria-label="Entregas de trabajo">
-              <h4>Entregas de trabajo ({preview.deliveries.length})</h4>
+            <section aria-label="Work deliveries">
+              <h4>Work deliveries ({preview.deliveries.length})</h4>
               {preview.deliveries.length === 0 ? (
-                <p className="hint">Ninguna entrega de trabajo lo incluye.</p>
+                <p className="hint">No work delivery includes it.</p>
               ) : (
                 <div>
                   <ul className="archive-list">
@@ -179,15 +198,15 @@ export function ArchiveDialog({
                     ))}
                   </ul>
                   <p className="hint">
-                    Las entregas protegen su contenido igual que las baselines.
+                    Deliveries protect their content just like baselines.
                   </p>
                 </div>
               )}
             </section>
-            <section aria-label="Generaciones">
-              <h4>Generaciones ({preview.generations.length})</h4>
+            <section aria-label="Generations">
+              <h4>Generations ({preview.generations.length})</h4>
               {preview.generations.length === 0 ? (
-                <p className="hint">Ninguna generación lo menciona.</p>
+                <p className="hint">No generation mentions it.</p>
               ) : (
                 <ul className="archive-list">
                   {preview.generations.map((gen) => (
@@ -203,7 +222,7 @@ export function ArchiveDialog({
             </section>
             {error !== null && (
               <p className="error" role="alert">
-                No se pudo completar: {error} Nada ha cambiado.
+                Could not complete: {error} Nothing changed.
               </p>
             )}
             <ArchiveActions
@@ -246,7 +265,7 @@ function ArchiveActions({
         <div>
           <div className="archive-blocked" role="note">
             <p>
-              <strong>No se puede eliminar «{targetName(target)}».</strong>
+              <strong>Cannot delete "{targetName(target)}".</strong>
             </p>
             <ul>
               {preview.deleteBlockers.map((blocker) => (
@@ -255,18 +274,18 @@ function ArchiveActions({
             </ul>
           </div>
           <div className="modal-actions">
-            {!preview.archived && (
+            {!preview.archived && preview.kind !== "project" && (
               <button
                 type="button"
                 className="primary"
                 onClick={() => onActionChange("archive")}
                 disabled={busy}
               >
-                Archivar en su lugar
+                Archive instead
               </button>
             )}
             <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-              Cerrar
+              Close
             </button>
           </div>
         </div>
@@ -276,22 +295,24 @@ function ArchiveActions({
       <div>
         <div className="archive-danger" role="note">
           <p>
-            <strong>«{targetName(target)}» se eliminará definitivamente</strong>
-            {preview.kind === "module"
-              ? " (módulo vacío, sin referencias)."
-              : ` con sus ${preview.versions} ${preview.versions === 1 ? "versión" : "versiones"}.`}
+            <strong>"{targetName(target)}" will be deleted permanently</strong>
+            {preview.kind === "project"
+              ? " (empty project, no references)."
+              : preview.kind === "module"
+                ? " (empty module, no references)."
+                : ` with its ${preview.versions} ${preview.versions === 1 ? "version" : "versions"}.`}
           </p>
           <p>
-            Sin aprobaciones, sin dependientes, sin baselines y sin menciones en
-            generaciones. Esta acción no se puede deshacer.
+            No approvals, no dependents, no baselines and no mentions in
+            generations. This action cannot be undone.
           </p>
         </div>
         <div className="modal-actions">
           <button type="button" className="danger" onClick={onConfirm} disabled={busy}>
-            {busy ? "Eliminando…" : `Eliminar definitivamente «${targetName(target)}»`}
+            {busy ? "Deleting…" : `Delete "${targetName(target)}" permanently`}
           </button>
           <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-            Cancelar
+            Cancel
           </button>
         </div>
       </div>
@@ -301,12 +322,12 @@ function ArchiveActions({
     <div>
       <p className="hint">
         {action === "archive"
-          ? `Se ocultará de las listas activas. Conserva versiones, aprobaciones, dependencias, ` +
-            `baselines y generaciones, y podrás consultar su historial. No podrás editar, generar ` +
-            `ni aprobar sobre ${targetName(target)} hasta restaurarlo.`
-          : `Volverá a las listas activas con todo su historial intacto.${
+          ? `It will hide from the active lists. It keeps versions, approvals, dependencies, ` +
+            `baselines and generations, and you can still read its history. You cannot edit, generate ` +
+            `or approve on ${targetName(target)} until restored.`
+          : `It will return to the active lists with all its history intact.${
               preview.kind === "module"
-                ? " Lo archivado individualmente dentro seguirá archivado."
+                ? " What was individually archived inside stays archived."
                 : ""
             }`}
       </p>
@@ -314,14 +335,14 @@ function ArchiveActions({
         <button type="button" className="primary" onClick={onConfirm} disabled={busy}>
           {busy
             ? action === "archive"
-              ? "Archivando…"
-              : "Restaurando…"
+              ? "Archiving…"
+              : "Restoring…"
             : action === "archive"
-              ? `Archivar ${what} «${targetName(target)}»`
-              : `Restaurar ${what} «${targetName(target)}»`}
+              ? `Archive ${what} "${targetName(target)}"`
+              : `Restore ${what} "${targetName(target)}"`}
         </button>
         <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-          Cancelar
+          Cancel
         </button>
       </div>
     </div>

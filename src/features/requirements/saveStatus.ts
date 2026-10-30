@@ -1,15 +1,15 @@
-// Estado de guardado del encabezado, derivado del mapa por documento.
-// Puro: sin React. El documento activo sale de la selección + vista; los
-// demás solo cuentan (nunca un flag global ambiguo).
+// Header save state, derived from the per-document map. Pure: no
+// React. The active document comes from selection + view; the rest only
+// count (never an ambiguous global flag).
 import type { CenterView, DocSaveState, Selection } from "./uiStore";
 
 export type HeaderSaveState = "none" | "dirty" | "saving" | "saved" | "error";
 
 export interface HeaderSave {
   state: HeaderSaveState;
-  /** Documentos con borrador distintos del activo. */
+  /** Documents with drafts other than the active one. */
   othersDirty: number;
-  /** Error del activo, si lo hay. */
+  /** The active one's error, if any. */
   error: string | null;
 }
 
@@ -17,8 +17,16 @@ export function docKey(kind: "req" | "design" | "mockup", id: string): string {
   return `${kind}:${id}`;
 }
 
-/** Documento que edita la vista central, si hay alguno abierto. */
-export function activeDocKey(selection: Selection, centerView: CenterView): string | null {
+/** Document the center view edits, if any is open. */
+export function activeDocKey(
+  selection: Selection,
+  centerView: CenterView,
+  codeActiveKey: string | null = null,
+): string | null {
+  void centerView;
+  if (codeActiveKey !== null) {
+    return `code:${codeActiveKey}`;
+  }
   if (centerView === "requirements" && selection.requirementId !== null) {
     return docKey("req", selection.requirementId);
   }
@@ -48,16 +56,9 @@ export function headerSave(
   return { state: "saved", othersDirty, error: null };
 }
 
-/** Claves con borrador, para el diálogo de exportar. */
+/** Keys with drafts, for the export dialog. */
 export function dirtyDocKeys(docStatus: Record<string, DocSaveState>): string[] {
   return Object.entries(docStatus)
     .filter(([, value]) => value.dirty)
     .map(([key]) => key);
-}
-
-export function docKindLabel(key: string): string {
-  if (key.startsWith("req:")) return "requisito";
-  if (key.startsWith("design:")) return "diseño";
-  if (key.startsWith("mockup:")) return "mockup";
-  return "documento";
 }

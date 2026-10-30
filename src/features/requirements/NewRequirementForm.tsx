@@ -12,29 +12,29 @@ export function NewRequirementForm({ busy, error, onCreate, onCancel }: NewRequi
   const [author, setAuthor] = useState("");
 
   return (
-    <section className="editor" aria-label="Nuevo requisito">
+    <section className="editor" aria-label="New requirement">
       <div className="editor-head">
-        <h3>Nuevo requisito</h3>
+        <h3>New requirement</h3>
       </div>
       <label className="field">
-        <span>Contenido de la primera versión</span>
+        <span>First version content</span>
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           rows={8}
           disabled={busy}
-          placeholder="p. ej. Confirmar una venta descuenta stock."
+          placeholder="e.g. Confirming a sale deducts stock."
         />
       </label>
       <div className="editor-row">
         <label className="field inline">
-          <span>Autoría</span>
+          <span>Authorship</span>
           <input
             type="text"
             value={author}
             onChange={(e) => setAuthor(e.target.value)}
             disabled={busy}
-            placeholder="Tu nombre"
+            placeholder="Your name"
             autoComplete="off"
           />
         </label>
@@ -45,10 +45,10 @@ export function NewRequirementForm({ busy, error, onCreate, onCancel }: NewRequi
             onClick={() => onCreate(content, author)}
             disabled={busy || content.trim() === "" || author.trim() === ""}
           >
-            {busy ? "Creando…" : "Crear requisito"}
+            {busy ? "Creating…" : "Create requirement"}
           </button>
           <button type="button" className="secondary" onClick={onCancel} disabled={busy}>
-            Cancelar
+            Cancel
           </button>
         </div>
       </div>

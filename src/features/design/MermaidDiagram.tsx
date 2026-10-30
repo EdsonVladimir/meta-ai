@@ -1,8 +1,8 @@
-// Visor de diagramas Mermaid: carga la librería bajo demanda, solo en el
-// cliente (renderizado local, sin API) y con seguridad estricta. La fuente
-// siempre la deriva Rust de JSON validado; aun así, cualquier fallo de
-// renderizado se muestra como error sin romper la aplicación, conservando
-// el último diagrama válido.
+// Mermaid diagram viewer: loads the library on demand, client-side
+// only (local rendering, no API) and with strict security. The source
+// is always derived by Rust from validated JSON; even so, any render
+// failure shows as an error without breaking the app, keeping the last
+// valid diagram.
 import { useEffect, useReducer, useRef } from "react";
 import { EMPTY_RENDER, renderReducer } from "./coordination";
 
@@ -24,11 +24,11 @@ async function renderMermaid(id: string, source: string): Promise<string> {
 }
 
 interface MermaidDiagramProps {
-  /** Fuente Mermaid derivada en Rust. */
+  /** Rust-derived Mermaid source. */
   source: string;
-  /** Prefijo para ids únicos de renderizado. */
+  /** Prefix for unique render ids. */
   diagramId: string;
-  /** Avisa a la revisión si el render actual es válido. */
+  /** Notifies the review whether the current render is valid. */
   onRenderState?: (ok: boolean) => void;
 }
 
@@ -52,8 +52,8 @@ export function MermaidDiagram({ source, diagramId, onRenderState }: MermaidDiag
         notifyRef.current?.(true);
       } catch (raw) {
         if (cancelledRef.current) return;
-        const detail = raw instanceof Error ? raw.message : "Error de renderizado";
-        dispatch({ type: "fail", error: `No se pudo dibujar el diagrama: ${detail}` });
+        const detail = raw instanceof Error ? raw.message : "Render error";
+        dispatch({ type: "fail", error: `Could not draw the diagram: ${detail}` });
         notifyRef.current?.(false);
       }
     })();
@@ -65,17 +65,17 @@ export function MermaidDiagram({ source, diagramId, onRenderState }: MermaidDiag
   return (
     <div className="diagram">
       {render.status === "loading" && render.svg === null && (
-        <p className="hint">Dibujando diagrama…</p>
+        <p className="hint">Drawing diagram…</p>
       )}
       {render.error !== null && (
         <p className="error" role="alert">
           {render.error}
-          {render.svg !== null && " Se conserva el último diagrama válido."}
+          {render.svg !== null && " The last valid diagram is kept."}
         </p>
       )}
       {render.svg !== null && (
-        // SVG generado localmente por Mermaid en modo estricto a partir de
-        // una fuente derivada en Rust de JSON validado y escapado.
+        // SVG generated locally by Mermaid in strict mode from a
+        // Rust-derived source of validated, escaped JSON.
         <div
           className="diagram-canvas"
           // eslint-disable-next-line react/no-danger

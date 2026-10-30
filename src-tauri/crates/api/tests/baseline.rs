@@ -1,5 +1,5 @@
-//! Baselines de entrega: preparar con cierre, crear atómico, listar con
-//! aviso de avance. Sin red: todo es núcleo, API y SQLite temporal.
+//! Delivery baselines: prepare with closure, create atomically, list
+//! with an advancement notice. No network: all core, API and temp SQLite.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -54,7 +54,7 @@ fn baby() -> Baby {
     let mut ids = IdGen::new();
     let project = ProjectId::new(
         ruth_api::create_project(&mut store, &mut ids)
-            .expect("proyecto")
+            .expect("project")
             .id,
     )
     .expect("id");
@@ -66,7 +66,7 @@ fn baby() -> Baby {
                 project_id: project.as_str().to_string(),
             },
         )
-        .expect("módulo")
+        .expect("module")
         .id,
     )
     .expect("id");
@@ -81,7 +81,7 @@ fn baby() -> Baby {
                 author: "ana".to_string(),
             },
         )
-        .expect("requisito")
+        .expect("requirement")
         .artifact
         .id,
     )
@@ -97,7 +97,7 @@ fn baby() -> Baby {
 }
 
 fn author() -> Author {
-    Author::Human(HumanId::new("ana").expect("autora"))
+    Author::Human(HumanId::new("ana").expect("author"))
 }
 
 fn save_version(
@@ -119,11 +119,11 @@ fn save_version(
             artifact,
             expected.as_ref(),
             id.clone(),
-            Content::new(content).expect("contenido"),
+            Content::new(content).expect("content"),
             &author(),
             sources,
         )
-        .expect("versión");
+        .expect("version");
     id
 }
 
@@ -136,7 +136,7 @@ fn design(baby: &mut Baby, kind: ArtifactType, content: &str, sources: &[Version
     };
     baby.store
         .create_artifact(&baby.project, &baby.module, id.clone(), kind)
-        .expect("artefacto");
+        .expect("artifact");
     save_version(baby, &id, 1, content, sources);
     id
 }
@@ -152,7 +152,7 @@ fn approve(baby: &mut Baby, artifact: &ArtifactId, expected: &VersionId) {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("aprobar");
+    .expect("approve");
 }
 
 fn flow_json() -> String {
@@ -163,13 +163,13 @@ fn flow_json() -> String {
             {"id": "fin", "kind": "end", "label": "Venta confirmada", "requirements": []}
         ],
         "edges": [{"from": "inicio", "to": "fin"}],
-        "explanation": "Mínimo.",
+        "explanation": "Minimal.",
         "questions": []
     })
     .to_string()
 }
 
-/// Ventas listas: requisito y flujo aprobados y vigentes.
+/// Sales ready: approved, current requirement and flow.
 fn sales_ready() -> (Baby, ArtifactId) {
     let mut baby = baby();
     let req_v1 = IdGen::version(&baby.req, 1);
@@ -195,7 +195,7 @@ fn prepare_all(baby: &Baby, ids: &[String]) -> ruth_api::BaselinePreviewDto {
             artifact_ids: ids.to_vec(),
         },
     )
-    .expect("preparar")
+    .expect("prepare")
 }
 
 fn entries_of(preview: &ruth_api::BaselinePreviewDto) -> Vec<BaselineEntryInput> {
@@ -220,14 +220,14 @@ fn prepare_closes_dependencies_and_can_create() {
         .entries
         .iter()
         .find(|e| e.artifact.id == flow.as_str())
-        .expect("flujo");
+        .expect("flow");
     assert!(!flow_entry.auto_included);
     assert_eq!(flow_entry.approved_by.as_deref(), Some("ana"));
     let req_entry = preview
         .entries
         .iter()
         .find(|e| e.artifact.id == baby.req.as_str())
-        .expect("requisito por cierre");
+        .expect("requirement by closure");
     assert!(req_entry.auto_included);
     assert_eq!(req_entry.provenance.kind, "human");
     assert!(preview.out_of_scope.artifacts.is_empty());
@@ -238,7 +238,7 @@ fn prepare_closes_dependencies_and_can_create() {
 fn prepare_blocks_drafts() {
     let mut baby = baby();
     let req_v1 = IdGen::version(&baby.req, 1);
-    // Flujo sin aprobar sobre requisito sin aprobar.
+    // Unapproved flow over an unapproved requirement.
     let flow = design(
         &mut baby,
         ArtifactType::Flow,
@@ -250,16 +250,13 @@ fn prepare_blocks_drafts() {
     let codes: Vec<&str> = preview.blockers.iter().map(|b| b.code.as_str()).collect();
     assert!(codes.iter().all(|c| *c == "draft"));
     assert_eq!(preview.blockers.len(), 2);
-    assert!(preview
-        .blockers
-        .iter()
-        .any(|b| b.message.contains("borrador")));
+    assert!(preview.blockers.iter().any(|b| b.message.contains("draft")));
 }
 
 #[test]
 fn prepare_blocks_stale_sources() {
     let (mut baby, flow) = sales_ready();
-    // El requisito avanza: el flujo usa una fuente desactualizada.
+    // The requirement advances: the flow uses a stale source.
     let req_v1 = IdGen::version(&baby.req, 1);
     ruth_api::save_version(
         &mut baby.store,
@@ -283,7 +280,7 @@ fn prepare_blocks_stale_sources() {
 #[test]
 fn prepare_reports_partial_scope() {
     let (mut baby, flow) = sales_ready();
-    // Segundo módulo con un requisito: queda fuera del alcance.
+    // Second module with a requirement: stays out of scope.
     let other = ruth_api::create_module(
         &mut baby.store,
         &mut baby.ids,
@@ -291,7 +288,7 @@ fn prepare_reports_partial_scope() {
             project_id: baby.project.as_str().to_string(),
         },
     )
-    .expect("módulo")
+    .expect("module")
     .id;
     let other_id = ModuleId::new(other.clone()).expect("id");
     let extra = ArtifactId::new("req-9").expect("id");
@@ -302,9 +299,9 @@ fn prepare_reports_partial_scope() {
             extra.clone(),
             ArtifactType::Requirement,
         )
-        .expect("artefacto");
-    save_version(&mut baby, &extra, 1, "Otro módulo.", &[]);
-    // Solo se elige el requisito: el flujo del módulo queda fuera.
+        .expect("artifact");
+    save_version(&mut baby, &extra, 1, "Other module.", &[]);
+    // Only the requirement is chosen: the module flow stays out.
     let preview = prepare_all(&baby, &[baby.req.as_str().to_string()]);
     assert!(preview.can_create);
     assert_eq!(
@@ -330,7 +327,7 @@ fn prepare_rejects_empty_and_foreign_selection() {
             artifact_ids: vec![],
         },
     )
-    .expect_err("vacía");
+    .expect_err("empty");
     assert_eq!(err.kind, "empty_selection");
     let err = ruth_api::prepare_baseline(
         &baby.store,
@@ -340,7 +337,7 @@ fn prepare_rejects_empty_and_foreign_selection() {
             artifact_ids: vec!["req-404".to_string()],
         },
     )
-    .expect_err("inexistente");
+    .expect_err("missing");
     assert_eq!(err.kind, "artifact_not_found");
 }
 
@@ -356,11 +353,10 @@ fn prepare_does_not_mutate() {
 
 #[test]
 fn create_ok_get_and_list_without_advance() {
-    let tmp = TempDb::new("crear-baseline");
+    let tmp = TempDb::new("create-baseline");
     let (mut baby, flow) = sales_ready();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = prepare_all(&baby, &[flow.as_str().to_string()]);
     let dto = ruth_api::create_baseline(
         &mut baby.store,
@@ -369,22 +365,22 @@ fn create_ok_get_and_list_without_advance() {
         &db,
         BaselineCreateInput {
             project_id: baby.project.as_str().to_string(),
-            name: "Entrega 1".to_string(),
+            name: "Delivery 1".to_string(),
             description: Some("Ventas".to_string()),
             scope_module_id: Some(baby.module.as_str().to_string()),
             entries: entries_of(&preview),
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
-    assert_eq!(dto.name, "Entrega 1");
+    .expect("create");
+    assert_eq!(dto.name, "Delivery 1");
     assert_eq!(dto.entries.len(), 2);
     assert!(dto.entries.iter().any(|e| e.kind == "flow"));
     let back = ruth_api::get_baseline(&baby.store, &baby.metalog, baby.project.as_str(), &dto.id)
-        .expect("detalle");
+        .expect("detail");
     assert_eq!(back, dto);
-    let list = ruth_api::list_baselines(&baby.store, &baby.metalog, baby.project.as_str())
-        .expect("listar");
+    let list =
+        ruth_api::list_baselines(&baby.store, &baby.metalog, baby.project.as_str()).expect("list");
     assert_eq!(list.len(), 1);
     assert!(!list[0].advanced);
     assert!(list[0].advanced_artifacts.is_empty());
@@ -393,13 +389,12 @@ fn create_ok_get_and_list_without_advance() {
 
 #[test]
 fn create_conflicts_when_project_changed_since_preview() {
-    let tmp = TempDb::new("conflicto-baseline");
+    let tmp = TempDb::new("baseline-conflict");
     let (mut baby, flow) = sales_ready();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = prepare_all(&baby, &[flow.as_str().to_string()]);
-    // El proyecto avanza después de la preparación.
+    // The project advances after preparation.
     let req_v1 = IdGen::version(&baby.req, 1);
     ruth_api::save_version(
         &mut baby.store,
@@ -407,7 +402,7 @@ fn create_conflicts_when_project_changed_since_preview() {
             project_id: baby.project.as_str().to_string(),
             artifact_id: baby.req.as_str().to_string(),
             expected_version_id: req_v1.as_str().to_string(),
-            content: "Cambio tardío.".to_string(),
+            content: "Late change.".to_string(),
             author: "ana".to_string(),
         },
     )
@@ -421,32 +416,31 @@ fn create_conflicts_when_project_changed_since_preview() {
         &db,
         BaselineCreateInput {
             project_id: baby.project.as_str().to_string(),
-            name: "Entrega 1".to_string(),
+            name: "Delivery 1".to_string(),
             description: None,
             scope_module_id: Some(baby.module.as_str().to_string()),
             entries: entries_of(&preview),
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect_err("conflicto");
+    .expect_err("conflict");
     assert_eq!(err.kind, "changed_since_preview");
     assert_eq!(baby.store, before_store);
     assert_eq!(baby.ids.checkpoint(), before_ids);
     assert!(baby.metalog.all().is_empty());
-    let list = ruth_api::list_baselines(&baby.store, &baby.metalog, baby.project.as_str())
-        .expect("listar");
+    let list =
+        ruth_api::list_baselines(&baby.store, &baby.metalog, baby.project.as_str()).expect("list");
     assert!(list.is_empty());
     db.close();
 }
 
 #[test]
 fn create_revalidates_coherence_without_partial_state() {
-    let tmp = TempDb::new("revalidar-baseline");
+    let tmp = TempDb::new("revalidate-baseline");
     let (mut baby, flow) = sales_ready();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
-    // Entradas tramposas: el flujo sin su fuente (el núcleo lo rechaza).
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
+    // Cheating entries: the flow without its source (the core rejects it).
     let flow_v1 = IdGen::version(&flow, 1);
     let before_store = baby.store.clone();
     let err = ruth_api::create_baseline(
@@ -466,7 +460,7 @@ fn create_revalidates_coherence_without_partial_state() {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect_err("incoherente");
+    .expect_err("incoherent");
     assert_ne!(err.kind, "changed_since_preview");
     assert_eq!(baby.store, before_store);
     assert!(baby.metalog.all().is_empty());
@@ -475,11 +469,10 @@ fn create_revalidates_coherence_without_partial_state() {
 
 #[test]
 fn list_flags_advanced_baselines() {
-    let tmp = TempDb::new("avance-baseline");
+    let tmp = TempDb::new("baseline-advance");
     let (mut baby, flow) = sales_ready();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = prepare_all(&baby, &[baby.req.as_str().to_string()]);
     let dto = ruth_api::create_baseline(
         &mut baby.store,
@@ -495,7 +488,7 @@ fn list_flags_advanced_baselines() {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
+    .expect("create");
     assert_eq!(dto.entries.len(), 1);
     let req_v1 = IdGen::version(&baby.req, 1);
     ruth_api::save_version(
@@ -504,21 +497,21 @@ fn list_flags_advanced_baselines() {
             project_id: baby.project.as_str().to_string(),
             artifact_id: baby.req.as_str().to_string(),
             expected_version_id: req_v1.as_str().to_string(),
-            content: "Nueva redacción.".to_string(),
+            content: "New wording.".to_string(),
             author: "ana".to_string(),
         },
     )
     .expect("v2");
-    let list = ruth_api::list_baselines(&baby.store, &baby.metalog, baby.project.as_str())
-        .expect("listar");
+    let list =
+        ruth_api::list_baselines(&baby.store, &baby.metalog, baby.project.as_str()).expect("list");
     assert!(list[0].advanced);
     assert_eq!(
         list[0].advanced_artifacts,
         vec![baby.req.as_str().to_string()]
     );
-    // La baseline conserva la versión anterior.
+    // The baseline keeps the previous version.
     let back = ruth_api::get_baseline(&baby.store, &baby.metalog, baby.project.as_str(), &dto.id)
-        .expect("detalle");
+        .expect("detail");
     assert_eq!(back.entries[0].version_id, req_v1.as_str());
     let _ = flow;
     db.close();
@@ -526,11 +519,10 @@ fn list_flags_advanced_baselines() {
 
 #[test]
 fn baseline_roundtrips_through_db() {
-    let tmp = TempDb::new("baseline-reabrir");
+    let tmp = TempDb::new("baseline-reopen");
     let (mut baby, flow) = sales_ready();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = prepare_all(&baby, &[flow.as_str().to_string()]);
     let dto = ruth_api::create_baseline(
         &mut baby.store,
@@ -539,24 +531,24 @@ fn baseline_roundtrips_through_db() {
         &db,
         BaselineCreateInput {
             project_id: baby.project.as_str().to_string(),
-            name: "Entrega 1".to_string(),
+            name: "Delivery 1".to_string(),
             description: None,
             scope_module_id: Some(baby.module.as_str().to_string()),
             entries: entries_of(&preview),
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
+    .expect("create");
     db.close();
-    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reopen");
     let back = ruth_api::get_baseline(
         &loaded.store,
         &loaded.baseline_meta,
         baby.project.as_str(),
         &dto.id,
     )
-    .expect("detalle");
-    assert_eq!(back.name, "Entrega 1");
+    .expect("detail");
+    assert_eq!(back.name, "Delivery 1");
     assert_eq!(back.entries.len(), 2);
     db2.close();
 }

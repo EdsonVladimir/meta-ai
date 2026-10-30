@@ -1,16 +1,24 @@
-// Nodos del lienzo de mockups: una vista declarativa por componente
-// (texto, campo, selector, botón, tabla). Todo el texto llega por props
-// y React lo escapa: jamás se inyecta HTML aportado por personas o IA.
-// El redimensionado avisa al padre al soltar (onResizeEnd en `data`).
+// Mockup canvas nodes: one declarative view per component (text, field,
+// selector, button, table, container, icon). All text arrives via props
+// and React escapes it: HTML contributed by people or AI is never
+// injected. Icons come from the own catalog (MockupIcon): the glyph is
+// drawn, never arbitrary saved SVG. Resizing notifies the parent on
+// release (onResizeEnd in `data`).
 import { memo } from "react";
 import { NodeProps, NodeResizer } from "@xyflow/react";
 import {
+  MOCKUP_BUTTON_STATE_LABELS,
   MOCKUP_FIELD_TYPE_LABELS,
   MOCKUP_ORIGIN_LABELS,
+  type MockupActionKind,
+  type MockupButtonState,
   type MockupComponentKind,
+  type MockupDirection,
   type MockupFieldType,
+  type MockupIconRole,
   type MockupOrigin,
 } from "./types";
+import { MockupIcon } from "./MockupIcon";
 
 export interface MockupNodeData extends Record<string, unknown> {
   componentKind: MockupComponentKind;
@@ -20,9 +28,16 @@ export interface MockupNodeData extends Record<string, unknown> {
   required: boolean;
   options: string[];
   columns: string[];
-  action?: string;
+  columnTypes: MockupFieldType[];
+  actionKind?: MockupActionKind;
+  operation?: string;
   target?: string;
+  buttonState?: MockupButtonState;
   origin?: MockupOrigin;
+  icon?: string;
+  iconRole?: MockupIconRole;
+  direction?: MockupDirection;
+  childCount: number;
   readOnly: boolean;
   onResizeEnd?: (id: string, w: number, h: number) => void;
 }
@@ -30,7 +45,7 @@ export interface MockupNodeData extends Record<string, unknown> {
 const MIN_W = 90;
 const MIN_H = 30;
 
-/** Resume sin inventar: el texto completo vive en el inspector. */
+/** Summarizes without inventing: the full text lives in the inspector. */
 function brief(text: string, max: number): string {
   const flat = text.split(/\s+/).join(" ");
   if (flat.length <= max) return flat;
@@ -51,7 +66,7 @@ function FieldView({ data }: { data: MockupNodeData }) {
     <span className="mockup-field">
       <span className="mockup-label">
         {brief(data.label ?? "", 60)}
-        {data.required && <span className="mockup-required" title="Obligatorio"> *</span>}
+        {data.required && <span className="mockup-required" title="Required"> *</span>}
       </span>
       <span className="mockup-input" aria-hidden="true">
         {data.fieldType ? MOCKUP_FIELD_TYPE_LABELS[data.fieldType] : ""}
@@ -66,7 +81,7 @@ function SelectorView({ data }: { data: MockupNodeData }) {
     <span className="mockup-field">
       <span className="mockup-label">
         {brief(data.label ?? "", 60)}
-        {data.required && <span className="mockup-required" title="Obligatorio"> *</span>}
+        {data.required && <span className="mockup-required" title="Required"> *</span>}
       </span>
       <span className="mockup-input" aria-hidden="true">
         {data.options.length > 0 ? brief(data.options[0], 40) : "—"} ▾
@@ -77,11 +92,15 @@ function SelectorView({ data }: { data: MockupNodeData }) {
 }
 
 function ButtonView({ data }: { data: MockupNodeData }) {
+  const state = data.buttonState ?? "enabled";
   return (
-    <span className="mockup-button">
+    <span className={`mockup-button state-${state}`}>
       {brief(data.label ?? "", 60)}
       {data.target !== undefined && data.target !== "" && (
         <span className="mockup-target" title={`Navega a ${data.target}`}> →</span>
+      )}
+      {state !== "enabled" && (
+        <span className="mockup-state">{MOCKUP_BUTTON_STATE_LABELS[state]}</span>
       )}
     </span>
   );
@@ -92,12 +111,39 @@ function TableView({ data }: { data: MockupNodeData }) {
     <span className="mockup-table">
       <span className="mockup-label">{brief(data.label ?? "", 60)}</span>
       <span className="mockup-cols" aria-hidden="true">
-        {data.columns.slice(0, 4).map((col) => (
-          <span key={col} className="mockup-col">{brief(col, 20)}</span>
+        {data.columns.slice(0, 4).map((col, i) => (
+          <span key={`${col}-${i}`} className="mockup-col" title={data.columnTypes[i] ?? "text"}>
+            {brief(col, 20)}
+          </span>
         ))}
         {data.columns.length > 4 && <span className="mockup-col">…</span>}
       </span>
       <OriginTag origin={data.origin} />
+    </span>
+  );
+}
+
+function ContainerView({ data }: { data: MockupNodeData }) {
+  return (
+    <span className="mockup-container">
+      <span className="mockup-label">{brief(data.label ?? "Group", 60)}</span>
+      <span className="mockup-count" aria-hidden="true">
+        {data.childCount} · {data.direction === "horizontal" ? "↔" : "↕"}
+      </span>
+    </span>
+  );
+}
+
+function IconView({ data }: { data: MockupNodeData }) {
+  const state = data.buttonState ?? "enabled";
+  return (
+    <span className={`mockup-icon state-${state}`} title={brief(data.label ?? "", 60)}>
+      <span className="mockup-glyph" aria-hidden={false}>
+        <MockupIcon id={data.icon ?? ""} label={data.label ?? "Icono"} />
+      </span>
+      {data.iconRole === "button" && state !== "enabled" && (
+        <span className="mockup-state">{MOCKUP_BUTTON_STATE_LABELS[state]}</span>
+      )}
     </span>
   );
 }
@@ -121,6 +167,8 @@ export const MockupNode = memo(function MockupNode({ id, data, selected }: NodeP
       {node.componentKind === "selector" && <SelectorView data={node} />}
       {node.componentKind === "button" && <ButtonView data={node} />}
       {node.componentKind === "table" && <TableView data={node} />}
+      {node.componentKind === "container" && <ContainerView data={node} />}
+      {node.componentKind === "icon" && <IconView data={node} />}
     </div>
   );
 });

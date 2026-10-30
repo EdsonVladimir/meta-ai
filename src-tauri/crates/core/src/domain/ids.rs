@@ -1,7 +1,7 @@
-//! Identificadores explícitos del dominio.
+//! Explicit domain identifiers.
 //!
-//! Cada entidad tiene su propio tipo para no confundirlos. Se reciben como
-//! entradas y se rechazan vacíos; el dominio no genera identificadores.
+//! Each entity has its own type to avoid confusion. They arrive as
+//! inputs and blanks are rejected; the domain generates no identifiers.
 
 use std::fmt;
 

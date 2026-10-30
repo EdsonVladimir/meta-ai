@@ -1,42 +1,55 @@
-//! Lógica de mockups versionados (diseño vivo, etapa B): creación manual,
-//! guardado de revisiones, contexto para generar diseños y aprobación.
+//! Versioned mockup logic (living design, stage B): manual creation,
+//! review saving, design-generation context and approval.
 //!
-//! Espeja `design` sin el circuito de propuestas de IA: los mockups los
-//! dibuja la persona y sirven de contexto para proponer flujos o ER (el
-//! registro y la aceptación usan la maquinaria existente de diseños).
+//! Mirrors `design` without the AI proposal loop: the person draws
+//! mockups and they serve as context for proposing flows or ER (recording
+//! and acceptance use the existing design machinery).
 //!
-//! Reglas:
-//! - El JSON canónico es el contenido autoritativo; la disposición visual
-//!   vive aparte y mover componentes jamás crea versiones semánticas.
-//! - Las referencias citadas (requisitos, elementos de diseño) deben
-//!   pertenecer a las fuentes declaradas; las fuentes declaradas deben
-//!   existir y estar vigentes. Sin fuentes solo vale sin referencias.
-//! - Las referencias a elementos de diseño son enlaces semánticos
-//!   informativos, no dependencias del núcleo: no crean ciclos.
-//! - Guardar valida en Rust tipo, especificación, fuentes y versión
-//!   esperada, en una sola transacción con la disposición.
+//! Rules:
+//! - Canonical JSON is the authoritative content; the visual layout
+//!   lives apart and moving components never creates semantic versions.
+//! - Cited references (requirements, design elements) must belong
+//!   to the declared sources; declared sources must exist and
+//!   be current. Sourceless only counts without references.
+//! - Design-element references are informative semantic links,
+//!   not core dependencies: they create no cycles.
+//! - Saving validates kind, spec, sources and expected version in
+//!   Rust, in a single transaction with the layout.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{
-    ArtifactId, ArtifactType, Author, Content, CoreError, HumanId, ModuleId, ProjectId, VersionId,
+    AgentId, ArtifactId, ArtifactType, Author, Content, CoreError, HumanId, ModuleId, ProjectId,
+    VersionId,
 };
 use ruth_meta::generation::GenerationContextItem;
-use ruth_meta::mockup::{canonical_mockup_json, render_mockup_excerpt, validate_mockup_value};
-use ruth_store::{DbActor, LayoutLog};
+use ruth_meta::mockup::{
+    canonical_mockup_json, render_mockup_excerpt, validate_mockup_value, ValidatedMockupGeneration,
+    MOCKUP_GEN_TEMPLATE_VERSION,
+};
+use ruth_store::{
+    DbActor, LayoutLog, MockupLog, ProposalState, StoredMockupGeneration, StoredMockupProposal,
+};
 
 use crate::design::sanitize_layout;
 use crate::dto::{
-    ApproveVersionInput, CreateMockupInput, DesignContextInput, DesignContextPreview,
-    GetRequirementInput, MockupContextPreview, RequirementDetail, SaveMockupVersionInput,
+    AcceptMockupScreenInput, ApproveVersionInput, CreateMockupInput, DesignContextInput,
+    DesignContextPreview, DiscardMockupScreenInput, GetRequirementInput,
+    ListMockupGenerationsInput, MockupContextPreview, MockupGenerationDto, MockupScreenProposalDto,
+    RequirementDetail, SaveMockupVersionInput, UsageDto,
 };
 use crate::error::ApiError;
 use crate::ids::IdGen;
 use crate::logic::{approve_version, get_requirement};
 
-/// Foto del contexto para generar un diseño: versiones actuales exactas de
-/// los requisitos y mockups seleccionados. Del mismo módulo, no archivados,
-/// con versión actual; al menos un elemento en total. Un mockup puede ir
-/// sin requisitos (la plantilla pide entonces señalar lo que falta).
+/// Agent recorded as provenance of what screens accept.
+fn agent_for(model: &str) -> Result<AgentId, ApiError> {
+    AgentId::new(format!("ruth-gen/{model}")).map_err(ApiError::from)
+}
+
+/// Context snapshot for generating a design: exact current versions of
+/// the selected requirements and mockups. Same module, not archived,
+/// with a current version; at least one element overall. A mockup may go
+/// without requirements (the template then asks to flag what is missing).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MockupSnapshot {
     pub requirements: Vec<GenerationContextItem>,
@@ -53,7 +66,7 @@ pub fn snapshot_mockup_context(
     if requirement_ids.is_empty() && mockup_ids.is_empty() {
         return Err(ApiError::coded(
             "empty_selection",
-            "Selecciona al menos un requisito o un mockup como fuente.",
+            "Select at least one requirement or mockup as a source.",
         ));
     }
     let project = ProjectId::new(project_id.to_string())?;
@@ -73,7 +86,7 @@ pub fn snapshot_mockup_context(
         &module,
         requirement_ids,
         ArtifactType::Requirement,
-        "requisito",
+        "requirement",
     )?;
     let mockups = snapshot_list(
         store,
@@ -103,7 +116,7 @@ fn snapshot_list(
         if !seen.insert(id.clone()) {
             return Err(ApiError::coded(
                 "duplicate_selection",
-                format!("{what} repetido en la selección: {id}"),
+                format!("{what} repeated in the selection: {id}"),
             ));
         }
         let artifact = ArtifactId::new(id.clone())?;
@@ -113,20 +126,20 @@ fn snapshot_list(
         if known.project() != project || known.module() != module {
             return Err(ApiError::coded(
                 "foreign_selection",
-                format!("{id} no pertenece a este módulo"),
+                format!("{id} does not belong to this module"),
             ));
         }
         if known.artifact_type() != expected {
             return Err(ApiError::coded(
                 "not_a_requirement",
-                format!("{id} no es un {what}"),
+                format!("{id} is not a {what}"),
             ));
         }
         if store.is_effectively_archived(&artifact) {
             return Err(CoreError::ArchivedArtifact { artifact }.into());
         }
         let Some(current) = store.current_version(&artifact) else {
-            return Err(ApiError::internal(format!("{id} no tiene versiones")));
+            return Err(ApiError::internal(format!("{id} has no versions")));
         };
         items.push(GenerationContextItem {
             artifact_id: id.clone(),
@@ -138,9 +151,9 @@ fn snapshot_list(
     Ok(items)
 }
 
-/// Vista previa del módulo para generar desde mockups y declarar fuentes:
-/// requisitos, diseños y mockups no archivados con su versión actual,
-/// extracto y revisión.
+/// Module preview for generating from mockups and declaring sources:
+/// unarchived requirements, designs and mockups with their current version,
+/// excerpt and review.
 pub fn mockup_context_preview(
     store: &Store,
     input: DesignContextInput,
@@ -207,9 +220,9 @@ fn one_line(text: &str, max_chars: usize) -> String {
     format!("{}…", flat[..end].trim_end())
 }
 
-/// Valida una especificación de mockup. Con conjunto declarado, las
-/// referencias deben pertenecer a él; sin él, se revalida contra las
-/// citadas (estructural: para lecturas y exportación).
+/// Validates a mockup spec. With a declared set, references must
+/// belong to it; without it, revalidation runs against the cited
+/// ones (structural: for reads and export).
 pub fn validate_mockup_spec(
     spec: &serde_json::Value,
     allowed: Option<&[String]>,
@@ -223,10 +236,10 @@ pub fn validate_mockup_spec(
     }
 }
 
-/// Frescura de las fuentes de la versión actual de un mockup: versión
-/// utilizada frente a actual, cambio y revisión. El editor la usa para
-/// ofrecer adoptar explícitamente las actuales antes de guardar (el
-/// guardado revalida en Rust y bloquea las obsoletas por nombre).
+/// Freshness of a mockup's current-version sources: used versus
+/// current version, change and review. The editor uses it to offer
+/// explicitly adopting the current ones before saving (saving
+/// revalidates in Rust and blocks stale ones by name).
 pub fn mockup_sources(
     store: &Store,
     project_id: &str,
@@ -244,16 +257,16 @@ pub fn mockup_sources(
     if known.artifact_type() != ArtifactType::Mockup {
         return Err(ApiError::coded(
             "not_a_mockup",
-            "Este comando solo informa fuentes de mockups.",
+            "This command only reports mockup sources.",
         ));
     }
     let Some(current) = store.current_version(&artifact) else {
-        return Err(ApiError::internal("el mockup no tiene versiones"));
+        return Err(ApiError::internal("the mockup has no versions"));
     };
     let mut sources = Vec::with_capacity(current.sources().len());
     for used in current.sources() {
-        // Las fuentes declaradas por la API siempre existen; si falta
-        // alguna (base manipulada), se omite en vez de inventar.
+        // API-declared sources always exist; when one is missing
+        // (tampered database), it is skipped instead of inventing.
         let Some(used_version) = store.version(used) else {
             continue;
         };
@@ -280,8 +293,8 @@ pub fn mockup_sources(
     Ok(sources)
 }
 
-/// Comando de validación estructural: contra sus propias citas, sin red.
-/// Devuelve el canónico y el resumen para mostrar y revisar.
+/// Structural validation command: against its own citations, no network.
+/// Returns the canonical form and the summary for display and review.
 pub fn validate_mockup_stored(
     input: crate::dto::ValidateMockupInput,
 ) -> Result<crate::dto::ValidatedMockupDto, ApiError> {
@@ -294,8 +307,8 @@ pub fn validate_mockup_stored(
     })
 }
 
-/// Artefactos citados en una especificación (requisitos y parte artefacto
-/// de las referencias a diseños), ordenados y sin duplicados.
+/// Artifacts cited in a spec (requirements and the artifact part
+/// of design references), ordered and deduplicated.
 pub fn mockup_cited_refs(spec: &serde_json::Value) -> Vec<String> {
     let mut out = Vec::new();
     let empty = Vec::new();
@@ -331,9 +344,9 @@ fn collect_mockup_refs(node: &serde_json::Value, out: &mut Vec<String>) {
     }
 }
 
-/// Fuentes declaradas: deben existir y ser actuales; las obsoletas se
-/// devuelven con nombre para bloquear con explicación. Vacías solo valen
-/// si la especificación no cita referencias.
+/// Declared sources: must exist and be current; stale ones return
+/// with names to block with an explanation. Empty only counts
+/// when the spec cites no references.
 fn resolve_mockup_sources(
     store: &Store,
     source_version_ids: &[String],
@@ -346,7 +359,7 @@ fn resolve_mockup_sources(
         return Err(ApiError::coded(
             "mockup_no_sources",
             format!(
-                "Sin fuentes declaradas no puede citarse ({}): declara sus versiones exactas.",
+                "Nothing may cite without declared sources ({}): declare their exact versions.",
                 cited.join(", ")
             ),
         ));
@@ -360,17 +373,17 @@ fn resolve_mockup_sources(
         let Some(version) = store.version(&vid) else {
             return Err(ApiError::coded(
                 "mockup_source_missing",
-                format!("La fuente {raw} no existe."),
+                format!("Source {raw} does not exist."),
             ));
         };
         let source_artifact = version.artifact().clone();
-        // Una sola versión por artefacto: dos fijaciones del mismo harían
-        // la vigencia imposible (una siempre sería obsoleta).
+        // A single version per artifact: two pins of the same one would
+        // make currency impossible (one would always be stale).
         if !seen.insert(source_artifact.as_str().to_string()) {
             return Err(ApiError::coded(
                 "mockup_duplicate_source",
                 format!(
-                    "{} aparece dos veces entre las fuentes: declara una sola versión.",
+                    "{} appears twice among the sources: declare a single version.",
                     source_artifact.as_str()
                 ),
             ));
@@ -391,7 +404,7 @@ fn resolve_mockup_sources(
         return Err(ApiError::coded(
             "mockup_stale_sources",
             format!(
-                "Fuentes obsoletas ({}): revisa sus versiones actuales y guarda de nuevo.",
+                "Stale sources ({}): review their current versions and save again.",
                 stale.join(", ")
             ),
         ));
@@ -399,10 +412,9 @@ fn resolve_mockup_sources(
     Ok((sources, allowed))
 }
 
-/// Crea un mockup dibujado por la persona: artefacto nuevo con su primera
-/// versión, contenido validado y disposición inicial en una sola
-/// transacción. Atómica: ante cualquier fallo, memoria, disco e
-/// identificadores quedan intactos.
+/// Creates a person-drawn mockup: new artifact with its first version,
+/// validated content and initial layout in a single transaction.
+/// Atomic: on any failure, memory, disk and identifiers stay intact.
 pub fn create_mockup(
     store: &mut Store,
     ids: &mut IdGen,
@@ -466,11 +478,11 @@ pub fn create_mockup(
     )
 }
 
-/// Guarda una revisión manual como versión nueva del MISMO mockup, con
-/// procedencia humana y sin heredar aprobación. Revalida tipo,
-/// especificación, fuentes vigentes y versión esperada; la disposición
-/// viaja en la misma transacción. Atómica: ante cualquier fallo, memoria,
-/// disco e identificadores quedan intactos.
+/// Saves a manual review as a new version of the SAME mockup, with
+/// human provenance and no inherited approval. Revalidates kind,
+/// spec, current sources and expected version; the layout travels
+/// in the same transaction. Atomic: on any failure, memory, disk
+/// and identifiers stay intact.
 pub fn save_mockup_version(
     store: &mut Store,
     ids: &mut IdGen,
@@ -486,7 +498,7 @@ pub fn save_mockup_version(
     if known.artifact_type() != ArtifactType::Mockup {
         return Err(ApiError::coded(
             "not_a_mockup",
-            "Este comando solo guarda versiones de mockups.",
+            "This command only saves mockup versions.",
         ));
     }
     if store.is_effectively_archived(&artifact) {
@@ -537,10 +549,10 @@ pub fn save_mockup_version(
     )
 }
 
-/// Aprueba la versión actual de un mockup con una acción humana explícita:
-/// revalida que el contenido siga siendo un mockup válido y delega en la
-/// aprobación genérica (vigencia y versión actual). La persistencia la
-/// envuelve el comando (`transact`).
+/// Approves a mockup's current version with an explicit human action:
+/// revalidates that the content is still a valid mockup and delegates to
+/// the generic approval (currency and current version). The command wraps
+/// persistence (`transact`).
 pub fn approve_mockup_version(
     store: &mut Store,
     input: ApproveVersionInput,
@@ -548,16 +560,402 @@ pub fn approve_mockup_version(
 ) -> Result<RequirementDetail, ApiError> {
     let artifact = ArtifactId::new(input.artifact_id.clone())?;
     let Some(current) = store.current_version(&artifact) else {
-        return Err(ApiError::internal("el mockup no tiene versiones"));
+        return Err(ApiError::internal("the mockup has no versions"));
     };
-    let spec: serde_json::Value =
-        serde_json::from_str(current.content().as_str()).map_err(|_| {
+    let spec: serde_json::Value = serde_json::from_str(current.content().as_str())
+        .map_err(|_| ApiError::coded("mockup_invalid", "The content is not valid mockup JSON."))?;
+    validate_mockup_spec(&spec, None)
+        .map_err(|_| ApiError::coded("mockup_invalid", "The content is not a valid mockup."))?;
+    approve_version(store, input, now)
+}
+
+// ---------------------------------------------------------------------------
+// Screen proposals ("Propose screens")
+// ---------------------------------------------------------------------------
+
+/// Context snapshot for proposing screens: exact current versions
+/// of the selected requirements. Empty selection = the whole module
+/// (unarchived, with a current version). No approval barrier: generation
+/// runs from saved versions and review is informative.
+pub fn snapshot_screen_context(
+    store: &Store,
+    project_id: &str,
+    module_id: &str,
+    selected: &[String],
+) -> Result<Vec<GenerationContextItem>, ApiError> {
+    let project = ProjectId::new(project_id.to_string())?;
+    let module = ModuleId::new(module_id.to_string())?;
+    if store.project(&project).is_none() {
+        return Err(CoreError::ProjectNotFound { project }.into());
+    }
+    let Some(module_ref) = store.module(&module) else {
+        return Err(CoreError::ModuleNotFound { module }.into());
+    };
+    if module_ref.archived() {
+        return Err(CoreError::ArchivedModule { module }.into());
+    }
+    if selected.is_empty() {
+        let mut items = Vec::new();
+        for artifact in store.artifacts_of(&project, &module) {
+            if artifact.artifact_type() != ArtifactType::Requirement {
+                continue;
+            }
+            if artifact.archived() {
+                continue;
+            }
+            let Some(current) = store.current_version(artifact.id()) else {
+                continue;
+            };
+            items.push(GenerationContextItem {
+                artifact_id: artifact.id().as_str().to_string(),
+                version_id: current.id().as_str().to_string(),
+                content: current.content().as_str().to_string(),
+            });
+        }
+        if items.is_empty() {
+            return Err(ApiError::coded(
+                "empty_module",
+                "The module has no saved requirements for proposing screens.",
+            ));
+        }
+        items.sort_by(|a, b| a.artifact_id.cmp(&b.artifact_id));
+        return Ok(items);
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut items = Vec::with_capacity(selected.len());
+    for id in selected {
+        if !seen.insert(id.clone()) {
+            return Err(ApiError::coded(
+                "duplicate_selection",
+                format!("requirement repeated in the selection: {id}"),
+            ));
+        }
+        let artifact = ArtifactId::new(id.clone())?;
+        let Some(known) = store.artifact(&artifact) else {
+            return Err(CoreError::ArtifactNotFound { artifact }.into());
+        };
+        if known.project() != &project || known.module() != &module {
+            return Err(ApiError::coded(
+                "foreign_selection",
+                format!("{id} does not belong to this module"),
+            ));
+        }
+        if known.artifact_type() != ArtifactType::Requirement {
+            return Err(ApiError::coded(
+                "not_a_requirement",
+                format!("{id} is not a requirement"),
+            ));
+        }
+        if store.is_effectively_archived(&artifact) {
+            return Err(CoreError::ArchivedArtifact { artifact }.into());
+        }
+        let Some(current) = store.current_version(&artifact) else {
+            return Err(ApiError::internal(format!("{id} has no versions")));
+        };
+        items.push(GenerationContextItem {
+            artifact_id: id.clone(),
+            version_id: current.id().as_str().to_string(),
+            content: current.content().as_str().to_string(),
+        });
+    }
+    items.sort_by(|a, b| a.artifact_id.cmp(&b.artifact_id));
+    Ok(items)
+}
+
+/// Input for recording a newly validated screen generation.
+pub struct RecordMockupInput {
+    pub project_id: String,
+    pub module_id: String,
+    pub model: String,
+    pub context: Vec<GenerationContextItem>,
+    pub validated: ValidatedMockupGeneration,
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+    pub created_at: String,
+}
+
+/// Records the generation on disk and memory. The app creates the
+/// identifier (`gen-N`); the model's temp ones never leave their scope.
+pub fn record_mockup_generation(
+    store: &Store,
+    ids: &mut IdGen,
+    log: &mut MockupLog,
+    db: &DbActor,
+    input: RecordMockupInput,
+) -> Result<MockupGenerationDto, ApiError> {
+    let module = ModuleId::new(input.module_id.clone())?;
+    if store.module(&module).is_some_and(|m| m.archived()) {
+        return Err(CoreError::ArchivedModule { module }.into());
+    }
+    let mut ids_draft = ids.clone();
+    let id = ids_draft.generation();
+    let generation = StoredMockupGeneration {
+        id,
+        project_id: input.project_id,
+        module_id: input.module_id,
+        model: input.model,
+        context_version_ids: input.context.iter().map(|c| c.version_id.clone()).collect(),
+        template_version: MOCKUP_GEN_TEMPLATE_VERSION,
+        input_tokens: input.input_tokens,
+        output_tokens: input.output_tokens,
+        total_tokens: input.total_tokens,
+        created_at: input.created_at,
+        questions: input.validated.questions,
+        proposals: input
+            .validated
+            .screens
+            .into_iter()
+            .map(|s| StoredMockupProposal {
+                temp_id: s.temp_id,
+                title: s.title,
+                spec_json: s.spec_json,
+                explanation: s.explanation,
+                state: ProposalState::Pending,
+            })
+            .collect(),
+    };
+    let mut log_draft = log.clone();
+    log_draft
+        .record(generation.clone())
+        .map_err(ApiError::storage)?;
+    db.record_mockup(&generation, ids_draft.checkpoint())
+        .map_err(ApiError::storage)?;
+    *log = log_draft;
+    *ids = ids_draft;
+    mockup_to_dto(store, &generation)
+}
+
+/// A module's screen generations with their computed staleness.
+pub fn list_mockup_generations(
+    store: &Store,
+    log: &MockupLog,
+    input: ListMockupGenerationsInput,
+) -> Result<Vec<MockupGenerationDto>, ApiError> {
+    let project = ProjectId::new(input.project_id)?;
+    let module = ModuleId::new(input.module_id)?;
+    if store.project(&project).is_none() {
+        return Err(CoreError::ProjectNotFound { project }.into());
+    }
+    if store.module(&module).is_none() {
+        return Err(CoreError::ModuleNotFound { module }.into());
+    }
+    log.generations_of(module.as_str())
+        .into_iter()
+        .filter(|g| g.project_id == project.as_str())
+        .map(|g| mockup_to_dto(store, g))
+        .collect()
+}
+
+/// Did any source change since the generation? Conservative: an
+/// unknown or missing version also counts as stale.
+pub fn mockup_generation_is_stale(store: &Store, generation: &StoredMockupGeneration) -> bool {
+    for version_id in &generation.context_version_ids {
+        let Ok(id) = VersionId::new(version_id.clone()) else {
+            return true;
+        };
+        let Some(version) = store.version(&id) else {
+            return true;
+        };
+        let current = store.current_version(version.artifact());
+        if current.map(|c| c.id()) != Some(&id) {
+            return true;
+        }
+    }
+    false
+}
+
+fn mockup_to_dto(
+    store: &Store,
+    generation: &StoredMockupGeneration,
+) -> Result<MockupGenerationDto, ApiError> {
+    let mut proposals = Vec::with_capacity(generation.proposals.len());
+    for proposal in &generation.proposals {
+        let spec: serde_json::Value = serde_json::from_str(&proposal.spec_json).map_err(|_| {
+            ApiError::internal(format!(
+                "screen {} of {} is not JSON",
+                proposal.temp_id, generation.id
+            ))
+        })?;
+        let (state, artifact_id) = match &proposal.state {
+            ProposalState::Pending => ("pending".to_string(), None),
+            ProposalState::Discarded => ("discarded".to_string(), None),
+            ProposalState::Accepted { artifact_id, .. } => {
+                ("accepted".to_string(), Some(artifact_id.clone()))
+            }
+        };
+        proposals.push(MockupScreenProposalDto {
+            temp_id: proposal.temp_id.clone(),
+            title: proposal.title.clone(),
+            spec,
+            explanation: proposal.explanation.clone(),
+            state,
+            artifact_id,
+        });
+    }
+    Ok(MockupGenerationDto {
+        id: generation.id.clone(),
+        project_id: generation.project_id.clone(),
+        module_id: generation.module_id.clone(),
+        model: generation.model.clone(),
+        context_version_ids: generation.context_version_ids.clone(),
+        template_version: generation.template_version,
+        usage: UsageDto {
+            input_tokens: generation.input_tokens,
+            output_tokens: generation.output_tokens,
+            total_tokens: generation.total_tokens,
+        },
+        created_at: generation.created_at.clone(),
+        stale: mockup_generation_is_stale(store, generation),
+        questions: generation.questions.clone(),
+        proposals,
+    })
+}
+
+/// Incorporates ONE screen as a NEW AI-provenance mockup, without
+/// approving it and without touching existing screens. Atomic (domain +
+/// state in one transaction) and idempotent per screen: retrying
+/// returns the existing mockup. Blocked when the generation is
+/// stale or the screen is not pending.
+pub fn accept_mockup_screen(
+    store: &mut Store,
+    ids: &mut IdGen,
+    log: &mut MockupLog,
+    db: &DbActor,
+    input: AcceptMockupScreenInput,
+) -> Result<RequirementDetail, ApiError> {
+    if let Some(artifact) = log.accepted_artifact(&input.generation_id, &input.temp_id) {
+        return get_requirement(
+            store,
+            GetRequirementInput {
+                artifact_id: artifact,
+            },
+        );
+    }
+    let generation = log
+        .generation(&input.generation_id)
+        .ok_or_else(|| {
             ApiError::coded(
-                "mockup_invalid",
-                "El contenido no es JSON de mockup válido.",
+                "mockup_generation_not_found",
+                format!("unknown generation: {}", input.generation_id),
+            )
+        })?
+        .clone();
+    let proposal = generation
+        .proposals
+        .iter()
+        .find(|p| p.temp_id == input.temp_id)
+        .ok_or_else(|| {
+            ApiError::coded(
+                "mockup_proposal_not_found",
+                format!("unknown screen: {}", input.temp_id),
             )
         })?;
-    validate_mockup_spec(&spec, None)
-        .map_err(|_| ApiError::coded("mockup_invalid", "El contenido no es un mockup válido."))?;
-    approve_version(store, input, now)
+    match proposal.state {
+        ProposalState::Discarded => {
+            return Err(ApiError::coded(
+                "mockup_proposal_discarded",
+                "The screen is discarded and cannot be incorporated.",
+            ));
+        }
+        ProposalState::Accepted { .. } => {
+            return Err(ApiError::coded(
+                "mockup_proposal_accepted",
+                "The screen was already incorporated.",
+            ));
+        }
+        ProposalState::Pending => {}
+    }
+    if mockup_generation_is_stale(store, &generation) {
+        return Err(ApiError::coded(
+            "mockup_generation_stale",
+            "The generation is stale: a requirement used as context changed. \
+             Generate again with the current context.",
+        ));
+    }
+    // Allowed set and sources: the context's exact versions.
+    let mut allowed = Vec::with_capacity(generation.context_version_ids.len());
+    let mut sources = Vec::with_capacity(generation.context_version_ids.len());
+    for version_id in &generation.context_version_ids {
+        let vid = VersionId::new(version_id.clone())?;
+        let Some(version) = store.version(&vid) else {
+            return Err(ApiError::coded(
+                "mockup_generation_stale",
+                "The generation is stale.",
+            ));
+        };
+        allowed.push(version.artifact().as_str().to_string());
+        sources.push(vid);
+    }
+    // The saved spec revalidates against the context: hand-corrupted data
+    // is not incorporated.
+    let spec: serde_json::Value = serde_json::from_str(&proposal.spec_json).map_err(|_| {
+        ApiError::coded(
+            "mockup_invalid",
+            "The saved screen is not valid mockup JSON.",
+        )
+    })?;
+    let validated = validate_mockup_spec(&spec, Some(&allowed))?;
+    let content = canonical_mockup_json(&validated);
+    let project = ProjectId::new(generation.project_id.clone())?;
+    let module = ModuleId::new(generation.module_id.clone())?;
+    let agent = agent_for(&generation.model)?;
+
+    let mut store_draft = store.clone();
+    let mut ids_draft = ids.clone();
+    let artifact_id = ids_draft.mockup();
+    store_draft.create_artifact(&project, &module, artifact_id.clone(), ArtifactType::Mockup)?;
+    let version_id = IdGen::version(&artifact_id, 1);
+    store_draft.accept_ai_draft(
+        &project,
+        &artifact_id,
+        None,
+        version_id,
+        Content::new(content.clone())?,
+        &agent,
+        &sources,
+    )?;
+    db.accept_mockup(
+        &store_draft,
+        ids_draft.checkpoint(),
+        &generation.id,
+        &input.temp_id,
+        artifact_id.as_str(),
+        &content,
+    )
+    .map_err(ApiError::storage)?;
+    *store = store_draft;
+    *ids = ids_draft;
+    log.mark_accepted(
+        &generation.id,
+        &input.temp_id,
+        artifact_id.as_str(),
+        &content,
+    )
+    .map_err(ApiError::storage)?;
+    get_requirement(
+        store,
+        GetRequirementInput {
+            artifact_id: artifact_id.as_str().to_string(),
+        },
+    )
+}
+
+/// Discards a pending screen. Idempotent; rejects when already accepted.
+pub fn discard_mockup_screen(
+    log: &mut MockupLog,
+    db: &DbActor,
+    input: DiscardMockupScreenInput,
+) -> Result<(), ApiError> {
+    if log.generation(&input.generation_id).is_none() {
+        return Err(ApiError::coded(
+            "mockup_generation_not_found",
+            format!("unknown generation: {}", input.generation_id),
+        ));
+    }
+    db.discard_mockup(&input.generation_id, &input.temp_id)
+        .map_err(ApiError::storage)?;
+    log.mark_discarded(&input.generation_id, &input.temp_id)
+        .map_err(ApiError::storage)?;
+    Ok(())
 }

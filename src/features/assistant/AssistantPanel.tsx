@@ -1,12 +1,12 @@
-// Asistente Meta: panel contextual que reutiliza los flujos IA existentes
-// (proponer requisitos, generar flujo/ER, proponer actualización) sin
-// rehacer servicios, propuestas ni persistencia.
+// Meta Assistant: contextual panel reusing the existing AI flows (propose
+// requirements, generate flow/ER, propose updates) without redoing
+// services, proposals or persistence.
 //
-// Sin clasificador silencioso: la acción se elige de forma explícita y el
-// texto libre solo alimenta Proponer requisitos. Cada acción muestra qué
-// versiones guardadas usará y avisa si hay borradores fuera del contexto.
-// Las áreas usadas se mantienen montadas (ocultas) para no perder una
-// generación en curso ni reasignar propuestas al cambiar de selección.
+// No silent classifier: the action is picked explicitly and free text only
+// feeds Propose requirements. Each action shows which saved versions it
+// will use and warns about drafts outside the context. Used areas stay
+// mounted (hidden) so an ongoing generation is never lost and proposals
+// are never reassigned when the selection changes.
 import { useEffect, useRef, useState } from "react";
 import { DesignPanel } from "../design/DesignPanel";
 import { listDesigns } from "../design/client";
@@ -62,11 +62,11 @@ function contextLines(context: AssistantContext): string[] {
   const lines: string[] = [];
   const req = currentNumber(context.requirementDetail);
   if (context.requirementId !== null) {
-    lines.push(`requisito ${context.requirementId}${req !== null ? ` (v${req})` : ""}`);
+    lines.push(`requirement ${context.requirementId}${req !== null ? ` (v${req})` : ""}`);
   }
   const des = currentNumber(context.designDetail);
   if (context.designId !== null) {
-    lines.push(`diseño ${context.designId}${des !== null ? ` (v${des})` : ""}`);
+    lines.push(`design ${context.designId}${des !== null ? ` (v${des})` : ""}`);
   }
   const mock = currentNumber(context.mockupDetail);
   if (context.mockupId !== null) {
@@ -94,8 +94,8 @@ export function AssistantPanel(props: AssistantPanelProps) {
     setNotice(null);
   }
 
-  // Historial del módulo: solo lectura, acotado. Sin llamadas al abrir
-  // el panel ni al escribir: carga al desplegarlo o al pulsar Actualizar.
+  // Module history: read-only, bounded. No calls when opening the panel
+  // or typing: loads on expand or when pressing Refresh.
   useEffect(() => {
     cancelledRef.current = false;
     setHistory(null);
@@ -124,26 +124,26 @@ export function AssistantPanel(props: AssistantPanelProps) {
     if (!resolved.ok) {
       setNotice(
         resolved.reason === "no_action"
-          ? "Elige una acción primero: el texto solo no ejecuta nada."
-          : "Escribe qué quieres proponer antes de enviar.",
+          ? "Pick an action first: text alone runs nothing."
+          : "Write what you want to propose before sending.",
       );
       return;
     }
     markUsed(resolved.action);
     if (resolved.feedComposer) {
       setFedDescription(message.trim());
-      setNotice("La descripción pasó al campo de Proponer requisitos: revísala y genera cuando quieras.");
+      setNotice("The description moved to the Propose requirements field: review it and generate whenever you want.");
     } else {
       setNotice(
-        `«${assistantActionLabel(resolved.action)}» usa sus fuentes marcadas abajo, no este texto. Nada se ha ejecutado todavía.`,
+        `"${assistantActionLabel(resolved.action)}" uses its marked sources below, not this text. Nothing has run yet.`,
       );
     }
     setMessage("");
   }
 
   const drafts = [
-    props.draftsDirty.requirement && "requisito",
-    props.draftsDirty.design && "diseño",
+    props.draftsDirty.requirement && "requirement",
+    props.draftsDirty.design && "design",
     props.draftsDirty.mockup && "mockup",
   ].filter((label): label is string => label !== false);
   const context = contextLines(props.context);
@@ -156,21 +156,21 @@ export function AssistantPanel(props: AssistantPanelProps) {
     updateCandidates.find((item) => item.artifact.id === updateTargetId) ?? null;
 
   return (
-    <section className="assistant" aria-label="Asistente Meta">
+    <section className="assistant" aria-label="Meta Assistant">
       <div className="assistant-head">
-        <h3>Asistente Meta</h3>
+        <h3>Meta Assistant</h3>
         <p className="hint">
-          Módulo {props.moduleName}
-          {context.length > 0 ? ` · ${context.join(" · ")}` : " · sin artefacto en contexto"}
+          Module {props.moduleName}
+          {context.length > 0 ? ` · ${context.join(" · ")}` : " · no artifact in context"}
         </p>
         {drafts.length > 0 && (
           <p className="notice" role="note">
-            Borradores sin guardar ({drafts.join(", ")}): el contexto usa versiones guardadas.
+            Unsaved drafts ({drafts.join(", ")}): the context uses saved versions.
           </p>
         )}
       </div>
 
-      <div className="assistant-actions" role="group" aria-label="Acción">
+      <div className="assistant-actions" role="group" aria-label="Action">
         {ASSISTANT_ACTIONS.map((item) => (
           <button
             key={item.id}
@@ -193,9 +193,9 @@ export function AssistantPanel(props: AssistantPanelProps) {
       <div className="assistant-body">
         {action === null && (
           <p className="hint">
-            Elige una acción: cada una muestra sus fuentes guardadas y sus propuestas con dif,
-            incorporar y descartar. Nada se envía a Meta hasta que pulses generar dentro de la
-            acción.
+            Pick an action: each shows its saved sources and its proposals with diff,
+            accept and discard. Nothing goes to Meta until you press generate inside
+            the action.
           </p>
         )}
         {used.includes("requirements") && (
@@ -229,21 +229,21 @@ export function AssistantPanel(props: AssistantPanelProps) {
             {props.impactReport === null ? (
               <div>
                 <p className="hint">
-                  Sin informe de impacto vigente: abre Impacto, elige el requisito origen y vuelve;
-                  aquí aparecerán los diseños afectados.
+                  No live impact report: open Impact, pick the origin requirement and come back;
+                  affected designs will show here.
                 </p>
                 <button type="button" className="secondary small" onClick={props.onOpenImpact}>
-                  Abrir Impacto
+                  Open Impact
                 </button>
               </div>
             ) : updateTarget === null ? (
               <div>
                 <p className="hint">
-                  Diseños afectados que requieren revisión (origen{" "}
+                  Affected designs needing review (origin{" "}
                   {props.impactReport.origin.artifact.id}):
                 </p>
                 {updateCandidates.length === 0 ? (
-                  <p className="hint">Ninguno pendiente en este informe.</p>
+                  <p className="hint">None pending in this report.</p>
                 ) : (
                   <ul className="pick-list">
                     {updateCandidates.map((item) => (
@@ -297,40 +297,40 @@ export function AssistantPanel(props: AssistantPanelProps) {
         }}
       >
         <summary>
-          Historial del módulo{history !== null ? ` (${history.length})` : ""}
+          Module history{history !== null ? ` (${history.length})` : ""}
         </summary>
         <button
           type="button"
           className="secondary small"
           onClick={() => void loadHistory()}
-          title="Recargar el historial del módulo"
+          title="Reload the module history"
         >
-          Actualizar
+          Refresh
         </button>
         {historyError !== null ? (
           <p className="error" role="alert">
             {historyError}
           </p>
         ) : history === null ? (
-          <p className="hint">Cargando historial…</p>
+          <p className="hint">Loading history…</p>
         ) : history.length === 0 ? (
-          <p className="hint">Aún no hay solicitudes en este módulo.</p>
+          <p className="hint">No requests in this module yet.</p>
         ) : (
           <ul className="assistant-history-list">
             {history.map((entry) => (
               <li key={entry.id}>
                 <code>{entry.id}</code>{" "}
                 {entry.kind === "requirements"
-                  ? "requisitos"
+                  ? "requirements"
                   : entry.kind === "design"
-                    ? "diseño"
-                    : "actualización"}{" "}
+                    ? "design"
+                    : "update"}{" "}
                 · {entry.title} · {entry.model} · {entry.tokens}
-                {entry.stale && <span className="pill"> desactualizada</span>}
+                {entry.stale && <span className="pill"> stale</span>}
                 {entry.openCount > 0 && (
                   <span className="hint">
                     {" "}
-                    · {entry.openCount} pendiente{entry.openCount === 1 ? "" : "s"}
+                    · {entry.openCount} open
                   </span>
                 )}
               </li>
@@ -347,18 +347,18 @@ export function AssistantPanel(props: AssistantPanelProps) {
         }}
       >
         <label className="sr-only" htmlFor="assistant-message">
-          Describe un cambio
+          Describe a change
         </label>
         <input
           id="assistant-message"
           type="text"
           value={message}
-          placeholder="Describe un cambio…"
+          placeholder="Describe a change…"
           maxLength={2000}
           onChange={(event) => setMessage(event.target.value)}
         />
         <button type="submit" className="primary small">
-          Enviar
+          Send
         </button>
       </form>
     </section>

@@ -1,5 +1,5 @@
-// Coordinación pura de pestañas de terminal: añadir, quitar, marcar fin,
-// elegir activa y decidir confirmaciones. Sin React ni Tauri.
+// Pure terminal-tab coordination: add, remove, mark exit, pick the
+// active one and decide confirmations. No React, no Tauri.
 import { MAX_TERMINAL_SESSIONS, type TerminalSessionDto, type TerminalTab } from "./types";
 
 export function canCreateTerminal(tabs: TerminalTab[]): boolean {
@@ -27,7 +27,7 @@ export function applyTerminalExit(
   );
 }
 
-/** Activa tras cerrar: vecina más cercana (la anterior si existe). */
+/** Active after closing: nearest neighbor (the previous one when it exists). */
 export function nextActiveTerminal(
   tabs: TerminalTab[],
   closedId: string,
@@ -43,7 +43,7 @@ export function nextActiveTerminal(
   return pick.info.id;
 }
 
-/** Cerrar una sesión en marcha pide confirmación; una terminada no. */
+/** Closing a running session asks for confirmation; an exited one does not. */
 export function needsTerminalCloseConfirm(tab: TerminalTab | undefined): boolean {
   return tab !== undefined && tab.info.running;
 }
@@ -53,8 +53,8 @@ export function runningTerminals(tabs: TerminalTab[]): number {
 }
 
 /**
- * Carpeta corta para la pestaña: `~` por la carpeta personal y como mucho
- * dos niveles (`~/proyecto/sub`). Nunca inventa: abrevia el texto servido.
+ * Short folder for the tab: `~` for the home folder and at most two
+ * levels (`~/project/sub`). Never invents: it abbreviates the served text.
  */
 export function shortTerminalCwd(cwd: string, home: string | null): string {
   let rest = cwd;
@@ -68,35 +68,35 @@ export function shortTerminalCwd(cwd: string, home: string | null): string {
   return head === "" && rest.startsWith("/") ? `/…/${tail}` : `${head}/…/${tail}`;
 }
 
-/** Etiqueta de estado honesta: en marcha o código de fin. */
+/** Honest status label: running or exit code. */
 export function terminalStatusLabel(info: TerminalSessionDto): string {
-  if (info.running) return "en marcha";
-  return info.exitCode === null ? "terminada" : `terminó (${info.exitCode})`;
+  if (info.running) return "running";
+  return info.exitCode === null ? "exited" : `exited (${info.exitCode})`;
 }
 
 /**
- * Colector de bajas de suscripción a prueba de desmontajes tempranos.
- * Causa del prompt duplicado: `listen()` es asíncrono y la limpieza del
- * efecto corría con la lista aún vacía (en dev, StrictMode monta dos
- * veces), dejando listeners huérfanos que escribían cada fragmento dos
- * veces. Aquí, lo que se resuelva tras `dispose()` se da de baja al
- * momento: cada evento llega exactamente una vez.
+ * Unsubscribe collector that survives early unmounts. Cause of the
+ * duplicated prompt: `listen()` is async and the effect cleanup ran with
+ * the list still empty (in dev, StrictMode mounts twice), leaving
+ * orphaned listeners writing every chunk twice. Here, whatever resolves
+ * after `dispose()` unsubscribes immediately: each event arrives exactly
+ * once.
  */
 export interface UnlistenCollector {
   track(promise: Promise<() => void>): void;
   dispose(): void;
 }
 
-/** Disposición de las mismas sesiones: pestañas o lado a lado. */
+/** Layout of the same sessions: tabs or side by side. */
 export type TerminalLayout = "tabs" | "parallel";
 
-/** Fracciones iguales para N paneles (suman 1). */
+/** Even fractions for N panes (they add up to 1). */
 export function equalPaneWidths(count: number): number[] {
   if (count <= 0) return [];
   return Array.from({ length: count }, () => 1 / count);
 }
 
-/** Al cerrar un panel: se quita su fracción y el resto se reparte. */
+/** When closing a pane: its fraction goes away and the rest is shared. */
 export function dropPaneWidth(widths: number[], index: number): number[] {
   const rest = widths.filter((_, i) => i !== index);
   const total = rest.reduce((sum, value) => sum + value, 0);
@@ -105,8 +105,9 @@ export function dropPaneWidth(widths: number[], index: number): number[] {
 }
 
 /**
- * Arrastre del separador entre `index` e `index+1`: mueve `delta` de
- * fracción de uno al otro, sin bajar ningún panel de `minFrac`.
+ * Dragging the separator between `index` and `index+1`: moves `delta` of
+ * fraction from one to the other, without dropping any pane below
+ * `minFrac`.
  */
 export function dragPaneWidths(
   widths: number[],

@@ -1,70 +1,72 @@
-# Ruth IDE — Densidad compacta y ventana propia
+# Ruth IDE — Design and code as perspectives of one project
 
-Espacio de trabajo visual que transforma requisitos en artefactos de diseño
-vinculados. Cuando cambia una regla, identifica dependencias afectadas y propone
-ajustes que una persona revisa.
+Visual workspace turning requirements into linked design
+artifacts. When a rule changes, it identifies affected
+dependencies and proposes adjustments for a person to review.
 
-Este hito refina el encabezado (estado real de guardado por documento,
-Exportar con puerta honesta ante borradores) e integra el panel Asistente
-Meta, que reutiliza los flujos IA existentes con acciones explícitas, sin
-clasificador silencioso. Sobre la base de diseño vivo (etapa B: mockups
-versionados; etapa A: guardar sin barreras, revisión opcional, entregas de
-trabajo). Sin IA silenciosa y sin relajar baselines. Las reglas viven en
-`ruth-core`, la ejecución revalida en Rust y todo viaja en transacciones. Ver
-[docs/alcance-hackathon.md](docs/alcance-hackathon.md) para el alcance de
-competencia, [docs/decision-diseno-vivo.md](docs/decision-diseno-vivo.md)
-para la decisión y [docs/arquitectura.md](docs/arquitectura.md) para el
-diseño.
+This milestone unifies Design and Code as perspectives of the
+same project: associated roots, module↔path and
+artifact↔symbol links with evidence, and snapshots of the
+detected analysis, with one local truth (schema v12) and
+`.ruth/` only as a future portable contract. Built on the
+detected structure, the code workspace, mockups and live
+design. Opening code never requires creating requirements; AI
+never invents correspondences. See
+[docs/alcance-hackathon.md](docs/alcance-hackathon.md) for the
+competition scope, [docs/decision-diseno-vivo.md](docs/decision-diseno-vivo.md)
+for the decision, [docs/decisiones.md](docs/decisiones.md) for
+the record, [docs/continuidad.md](docs/continuidad.md) to resume
+work and [docs/arquitectura.md](docs/arquitectura.md) for the design.
 
-> Los datos confirmados se guardan en `ruth.db` dentro del directorio de
-> datos de la aplicación (Linux: `~/.local/share/ide.ruth.app/`;
+> Confirmed data is stored in `ruth.db` inside the application
+> data directory (Linux: `~/.local/share/ide.ruth.app/`;
 > macOS: `~/Library/Application Support/ide.ruth.app/`;
-> Windows: `%APPDATA%\ide.ruth.app\`). Los borradores sin guardar siguen
-> viviendo solo en memoria y no sobreviven al cierre.
+> Windows: `%APPDATA%\ide.ruth.app\`). Unsaved drafts still
+> live only in memory and do not survive closing.
 
-## Requisitos
+## Requirements
 
-- Node.js 18+ (probado con Node 24) y npm.
-- Rust estable (probado con 1.97) y Cargo.
-- En Linux, dependencias de sistema de Tauri 2 (ver
-  [prerrequisitos oficiales](https://v2.tauri.app/start/prerequisites/)):
+- Node.js 18+ (tested with Node 24) and npm.
+- Stable Rust (tested with 1.97) and Cargo.
+- On Linux, Tauri 2 system dependencies (see the
+  [official prerequisites](https://v2.tauri.app/start/prerequisites/)):
   `libwebkit2gtk-4.1-dev`, `build-essential`, `curl`, `wget`, `file`,
   `libxdo-dev`, `libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`.
-- Una clave de Meta Model API (solo para la prueba real; ver abajo).
+- A Meta Model API key (only for the real test; see below).
 
-## Instalación
+## Install
 
 ```sh
 npm install
 ```
 
-## Ejecución
+## Run
 
-Interfaz web de desarrollo (sin comandos nativos: la prueba mostrará que
-requiere Tauri):
+Development web UI (no native commands: the test will report it
+requires Tauri):
 
 ```sh
 npm run dev
 ```
 
-Aplicación de escritorio (compila Rust y abre la ventana nativa):
+Desktop app (compiles Rust and opens the native window):
 
 ```sh
 npm run tauri dev
 ```
 
-Compilación web de producción:
+Production web build:
 
 ```sh
 npm run build
 ```
 
-## Variables de entorno (sin dejar la clave en el historial)
+## Environment variables (without leaving the key in history)
 
-La prueba lee **solo** el entorno del proceso nativo. Nunca pongas la clave
-como argumento en la línea de comandos ni en archivos del repo.
+The test reads **only** the native process environment. Never put
+the key as a command-line argument or in repo files.
 
-Opción recomendada (la clave no queda en el historial ni en pantalla):
+Recommended option (the key stays out of history and screen):
 
 ```sh
 read -rsp 'META_API_KEY: ' META_API_KEY && export META_API_KEY && echo
@@ -72,502 +74,812 @@ read -rsp 'META_API_KEY: ' META_API_KEY && export META_API_KEY && echo
 
 Variables:
 
-| Variable      | Obligatoria | Efecto                                              |
-| ------------- | ----------- | --------------------------------------------------- |
-| `META_API_KEY`| Sí          | Clave de Meta Model API. Sin ella no hay petición.  |
-| `META_MODEL`  | No          | Modelo a usar. Por defecto `muse-spark-1.3`.        |
+| Variable      | Required | Effect                                              |
+| ------------- | -------- | --------------------------------------------------- |
+| `META_API_KEY`| Yes      | Meta Model API key. Without it there is no request. |
+| `META_MODEL`  | No       | Model to use. Default `muse-spark-1.3`.             |
 
-Lanza después, en la misma sesión:
+Then launch, in the same session:
 
 ```sh
 npm run tauri dev
 ```
 
-Al terminar, puedes limpiar la variable con `unset META_API_KEY`.
+When done, you may clear the variable with `unset META_API_KEY`.
 
-Notas:
+Notes:
 
-- `read -s` no muestra lo que escribes y, al no pasar la clave como argumento,
-  no queda en `~/.bash_history`.
-- No uses `export META_API_KEY=sk-...` directamente: la clave sí quedaría en
-  el historial.
-- No existe archivo `.env`: el frontend no lee entorno y el backend solo lee
-  el del proceso.
+- `read -s` does not echo what you type and, since the key never
+  passes as an argument, it stays out of `~/.bash_history`.
+- Never use `export META_API_KEY=sk-...` directly: the key would
+  land in history.
+- There is no `.env` file: the frontend reads no environment and
+  the backend only reads the process one.
 
-## Qué está implementado (densidad y ventana)
+## What was implemented (density and window)
 
-- Densidad compacta: radios y espaciados al 50 %, bordes en 1 px,
-  tipografías −2 px con mínimo de 12 px. Lienzos, nodos, terminal y
-  áreas de interacción intactos.
-- Ventana sin barra nativa: controles en el encabezado (minimizar,
-  maximizar/restaurar, cerrar con rojo solo al interactuar), arrastre
-  desde el espacio libre y doble clic para maximizar. Cerrar avisa
-  por borradores (guardar todo, cerrar sin guardar, cancelar) y
-  respeta el freno por terminales activas.
+- Compact density: radii and spacing at 50%, borders at 1 px,
+  −2 px type with a 12 px floor. Canvases, nodes, terminal and
+  interaction areas intact.
+- Window without a native bar: header controls (minimize,
+  maximize/restore, close with red only on hover), dragging
+  from free space and double click to maximize. Closing warns
+  about drafts (save all, close without saving, cancel) and
+  respects the active-terminals brake.
 
-## Qué estaba implementado (asistente y encabezado)
+## What was implemented (assistant and header)
 
-- Encabezado: marca + contexto a la izquierda; estado de guardado,
-  Exportar (compacto, borde menta) y menú ⋯ (con Conexión) a la derecha.
-- Estado real por documento: sin documento, cambios sin guardar (ámbar),
-  guardando, guardado o error con reintento; contador aparte de otros
-  con borrador. Lo editado durante un guardado sobrevive al resultado
-  anterior; re-escribir lo guardado limpia; la disposición no se
-  presenta como cambio semántico.
-- Exportar con borradores abre una puerta honesta: guardar todo y
-  continuar, exportar lo guardado o cancelar. El paquete solo incluye
-  versiones persistidas.
-- Asistente Meta: columna derecha con pestañas Revisión/Asistente
-  (redimensionable, ocultable), contexto visible, tres acciones
-  explícitas que reutilizan los flujos existentes, historial acotado
-  bajo demanda y compositor. Sin clasificador: el texto solo alimenta
-  Proponer requisitos.
+- Header: brand + context on the left; save state, Export
+  (compact, mint border) and the ⋯ menu (with Connection) on
+  the right.
+- Real per-document state: no document, unsaved changes
+  (amber), saving, saved or error with retry; separate counter
+  for others with drafts. Edits made during a save survive the
+  earlier result; re-typing the saved content clears; layout
+  never presents as a semantic change.
+- Exporting with drafts opens an honest gate: save all and
+  continue, export the saved, or cancel. The package only
+  includes persisted versions.
+- Meta Assistant: right column with Review/Assistant tabs
+  (resizable, hideable), visible context, three explicit
+  actions reusing the existing flows, bounded on-demand
+  history and a composer. No classifier: the text only feeds
+  Propose requirements.
 
-## Qué estaba implementado (diseño vivo, etapa B)
+## What is implemented (delivery A: function → evidence → open)
 
-- Mockups versionados: pantallas con identidad estable; componentes
-  texto, campo, selector, botón y tabla; disposición separada de la
-  semántica (mover no versiona); origen declarado por campo
-  (persistido, calculado, temporal, externo o sin definir).
-- Editor visual: vista Mockups con paleta, lienzo e inspector; zoom,
-  deshacer/rehacer, Ctrl+S, validación orientativa y autoritativa en
-  Rust, y versiones históricas en lectura.
-- Diseño desde mockups: fuentes mixtas requisitos + mockups (resumen
-  legible, sin posiciones) con Meta; reutiliza propuestas, diff y
-  aceptación atómica de diseño. Generar solo desde mockups señala
-  faltantes en vez de inventar certezas.
-- Sin migración nueva (esquema v9) y exportación que incluye los
-  mockups del alcance como JSON más resumen; baselines históricas
-  byte-idénticas.
+- Inspector promoted to the top-level maps: file boxes show
+  symbols, Used by/Uses, unresolved, externals and out-of-scope,
+  per root diagram (see [docs/architecture-map.md](docs/architecture-map.md)).
+- Symbol selection with evidence: kind, line range, decorators,
+  incoming/outgoing relations with kind, resolution status and
+  evidence text; relation targets navigate in place or across
+  files; members expand and open at their container (no own
+  ranges in the IR, honestly labeled).
+- Hash-verified "Open in code" in both maps and the Structure
+  view (shared `verifiedOpen.ts`): match jumps to the range,
+  change/unreadable opens the file with a notice. Opening from
+  the top-level Map lands in Code with the tab open.
+- Limits: maps re-run when returning to the perspective (no
+  incremental analysis yet); analyzer caps per root analysis;
+  TypeScript only in maps.
 
-## Qué estaba implementado (diseño vivo, etapa A)
+## What is implemented (top-level project maps)
 
-- Sin barreras de aprobación: generar y actualizar parten de versiones
-  guardadas; «desactualizado» significa «requiere sincronización».
-  Identidades, versiones exactas, procedencia y conflictos intactos.
-- Ctrl+S central (y botón Guardar) al editor activo: requisito, flujo,
-  datos o mockup. Sin cambios no crea versiones; un fallo conserva el
-  borrador; las respuestas tardías no cambian el documento.
-- Vistas derivadas locales sin API; auto-IA opcional por módulo
-  (desactivada al inicio): debounce 2,5 s, una ejecución por módulo,
-  máximo 5 propuestas por ciclo, sin recursión, a propuestas separadas.
-- Entregas de trabajo/borrador (`entrega-N`) con títulos fijados,
-  pendientes y fuentes obsoletas a la vista, exportables a ZIP
-  reproducible (esquema v9). Las baselines siguen intactas y salen
-  byte-idénticas. El diálogo Entregas abre en «De trabajo».
+- New **Map** perspective: the selected project shows one automatic
+  diagram per associated folder — no scope picking. Needs a project,
+  not a module (see [docs/architecture-map.md](docs/architecture-map.md)).
+- Eye toggle per root (tree rows and diagrams, session-only); hidden
+  roots are skipped, analyzed maps are cached across toggles.
+- Breadth-first TypeScript collection per root (200 files / 2000 dirs
+  caps, backend exclusions apply), same worker, layers and lane
+  rendering; truncation, unreadable files, per-root errors with retry
+  and draft warnings are all labeled.
+- Step 1 shows the diagram; inspector, layer filters and search stay
+  in the code-area Map for now.
 
-## Qué estaba implementado (renombrado)
+## What is implemented (architecture map, TypeScript)
 
-- Acción «Renombrar» en el menú «…» del árbol (proyectos, módulos,
-  requisitos y diagramas) y en el detalle de requisito y diagrama:
-  diálogo pequeño con nombre actual, Guardar/Cancelar y Enter/Escape.
-- Nombres no vacíos de hasta 120 caracteres; duplicados permitidos (la
-  identidad es el ID). Revisión esperada con rechazo `stale_name`; sin
-  renombrar archivados sin restaurar. Sin HTML ni rutas desde títulos.
-- Títulos con historial firmado por una persona; sin título propio, la UI
-  deriva la primera línea sin tocar el dominio. Renombrar no invalida
-  revisiones, no crea impactos y no pierde borradores.
-- Baselines nuevas capturan los títulos vigentes; las históricas
-  conservan los suyos y se exportan sin consultar `latest` (esquema v8).
-  Nombres de proyecto/módulo no se fijan ni se exportan.
-- Nombres visibles en árbol, miga de pan, encabezados, selectores,
-  inspectores, mapa de impacto y baselines, con el ID como secundario o
-  tooltip. La tabla histórica distingue título fijado y vigente.
+- New **Map** mode in the code area: analyzes the shared scope and draws
+  layered file boxes with their connections (see
+  [docs/architecture-map.md](docs/architecture-map.md)).
+- Documented path-based layer taxonomy (UI, controllers, state,
+  services, contracts, composition, cross-cutting, unassigned) with
+  decorator refinement; per-file rule shown in the inspector.
+- Analyzer additions: static import resolution, class decorators, `new`
+  as `instantiates`, constructor-parameter references, TS `enum`
+  extraction. Strict rules kept: nothing unverifiable is connected.
+- Inspector with members, incoming/outgoing edges, unresolved refs,
+  externals and code navigation; layer/search filters, stale-scope and
+  draft warnings, explicit truncation notices.
+- Piloted headless against a real NestJS+Angular project (268 files).
 
-## Qué estaba implementado (archivo y borrado)
+## What was implemented (structure replication as modules)
 
-- Menú "…" en módulos y requisitos con archivar, restaurar y eliminar
-  definitivamente; resumen consultivo previo (contenido, dependientes
-  dentro/fuera del módulo, baselines, generaciones) y confirmación
-  explícita con nombre. La ejecución revalida en Rust.
-- Archivo reversible: oculta de las listas activas (interruptor «Mostrar
-  archivados»), conserva versiones, aprobaciones, dependencias, baselines
-  y generaciones, y bloquea ediciones, generaciones y aprobaciones hasta
-  restaurar. El historial sigue consultable.
-- Borrado solo cuando nada lo mencione: módulos vacíos sin generaciones
-  ni alcance de baselines; requisitos borrador sin aprobaciones,
-  dependientes, baselines ni menciones. Sin cascadas; si algo lo
-  referencia, se bloquea y se recomienda archivar (esquema v7).
+- "Replicate structure as modules" in each root's menu: preview of
+  the base's child folders (suggested `src/app`, `src`, or the root
+  when there is no `src`; editable), with previous links,
+  policy-excluded ones and truncation/over-cap notices.
+- New target (name = root folder, editable, no AI) or existing one;
+  only checked folders (max 50 per replication).
+- Atomic creation: project + empty modules + association + manual
+  links, or nothing. Idempotent per folder: already-linked items
+  are reported, never duplicated.
+- After replicating, the project opens with its first module; the
+  tree shows a folder chip and an "Open in code" jump.
+- No migration (schema v14) and no Meta calls.
 
-## Qué estaba implementado (hito 10)
+## What was implemented (living code diagrams)
 
-- Lienzo interactivo con React Flow (cargado bajo demanda, solo al abrir
-  el editor): zoom con rueda centrado en el cursor, desplazamiento por
-  arrastre, botones acercar/alejar/ajustar/centrar-100 % con porcentaje
-  anunciado, selección y movimiento de elementos, conexiones por
-  arrastre o por teclado, y modo lectura en versiones históricas.
-- Editor de Datos: entidades, atributos (nombre y PK) y relaciones con
-  cardinalidades mediante inspector y confirmaciones de borrado con
-  consecuencias. Editor de Flujos: pasos, decisiones, inicio/fin,
-  etiquetas de ramas, citas a requisitos y avisos sin prohibir ciclos.
-  Solo lo que el contrato representa: sin tipos, obligatoriedad ni FK
-  por atributo.
-- Borrador elevado con deshacer/rehacer semántico y validación
-  orientativa inmediata; guardado como nueva versión humana
-  (`core_save_design_version`) con versión esperada, fuentes vigentes
-  declaradas y disposición en la misma transacción, o solo-disposición
-  (`core_save_design_layout`) si no hubo cambios semánticos. Sin
-  aprobaciones heredadas y con recálculo de Impacto.
-- Protección del trabajo: el borrador sobrevive a pestañas, la
-  navegación pide guardar/descartar/cancelar, los conflictos conservan
-  el borrador separado y la aprobación se bloquea con ediciones
-  pendientes. Reabrir conserva contenido y disposición (esquema v6).
+- Structure with Classes/Data/APIs tabs: OOP per side, syntactic
+  data (interfaces, structs, enums; not an ER) and front↔back
+  unions by method+path (joined, exposed-but-unused,
+  consumed-but-undefined, external and ambiguous).
+- Bounded and documented detection: Express/Hono + fetch/axios in
+  TypeScript; Actix + Axum + reqwest in Rust. Static literals;
+  outside a subset nothing is drawn.
+- "Propose code" from a saved requirement or screen + scope:
+  context preview, generation with Meta, current↔proposed diff
+  per file, accept (safe, with fingerprint; creating never
+  overwrites, modifying requires the fingerprint) or discard;
+  earlier ones consultable.
+- Re-analyzing after accepting compares against the opening and
+  shows which symbols, relations, endpoints, calls and unions
+  changed; tabs and the tree refresh on their own.
+- v13 persistence (`cgen-N`): exact context, proposed contents
+  and per-file state, with migration from v12.
 
-## Qué estaba implementado (hito 9)
+Walkthrough: open an existing frontend+backend as a project →
+analyze → see unions and unused → add a requirement → propose
+code → accept → re-analyze → close/reopen.
 
-- Botón **Exportar** en el encabezado con diálogo amplio de entregas:
-  pestaña **Preparar entrega** (módulo del alcance, artefactos elegibles,
-  vista previa con versiones exactas, cierre de dependencias, aprobaciones,
-  bloqueos concretos y fuera de alcance) y pestaña **Baselines** (listado
-  con detalle y exportación histórica).
-- Preparación consultiva sin mutaciones: la creación revalida en Rust
-  dentro de la transacción y, si el proyecto cambió desde la vista previa,
-  informa el conflicto sin crear otra entrega (`changed_since_preview`).
-- Creación humana explícita con nombre y descripción opcional: guarda
-  identidad, formato, proyecto, alcance, fecha, versiones exactas,
-  dependencias, aprobaciones y procedencia. Lo que cambia después no
-  altera la baseline; el listado señala si el proyecto avanzó.
-- ZIP reproducible generado con código local, sin IA: `README.md`,
-  `specification.md`, `manifest.json` versionado con SHA-256 por archivo
-  (el manifiesto se excluye para no autorreferenciarse), `artifacts/` con
-  el contenido original, `diagrams/` con Mermaid del serializador
-  existente e `implementation-context.md` sin stack ni decisiones
-  inventadas. Sin claves, SQLite, chats ni propuestas descartadas.
-- Reproducibilidad: solo desde la baseline (nunca `latest`), orden
-  estable, rutas seguras derivadas de IDs, límites de tamaño/cantidad y
-  metadatos ZIP normalizados (misma baseline + exportador = mismos
-  bytes). Los hashes verifican integridad, no son firma digital.
-- Guardado seguro: diálogo nativo para elegir destino (plugin
-  `tauri-plugin-dialog`, sin escritura general al frontend), cancelar no
-  escribe ni informa éxito, confirmación antes de reemplazar, temporal y
-  renombre atómico con limpieza ante fallos. Crear la baseline y guardar
-  el ZIP son pasos separados y distinguibles.
-- Persistencia v5 con migración transaccional e idempotente desde
-  v1–v4 (tabla `baseline_meta` sin FK, como generaciones y diseños);
-  la baseline histórica se exporta aunque ya no sea actual. Corregido el
-  orden de borrado hijo→padre en el guardado completo (con baselines
-  reales, vaciar `projects` antes que `baselines` violaba la FK).
+## What was implemented (unified perspectives)
 
-## Qué estaba implementado (hito 8)
+- `Code` as a central perspective next to Requirements, Design,
+  Impact and Mockups: same selection, same drafts and one
+  shared terminal. No exclusive switch or empty features.
+- Project from folder (⤴ in the explorer): creates the project,
+  names it after the folder, adds it to the workspace and links
+  it, warning when a step fails. Link/unlink per root from its
+  menu (◈ badge); removing never deletes files.
+- `link-N` links (schema v12): manual module↔path ones from the
+  active tab; detected artifact↔symbol ones from Structure with
+  id, range and source hash. No links without a project;
+  archived ones are consult-only; removing roots or deleting
+  with links blocks with the count.
+- Computed freshness by re-reading the file (never persisted
+  flags); per-file snapshot verification
+  (`fresh`/`stale`/`missing`/`error`).
+- `snap-N` IR snapshots (without contents): save, list, verify
+  and delete; read-only, they create no dependencies.
+- Per-module traceability: which artifact uses which code and
+  what stays unlinked, with computed freshness; "unlinked"
+  never judges and only covers saved snapshots.
+- v1 portable contract (`PortableExport`) for the future shared
+  `.ruth/`: no writing or syncing in this milestone.
 
-- Acción **Proponer actualización** en el inspector de un diseño pendiente:
-  vista previa del snapshot (objetivo, diseño actual, fuentes con sus dos
-  versiones, cambio origen, caminos y bloqueos), generación explícita para un
-  diseño por vez, y revisión con comparación.
-- Bloqueos honestos antes de generar: sin fuentes aprobadas no hay
-  generación; si una fuente de diseño sigue desactualizada, hay que
-  actualizarla primero (la cadena se resuelve en orden, sin saltar etapas).
-- Mismo sistema de generaciones (sin duplicarlo): mismo esquema de salida,
-  validación y Mermaid; el registro fija además objetivo y versión, y la
-  aceptación exige ambos inmóviles más fuentes aprobadas y vigentes.
-- Comparación: diagramas actual/propuesto alternables, diff estructural
-  determinista (nodos/aristas o entidades/atributos/relaciones añadidos,
-  eliminados y modificados), fuentes anteriores y nuevas, explicación y
-  preguntas. La explicación no sustituye al diff.
-- Editor JSON de la propuesta con revalidación, re-render y re-diff;
-  ediciones conservadas al navegar. Aceptar crea una versión del mismo
-  artefacto con procedencia IA y fuentes exactas: atómico, persistido e
-  idempotente, sin heredar aprobación. Descartar bloquea aceptar después.
-- Si el diseño o una fuente cambia durante la generación o revisión, la
-  propuesta se conserva desactualizada, se bloquea su aceptación y se ofrece
-  generar de nuevo; ningún fallo deja versión creada con propuesta pendiente.
-- Impacto distingue "pendiente de aprobación" (fuentes al día) de "requiere
-  revisión", recalcula al aceptar y conserva los demás pendientes.
-- Persistencia v4 con migración transaccional desde v1/v2/v3 (columnas de
-  objetivo); al reabrir se recuperan las propuestas con su diff.
+## What was implemented (code structure)
 
-## Qué estaba implementado (hito 7)
+- Explicit scope: loose files or a bounded folder (direct
+  children), up to 20 files; never the whole repo. A notice
+  when there are drafts: what is analyzed is the on-disk
+  saved content.
+- TypeScript with the real AST (`ts-compiler@5.9` in a deferred
+  Web Worker): classes, interfaces, functions and components
+  (capital in `.tsx`, marked heuristic), `extends`,
+  `implements` and references; partial on syntax errors.
+- Rust with `syn` (`code_analyze_rust`, same read caps):
+  structs, enums, traits and `impl` (`impl Trait` as
+  `implements`, methods to the single type); per-file errors
+  hiding nothing else.
+- Strict global-uniqueness resolution: repeated → ambiguous,
+  missing → unresolved; no imports or jumps across languages.
+  The unverified lives in the inspector with its evidence.
+- Deferred React Flow diagram (zoom, pan, selection, fit),
+  visually-draggable cards, legend, per-type filters, search,
+  inspector and caps with notice (300/500/50).
+- Verified navigation: re-reads and compares the FNV-1a
+  fingerprint (identical in TS and Rust); when it changed, it
+  opens without jumping, marks stale and offers to recalculate.
 
-- Consulta de impacto (`core_impact_report`): requisito y versión origen,
-  comparación con una versión anterior elegible, dependientes directos e
-  indirectos, fuentes utilizadas frente a actuales, caminos explicativos y
-  estado calculado (vigente, requiere revisión, aprobación histórica). Todo
-  lo calcula `ruth-core`; la consulta no muta ni persiste nada.
-- Pestaña **Impacto** junto a Requisitos y Diseño: encabezado con requisito
-  y cambio, comparación Antes/Ahora, mapa de dependencias, tabla de
-  artefactos con paginación, inspector derecho y contador derivado de
-  pendientes únicos.
-- Grafo SVG propio de lectura (sin dependencias nuevas): selección, zoom,
-  ajuste al contenido, nodos sin duplicar con todos los caminos en el
-  inspector, truncado explícito a 60 nodos con la tabla completa aparte, y
-  texto e iconos además del color. Sin arrastre que modifique dependencias.
-- Estados honestos: un diseño aprobado históricamente muestra su aprobación
-  y su desactualización a la vez; lo ya actualizado sigue relacionado pero
-  no pendiente. Sin checkboxes que "resuelvan" el impacto: solo una nueva
-  versión revisada lo levanta.
-- Inspector con acciones reales: Ver diferencias (historial propio del
-  artefacto), Abrir diseño/requisito (navegación con protección de
-  borradores) y Ver fuentes (fijadas frente a actuales). Sin chat ni
-  reparación simulada.
-- Recalculo tras guardar versiones, aceptar o aprobar diseños; respuestas
-  tardías filtradas por consulta; contexto del mapa conservado al volver a
-  la pestaña; el zoom es efímero y no se persiste.
+## What was implemented (code workspace)
 
-## Qué estaba implementado (hito 6)
+- Several local roots per workspace (`root-N`, native dialog),
+  persisted in SQLite (schema v11, v12 since unification)
+  without credentials or content. Removing never deletes; the
+  missing one is marked with a clear error. Without merging
+  repos; since unification they link explicitly to projects
+  (no invented relations).
+- On-demand explorer: excludes `.git`, `node_modules`,
+  `target` and `dist`; 500-entry cap with notice; context menu
+  (open file, terminal here, remove). No create/delete/move or
+  rename yet.
+- Rust confinement (`ruth-code`, no dependencies): root ID +
+  relative path; rejects escapes and links. Not a terminal
+  sandbox (documented).
+- UTF-8 reading up to 256 KiB with binary and over-size
+  rejection; tabs per root + path with visible disambiguation.
+- Editing with Monaco 0.57 (MIT) in a deferred chunk: one
+  model per tab, 13 selectable highlightings (JSON with a
+  local service; TOML as INI), Ctrl+F search and an honest
+  fallback when it fails to load. Highlighting is not
+  language analysis.
+- Safe saving: fingerprint per read; external change →
+  explicit compare, reload or replace; atomic temp-file +
+  rename write with preserved permissions; draft intact on
+  failures. Ctrl+S saves the active tab (inside the terminal
+  it stays with the PTY); closing, removing and quitting
+  confirm; save-all includes files.
+- "Open terminal here" in the shared panel (limit 3, no
+  `META_*`, same lifecycle); frontend and backend at once.
+- Editor presentation (phase 1): Ruth theme, optional
+  minimap, breadcrumb with reveal, per-type icons, status
+  bar, keyboard tabs and real diff on conflicts; visual-only
+  preferences. No LSP or global search yet.
 
-- Distribución inspirada en el mockup: tema oscuro con acentos menta y
-  ámbar, encabezado compacto con proyecto/módulo y conexión plegable, raíl
-  de paneles, izquierda con módulos y artefactos (requisitos + diseños),
-  centro con vistas Requisitos/Diseño, derecha con generación, fuentes y
-  revisión, y barra de estado con el guardado. Sin React Flow y sin
-  simular el mapa de impacto.
-- Generación de diseño por módulo y tipo: selector de flujo o ER,
-  selección de requisitos aprobados con vista previa del contexto, botones
-  independientes por tipo y aviso de envío a Meta. Sin regenerar al
-  navegar.
-- Subconjunto estructurado inicial validado en Rust (`ruth-meta`):
-  flujo con nodos `start|step|decision|end` y aristas; ER con entidades,
-  atributos y cardinalidades `1|0..1|N|0..N`; referencias dentro del
-  conjunto enviado. Un ciclo de flujo es válido; no se confunde con los
-  ciclos prohibidos del núcleo.
-- Renderizado local a Mermaid con serializador determinista y etiquetas
-  escapadas (el modelo no inyecta HTML ni scripts), carga bajo demanda y
-  `securityLevel: strict`. Se muestra diagrama, fuente de lectura,
-  fuentes, explicación y preguntas; sintaxis válida no garantiza
-  corrección del diseño.
-- Revisión con editor JSON validado: editar revalida y renderiza
-  conservando el último resultado válido; "Aceptar como borrador" crea el
-  artefacto (`flujo-N`/`mer-N`) o una nueva versión con la versión
-  esperada, atómica e idempotente, sin aprobar. Aprobar exige
-  confirmación humana, contenido validado y renderizado, y revalidación
-  en Rust.
-- Dependencias exactas a las versiones utilizadas; fuentes obsoletas
-  bloquean la aceptación y el núcleo calcula la revisión pendiente tras
-  aceptar. Respuestas tardías filtradas por módulo.
-- Persistencia v3 con migración transaccional desde v1/v2 (generaciones,
-  propuestas y procedencia de diseño); atomicidad dominio → base → UI y
-  una generación simultánea por módulo, como en el hito 5.
+## What was implemented (mockups as the main input)
 
-## Qué estaba implementado (hito 5)
+- Propose screens with Meta from saved requirements (selection
+  or whole module, no mandatory approval): context preview,
+  draft warning, at most 3 screens per request, each takable
+  as a new and idempotent mockup.
+- Extended model: containers, own-catalog icons, declarative
+  validations, stateful actions, typed tables with preview,
+  per-screen states. Earlier content reads intact; layout
+  stays separate.
+- Editor: duplicate with new IDs, align, optional grid,
+  semantic inspector, undo/redo and Ctrl+S. No third-party
+  HTML or JS.
+- Design from mockups: flow/ER quote `mockup/component` to
+  show what motivates them; technical attributes only with
+  justification; updates preserve the manual ones.
+- Screens in the module tree (derived, never duplicated) with
+  the active screen preserved across perspectives. Migration
+  to schema v10; export and historical baselines intact.
 
-- Generación asistida por módulo: campo "Describe el módulo", vista previa
-  del contexto que se enviará, botón "Proponer requisitos" y aviso de que el
-  contenido viaja a Meta. Solo se envían la descripción y los requisitos
-  actuales del módulo; nada de archivos, secretos u otros proyectos.
-- Salida estructurada verificada en documentación oficial: Responses API con
-  `text.format` (`type: "json_schema"`), plantilla de instrucciones v1 que
-  pide señalar ambigüedades y no inventar decisiones como aprobadas.
-- Validación autoritativa en Rust: campos, tipos, no vacío, temporales
-  únicos, máximo 8 propuestas y 5 preguntas; lo inválido o incompleto se
-  rechaza sin crear artefactos. Una generación simultánea por módulo, sin
-  reintentos, con timeout, topes de entrada/respuesta y errores
-  distinguibles (clave, facturación, rate limit, timeout, incompleta,
-  inválida).
-- Registro persistente de generaciones (esquema v2, migración transaccional
-  que conserva las bases v1): identidad, proyecto/módulo, modelo,
-  descripción, versiones exactas de contexto, plantilla, uso y preguntas.
-- Caducidad calculada: si cambia una fuente, la generación se señala
-  desactualizada y su aceptación se bloquea hasta generar de nuevo.
-- Aceptación atómica e idempotente como borrador con procedencia IA
-  (`accept_ai_draft`, sin fuentes, sin aprobación); ids definitivos de la
-  app y aprobación humana posterior sin cambios.
-- Interfaz: panel de generación con propuestas editables, preguntas
-  separadas y acciones por propuesta; las guardadas se consultan al volver
-  al módulo. En navegador se indica que se requiere escritorio.
+## What was implemented (live design, stage B)
 
-## Qué estaba implementado (hito 4)
+- Versioned mockups: stably-identified screens; text, field,
+  select, button and table components; layout separate from
+  semantics (moving never versions); per-field declared source
+  (persisted, computed, temporary, external or undefined).
+- Visual editor: Mockups view with palette, canvas and
+  inspector; zoom, undo/redo, Ctrl+S, guiding validation and
+  authoritative validation in Rust, and read-only historical
+  versions.
+- Design from mockups: mixed requirement + mockup sources
+  (readable summary, no positions) with Meta; reuses design
+  proposals, diff and atomic acceptance. Generating from
+  mockups alone flags the missing instead of inventing
+  certainties.
+- No new migration (schema v9) and export including the
+  in-scope mockups as JSON plus a summary; byte-identical
+  historical baselines.
 
-- Persistencia local con SQLite (`ruth-store`, adaptador separado del
-  dominio): esquema versionado v2 con migración transaccional e idempotente,
-  carga validante al arrancar y reescritura total por mutación (costo
-  O(tamaño de la base), apta para el volumen del hackathon).
-- Cada mutación es atómica: validar con el núcleo → persistir en
-  transacción → publicar el estado; nunca se informa éxito antes de guardar
-  (`ruth-api::transact`).
-- Arranque degradado: si la base está corrupta, usa un esquema futuro o no
-  puede abrirse, la app muestra un error recuperable sin borrar ni
-  reemplazar nada (`core_status`).
-- Escrituras serializadas fuera del hilo UI (actor con hilo dedicado) y
-  segunda instancia detectada con error claro.
-- Interfaz: banner "Persistencia local activa" con estado de guardado
-  (borrador local / guardando / guardado / error); el borrador se conserva
-  si falla el guardado.
-- El núcleo revalida todo al cargar (`Store::reconstitute`): duplicados,
-  pertenencia, ciclos, fuentes, orden de versiones, aprobaciones y baselines.
-- No se guardan claves, borradores ni selección de paneles.
+## What was implemented (live design, stage A)
 
-## Qué estaba implementado (hito 3)
+- No approval barriers: generating and updating start from
+  saved versions; "stale" means "needs syncing". Identities,
+  exact versions, provenance and conflicts intact.
+- Central Ctrl+S (and Save button) to the active editor:
+  requirement, flow, data or mockup. No changes create no
+  versions; a failure preserves the draft; late responses
+  never switch the document.
+- Local derived views without API; opt-in per-module auto-AI
+  (off at start): 2.5 s debounce, one run per module, at most
+  5 proposals per cycle, no recursion, to separate proposals.
+- Work/draft deliveries (`entrega-N`) with pinned titles,
+  visible pendings and obsolete sources, exportable to a
+  reproducible ZIP (schema v9). Baselines stay intact and
+  come out byte-identical. The Deliveries dialog opens on
+  "Work".
 
-- Espacio de requisitos con distribución de IDE: navegador (proyectos,
-  módulos, requisitos), editor central y panel de revisión con historial.
-- Crear proyecto y módulo; crear requisitos; editar como borrador local;
-  guardar versiones nuevas; consultar anteriores en lectura; confirmar la
-  revisión y aprobar la versión actual con autoría humana explícita.
-- Frontera Tauri sobre `ruth-core` (`ruth-api` + comandos `core_*`): estado
-  en memoria gestionado por Tauri, DTOs serializables y errores estables.
-  El núcleo sigue sin Tauri, Serde, reloj ni red.
-- Zustand solo para selección compartida y visibilidad de paneles;
-  borradores en estado local e instantáneas autoritativas desde Rust.
-- Protección del trabajo en memoria: aviso de sesión temporal, diálogo
-  guardar/descartar/cancelar ante borradores sin guardar, y conservación
-  del borrador ante errores de concurrencia.
-- En navegador se informa que las operaciones del núcleo requieren
-  escritorio; no se simula ningún guardado ni aprobación.
+## What was implemented (renaming)
 
-## Qué estaba implementado (hitos 1–2)
+- "Rename" action in the tree "…" menu (projects, modules,
+  requirements and diagrams) and in the requirement and
+  diagram detail: small dialog with the current name,
+  Save/Cancel and Enter/Escape.
+- Non-empty names up to 120 characters; duplicates allowed
+  (identity is the ID). Expected review with `stale_name`
+  rejection; no renaming archived items without restoring.
+  No HTML or paths from titles.
+- Titles with person-signed history; without its own title,
+  the UI derives the first line without touching the domain.
+  Renaming invalidates no reviews, creates no impacts and
+  loses no drafts.
+- New baselines capture the current titles; historical ones
+  keep theirs and export without consulting `latest`
+  (schema v8). Project/module names are neither pinned nor
+  exported.
+- Visible names in tree, breadcrumb, headers, selectors,
+  inspectors, impact map and baselines, with the ID as
+  secondary or tooltip. The historical table distinguishes
+  pinned and current title.
 
-- Ventana de escritorio Tauri 2 con interfaz React + TypeScript + Vite.
-- Marca Ruth IDE, descripción del producto y panel de conexión con estados
-  `sin configurar / comprobando / disponible / error` y botón explícito
-  **Probar conexión**.
-- Comando nativo `test_meta_connection`: un único `POST` a
-  `https://api.meta.ai/v1/responses` con la petición exacta
-  `Responde solo: Ruth IDE listo`, `max_output_tokens: 64` y timeout de 30 s.
-  Sin llamadas al arrancar, sin reintentos y con una sola prueba simultánea.
-- Respuesta devuelta como texto + modelo + uso de tokens (cuando la API lo da).
-  Sin costos inventados y sin volcar respuestas crudas.
-- Errores distinguidos: clave ausente, autenticación (401), facturación (402),
-  sin permiso (403), rate limit (429, con `Retry-After`), modelo inexistente
-  (404), servidor (5xx), red y timeout.
-- Comando `meta_status`: lectura local de presencia de clave y modelo, sin red.
-- En navegador se informa que la prueba nativa requiere Tauri; no hay proxy ni
-  simulación.
-- Tests Rust del protocolo y los errores con fixtures, sin consumo real
-  (`src-tauri/crates/meta`).
+## What was implemented (archiving and deletion)
 
-## Terminal integrada
+- "…" menu on modules and requirements with archive, restore
+  and permanently delete; prior advisory summary (content,
+  dependents inside/outside the module, baselines,
+  generations) and explicit confirmation with the name.
+  Execution revalidates in Rust.
+- Reversible archiving: hides from active lists ("Show
+  archived" toggle), preserves versions, approvals,
+  dependencies, baselines and generations, and blocks edits,
+  generations and approvals until restored. History stays
+  consultable.
+- Deletion only when nothing mentions it: empty modules
+  without generations or baseline scope; draft requirements
+  without approvals, dependents, baselines or mentions. No
+  cascades; when something references it, it blocks and
+  recommends archiving (schema v7).
 
-Panel inferior con hasta tres sesiones de shell real (PTY vía
-`portable-pty`, presentación con xterm.js): sirve para shells, agentes de
-programación como `$HOME/.local/bin/muse`, servidores locales y Git. Icono
-al pie del rail; ocultar conserva sesiones y scrollback. Cada sesión tiene
-nombre, estado e iconos propios de limpiar (vista) y cerrar; la barra
-global reúne nueva terminal, alternar pestañas/en paralelo, carpeta y
-ocultar. En paralelo, separadores redimensionables con ancho mínimo y
-foco marcado; alternar disposición no pierde salida ni reinicia nada.
+## What was implemented (milestone 10)
 
-- **Permisos**: la terminal corre con tus permisos de usuario. No es un
-  sandbox ni está confinada a la carpeta inicial: documentado, no
-  prometido lo contrario.
-- **Entorno**: el hijo hereda tu entorno **menos** la familia `META_*`
-  (incluida `META_API_KEY`): nada de inferencia que Ruth conozca cruza
-  a la terminal, y ningún secreto se escribe en registros, SQLite o
-  historial de Ruth. Si tu shell carga credenciales desde tu propia
-  configuración (`~/.bashrc` y compañía), Ruth no puede impedirlo.
-- **Ciclo de vida**: limpiar solo borra la vista; cerrar pide
-  confirmación si hay proceso en marcha y lo termina; cerrar Ruth con
-  terminales abiertas pide confirmación y no restaura procesos al
-  reabrir. Nada de terminal se persiste.
-- **Límites**: tres sesiones; salida por eventos en fragmentos de 8 KiB
-  con scrollback de 2000 líneas por vista; pegados por trozos de 60 KiB
-  (tope 256 KiB por escritura); Ctrl+C interrumpe (PTY), Ctrl+Mayús+C/V
-  copian/pegan, Ctrl+S dentro de la terminal es XOFF del PTY (no
-  guarda el editor). Windows compila el mismo código pero no está
-  verificado aquí. En navegador, el panel indica que requiere
-  escritorio y no simula nada.
+- Interactive canvas with React Flow (loaded on demand, only
+  when opening the editor): cursor-centered wheel zoom, drag
+  panning, zoom-in/out/fit/center-100% buttons with announced
+  percentage, element selection and moving, drag or keyboard
+  connections, and read mode on historical versions.
+- Data editor: entities, attributes (name and PK) and relations
+  with cardinalities via inspector and consequence-showing
+  delete confirmations. Flow editor: steps, decisions,
+  start/end, branch labels, requirement quotes and notices
+  without forbidding cycles. Only what the contract
+  represents: no per-attribute types, requiredness or FK.
+- Elevated draft with semantic undo/redo and immediate
+  guiding validation; saving as a new human version
+  (`core_save_design_version`) with expected version, current
+  declared sources and layout in the same transaction, or
+  layout-only (`core_save_design_layout`) with no semantic
+  changes. No inherited approvals, with Impact recalculation.
+- Work protection: the draft survives tabs, navigation asks
+  save/discard/cancel, conflicts keep the draft separate and
+  approval blocks with pending edits. Reopening preserves
+  content and layout (schema v6).
 
-## Qué está pendiente (fuera de este hito)
+## What was implemented (milestone 9)
 
-Ejecución automática de cambios, imágenes renderizadas o PDF en la
-exportación, análisis de impacto con IA, generación de código,
-editor de código, importación de repositorios, agentes múltiples,
-sincronización remota, publicación y despliegue. Los borradores sin guardar
-(incluidos la descripción del módulo y las ediciones de propuestas,
-diseños y mockups) siguen sin protección ante cierre de ventana o fallo
-del proceso: solo lo confirmado en Rust llega a disco.
+- **Export** button in the header with a wide deliveries
+  dialog: **Prepare delivery** tab (in-scope module, eligible
+  artifacts, preview with exact versions, dependency closure,
+  approvals, concrete blocks and out of scope) and **Baselines**
+  tab (listing with detail and historical export).
+- Advisory preparation without mutations: creation revalidates
+  in Rust inside the transaction and, when the project changed
+  since the preview, reports the conflict without creating
+  another delivery (`changed_since_preview`).
+- Explicit human creation with optional name and description:
+  stores identity, format, project, scope, date, exact
+  versions, dependencies, approvals and provenance. Later
+  changes never alter the baseline; the listing flags whether
+  the project moved on.
+- Reproducible ZIP built with local code, no AI: `README.md`,
+  `specification.md`, versioned `manifest.json` with per-file
+  SHA-256 (the manifest excludes itself to avoid
+  self-reference), `artifacts/` with the original content,
+  `diagrams/` with Mermaid from the existing serializer and
+  `implementation-context.md` without an invented stack or
+  decisions. No keys, SQLite, chats or discarded proposals.
+- Reproducibility: only from the baseline (never `latest`),
+  stable order, safe ID-derived paths, size/count limits and
+  normalized ZIP metadata (same baseline + exporter = same
+  bytes). Hashes verify integrity; they are not a digital
+  signature.
+- Safe saving: native dialog to pick the target (`tauri-plugin-
+  dialog` plugin, no general writing to the frontend),
+  canceling writes nothing and reports no success,
+  confirmation before replacing, temp file and atomic rename
+  with cleanup on failures. Creating the baseline and saving
+  the ZIP are separate and distinguishable steps.
+- v5 persistence with a transactional and idempotent migration
+  from v1–v4 (`baseline_meta` table without FK, like
+  generations and designs); the historical baseline exports
+  even when no longer current. Fixed the child→parent delete
+  order in full saves (with real baselines, emptying
+  `projects` before `baselines` violated the FK).
 
-## Decisiones principales
+## What was implemented (milestone 8)
 
-- **Monolito modular por funcionalidades**, sin microservicios ni ORM.
-- **Dominio independiente**: el frontend separa tipos puros (`types.ts`) del
-  adaptador Tauri (`tauri.ts`); el backend separa el crate `ruth-meta`
-  (contrato + protocolo + errores) de los comandos Tauri.
-- **Estado**: Zustand solo para selección compartida y paneles; borradores
-  en estado local de React e instantáneas de dominio servidas por Rust.
-- **Meta detrás de un contrato pequeño**: `MetaConfig::from_env()` y
-  `test_connection()`, con endpoint y modelo verificados en la documentación
-  oficial (`https://dev.meta.ai/docs`): Responses API y `muse-spark-1.3`.
-- **La clave no cruza al frontend**: solo vive en memoria del proceso Rust
-  (`SecretString` con `Debug` redactado), sin registros ni archivos.
+- **Propose update** action in a pending design's inspector:
+  snapshot preview (target, current design, sources with both
+  versions, source change, paths and blocks), explicit
+  generation for one design at a time, and review with
+  comparison.
+- Honest blocks before generating: no generation without
+  approved sources; when a design source stays stale, it must
+  be updated first (the chain resolves in order, skipping no
+  stages).
+- Same generation system (never duplicated): same output
+  schema, validation and Mermaid; the registry also pins
+  target and version, and acceptance requires both unmoved
+  plus approved current sources.
+- Comparison: switchable current/proposed diagrams,
+  deterministic structural diff (added, removed and modified
+  nodes/edges or entities/attributes/relations), old and new
+  sources, explanation and questions. The explanation never
+  replaces the diff.
+- Proposal JSON editor with revalidation, re-render and
+  re-diff; edits preserved across navigation. Accepting
+  creates a version of the same artifact with AI provenance
+  and exact sources: atomic, persisted and idempotent,
+  without inheriting approval. Discarding blocks later
+  accepting.
+- When the design or a source changes during generation or
+  review, the proposal is preserved stale, its acceptance
+  blocks and a regenerate is offered; no failure leaves a
+  created version with a pending proposal.
+- Impact distinguishes "pending approval" (sources current)
+  from "needs review", recalculates on accept and preserves
+  the other pendings.
+- v4 persistence with a transactional migration from
+  v1/v2/v3 (target columns); on reopen, proposals recover
+  with their diff.
 
-## Verificación
+## What was implemented (milestone 7)
+
+- Impact query (`core_impact_report`): source requirement and
+  version, comparison with an eligible earlier version, direct
+  and indirect dependents, used vs. current sources,
+  explanatory paths and computed status (current, needs
+  review, historical approval). `ruth-core` computes it all;
+  the query neither mutates nor persists anything.
+- **Impact** tab next to Requirements and Design: header with
+  requirement and change, Before/Now comparison, dependency
+  map, paged artifact table, right inspector and derived
+  unique-pendings counter.
+- Own read-only SVG graph (no new dependencies): selection,
+  zoom, fit to content, deduplicated nodes with every path in
+  the inspector, explicit truncation at 60 nodes with the full
+  table aside, and text plus icons besides color. No dragging
+  that modifies dependencies.
+- Honest states: a historically approved design shows its
+  approval and its staleness together; the already-updated
+  stays related but not pending. No checkboxes that
+  "resolve" the impact: only a new reviewed version lifts it.
+- Inspector with real actions: View differences (the
+  artifact's own history), Open design/requirement
+  (navigation with draft protection) and View sources (pinned
+  vs. current). No chat or faked repair.
+- Recalculation after saving versions, accepting or approving
+  designs; late responses filtered per query; map context
+  preserved when returning to the tab; zoom is ephemeral and
+  never persists.
+
+## What was implemented (milestone 6)
+
+- Mockup-inspired layout: dark theme with mint and amber
+  accents, compact header with project/module and collapsible
+  connection, panel rail, left with modules and artifacts
+  (requirements + designs), center with Requirements/Design
+  views, right with generation, sources and review, and a
+  status bar with saving. No React Flow and no faking the
+  impact map.
+- Per-module and per-type design generation: flow or ER
+  selector, approved-requirement selection with context
+  preview, independent per-type buttons and a Meta-send
+  notice. Never regenerating on navigation.
+- Initial structured subset validated in Rust (`ruth-meta`):
+  flow with `start|step|decision|end` nodes and edges; ER
+  with entities, attributes and `1|0..1|N|0..N`
+  cardinalities; references inside the sent set. A flow cycle
+  is valid; never confused with the core's forbidden cycles.
+- Local Mermaid rendering with a deterministic serializer and
+  escaped labels (the model injects no HTML or scripts),
+  on-demand loading and `securityLevel: strict`. Diagram,
+  read-only source, sources, explanation and questions show;
+  valid syntax never guarantees design correctness.
+- Review with a validated JSON editor: editing revalidates
+  and renders while keeping the last valid result; "Accept as
+  draft" creates the artifact (`flujo-N`/`mer-N`) or a new
+  version with the expected version, atomic and idempotent,
+  without approving. Approving requires human confirmation,
+  validated and rendered content, and revalidation in Rust.
+- Exact dependencies on the versions used; obsolete sources
+  block acceptance and the core computes the pending review
+  after accepting. Late responses filtered per module.
+- v3 persistence with a transactional migration from v1/v2
+  (generations, proposals and design provenance); atomicity
+  domain → database → UI and one simultaneous generation per
+  module, as in milestone 5.
+
+## What was implemented (milestone 5)
+
+- Per-module assisted generation: "Describe the module" field,
+  preview of the context to send, "Propose requirements"
+  button and a notice that the content travels to Meta. Only
+  the module's description and current requirements are sent;
+  nothing of files, secrets or other projects.
+- Structured output verified against official docs: Responses
+  API with `text.format` (`type: "json_schema"`), v1
+  instruction template asking to flag ambiguities and never
+  to invent decisions as approved.
+- Authoritative Rust validation: fields, types, non-empty,
+  unique temporaries, at most 8 proposals and 5 questions;
+  the invalid or incomplete is rejected without creating
+  artifacts. One simultaneous generation per module, no
+  retries, with timeout, input/response caps and
+  distinguishable errors (key, billing, rate limit, timeout,
+  incomplete, invalid).
+- Persistent generation registry (schema v2, transactional
+  migration preserving v1 databases): identity,
+  project/module, model, description, exact context versions,
+  template, usage and questions.
+- Computed expiry: when a source changes, the generation is
+  flagged stale and its acceptance blocks until regenerating.
+- Atomic and idempotent acceptance as a draft with AI
+  provenance (`accept_ai_draft`, no sources, no approval);
+  final app ids and later human approval unchanged.
+- UI: generation panel with editable proposals, separate
+  questions and per-proposal actions; saved ones consult on
+  returning to the module. In a browser it notes that
+  desktop is required.
+
+## What was implemented (milestone 4)
+
+- Local SQLite persistence (`ruth-store`, adapter separate
+  from the domain): versioned v2 schema with a transactional
+  and idempotent migration, validating load at startup and
+  full rewrite per mutation (O(database size) cost, fit for
+  hackathon volume).
+- Every mutation is atomic: validate with the core → persist
+  in a transaction → publish the state; success is never
+  reported before saving (`ruth-api::transact`).
+- Degraded startup: when the database is corrupt, uses a
+  future schema or cannot open, the app shows a recoverable
+  error without deleting or replacing anything
+  (`core_status`).
+- Writes serialized off the UI thread (actor with a dedicated
+  thread) and a detected second instance with a clear error.
+- UI: "Local persistence active" banner with save state
+  (local draft / saving / saved / error); the draft is
+  preserved when saving fails.
+- The core revalidates everything on load
+  (`Store::reconstitute`): duplicates, membership, cycles,
+  sources, version order, approvals and baselines.
+- No keys, drafts or panel selection are stored.
+
+## What was implemented (milestone 3)
+
+- Requirement space with an IDE layout: browser (projects,
+  modules, requirements), central editor and review panel
+  with history.
+- Create project and module; create requirements; edit as a
+  local draft; save new versions; consult earlier ones
+  read-only; confirm the review and approve the current
+  version with explicit human authorship.
+- Tauri boundary over `ruth-core` (`ruth-api` + `core_*`
+  commands): Tauri-managed in-memory state, serializable
+  DTOs and stable errors. The core still has no Tauri,
+  Serde, clock or network.
+- Zustand only for shared selection and panel visibility;
+  drafts in local state and authoritative snapshots from
+  Rust.
+- In-memory work protection: temporary-session notice,
+  save/discard/cancel dialog on unsaved drafts, and draft
+  preservation on concurrency errors.
+- In a browser it reports that core operations require
+  desktop; no saving or approval is faked.
+
+## What was implemented (milestones 1–2)
+
+- Tauri 2 desktop window with a React + TypeScript + Vite UI.
+- Ruth IDE brand, product description and connection panel
+  with `not configured / checking / available / error`
+  states and an explicit **Test connection** button.
+- Native `test_meta_connection` command: a single `POST` to
+  `https://api.meta.ai/v1/responses` with the exact request
+  `Responde solo: Ruth IDE listo`, `max_output_tokens: 64`
+  and a 30 s timeout. No calls at startup, no retries and a
+  single simultaneous test.
+- Response returned as text + model + token usage (when the
+  API provides it). No invented costs and no raw-response
+  dumps.
+- Distinguished errors: missing key, authentication (401),
+  billing (402), forbidden (403), rate limit (429, with
+  `Retry-After`), missing model (404), server (5xx), network
+  and timeout.
+- `meta_status` command: local read of key presence and
+  model, no network.
+- In a browser it reports that the native test requires
+  Tauri; no proxy or simulation.
+- Rust tests for the protocol and errors with fixtures,
+  without real consumption (`src-tauri/crates/meta`).
+
+## Integrated terminal
+
+Bottom panel with up to three real shell sessions (PTY via
+`portable-pty`, xterm.js presentation): fits shells,
+programming agents like `$HOME/.local/bin/muse`, local
+servers and Git. Icon at the rail foot; hiding preserves
+sessions and scrollback. Each session has a name, state and
+own icons for clear (view) and close; the global bar gathers
+new terminal, toggle tabs/side-by-side, folder and hide. Side
+by side, resizable splitters with a minimum width and marked
+focus; switching layout loses no output and restarts nothing.
+
+- **Permissions**: the terminal runs with your user
+  permissions. It is not a sandbox nor confined to the
+  initial folder: documented, never promised otherwise.
+- **Environment**: the child inherits your environment
+  **minus** the `META_*` family (including `META_API_KEY`):
+  no inference Ruth knows about crosses into the terminal,
+  and no secret is written to Ruth's logs, SQLite or
+  history. When your shell loads credentials from your own
+  configuration (`~/.bashrc` and friends), Ruth cannot stop
+  it.
+- **Lifecycle**: clearing only wipes the view; closing asks
+  for confirmation with a running process and ends it;
+  closing Ruth with open terminals asks for confirmation and
+  never restores processes on reopen. Nothing terminal-
+  related persists.
+- **Limits**: three sessions; evented output in 8 KiB chunks
+  with 2000-line scrollback per view; pastes in 60 KiB
+  pieces (256 KiB cap per write); Ctrl+C interrupts (PTY),
+  Ctrl+Shift+C/V copy/paste, Ctrl+S inside the terminal is
+  the PTY's XOFF (never saves the editor). Windows compiles
+  the same code but is unverified here. In a browser, the
+  panel notes it requires desktop and fakes nothing.
+
+## What is pending (out of this milestone)
+
+Automatic change execution, rendered images or PDF in the
+export, AI impact analysis, code generation, LSP, debugging,
+visual Git, refactoring, creating/deleting/moving/renaming
+files, repo import, multiple agents, remote sync, publishing
+and deployment. Also out: `.ruth/` sync, AI-inferred links,
+loading snapshots into the diagram and rebuilding
+requirements from code. Unsaved drafts (including the module
+description and proposal, design, mockup and file edits)
+still have no protection against window close or process
+failure: only what is confirmed in Rust reaches disk.
+
+## Key decisions
+
+- **Modular monolith per feature**, no microservices or ORM.
+- **Independent domain**: the frontend separates pure types
+  (`types.ts`) from the Tauri adapter (`tauri.ts`); the
+  backend separates the `ruth-meta` crate (contract +
+  protocol + errors) from the Tauri commands.
+- **State**: Zustand only for shared selection and panels;
+  drafts in local React state and domain snapshots served by
+  Rust.
+- **Meta behind a small contract**: `MetaConfig::from_env()`
+  and `test_connection()`, with endpoint and model verified
+  in the official docs (`https://dev.meta.ai/docs`):
+  Responses API and `muse-spark-1.3`.
+- **The key never crosses to the frontend**: it only lives in
+  Rust process memory (`SecretString` with redacted `Debug`),
+  with no logs or files.
+
+## Verification
 
 ```sh
-npm test                                    # coordinación del frontend (vitest)
-npx tsc --noEmit                            # tipos del frontend
-npm run build                               # compilación web de producción
-cargo test --workspace                      # Rust completo (sin red real)
-cargo clippy --workspace --all-targets      # lints
-cargo fmt --check                           # formato
-cargo check                                 # app Tauri completa (requiere deps. de sistema)
-npx tauri info                              # diagnóstico del entorno Tauri
+npm test                                    # frontend coordination (vitest)
+npx tsc --noEmit                            # frontend types
+npm run build                               # production web build
+npx tauri info                              # Tauri environment diagnostics
 ```
 
-Las llamadas reales a Meta solo se disparan con los botones **Probar
-conexión**, **Proponer requisitos** y **Generar flujo/ER** dentro de la app
-de escritorio. Los tests automatizados no consumen la API.
+Rust commands run from `src-tauri/` (where the Cargo
+workspace lives):
 
-Caso manual (asistente, con `META_API_KEY` configurada): abrir la
-pestaña Asistente → comprobar contexto y aviso de borradores → elegir
-Proponer requisitos → Enviar una descripción → revisar el campo
-alimentado y generar → aceptar una propuesta → elegir Generar flujo →
-marcar fuentes y generar → aceptar el borrador → abrir Impacto con un
-origen → volver al asistente → Proponer actualización de un diseño
-afectado → comparar e incorporar → desplegar el historial y comprobar
-modelo, tokens y pendientes.
+```sh
+cd src-tauri
+cargo test --workspace                      # full Rust (no real network)
+cargo clippy --workspace --all-targets      # lints
+cargo fmt --check                           # formatting
+cargo check                                 # full Tauri app (needs system deps)
+```
 
-Caso manual (etapa B, con `META_API_KEY` configurada): vista
-**Mockups** → crear pantalla «Nueva reserva» → añadir campos cliente,
-producto y cantidad más botón Confirmar → Ctrl+S → **Generar diseño**
-desde el mockup (añadir requisitos a mano si hace falta) → revisar
-propuesta de flujo y ER → editar un campo → Ctrl+S → abrir **Impacto**
-→ incorporar la actualización sin aprobación obligatoria → cerrar y
-reabrir → comprobar mockup, historial y fuentes → exportar entrega de
-trabajo y cotejar que el ZIP trae el JSON del mockup más su resumen.
+Real Meta calls only fire with the **Test connection**,
+**Propose requirements** and **Generate flow/ER** buttons
+inside the desktop app. Automated tests never consume the
+API.
 
-Caso manual (renombrado, sin red): menú "…" de un requisito sin título →
-comprobar que se muestra su primera línea → Renombrar → poner título →
-comprobar árbol, encabezado e inspectores → crear baseline → renombrar de
-nuevo → abrir el detalle histórico y comprobar título fijado frente a
-vigente → exportar el ZIP y cotejar encabezados y `manifest.json` →
-renombrar proyecto y módulo desde el árbol → cerrar y reabrir →
-comprobar que todo persiste.
+Manual case (perspectives, no network): ⤴ in the explorer →
+pick Ruth's folder → check the named project and linked root
+(◈ badge) → **Code** perspective → open a file → back to
+**Requirements** with a module → link the active tab →
+**Structure** → analyze and link a symbol to an artifact →
+save a snapshot → edit the file outside → verify the
+snapshot (stale) → **Traceability** → check linked, unlinked
+and orphans → close/reopen → check associations, links and
+snapshots.
 
-Caso manual (archivo, sin red): crear requisito borrador → menú "…" →
-Eliminar definitivamente (resumen vacío, confirmación con nombre) →
-comprobar que desaparece → crear otro, archivado individual → comprobar
-que se oculta → «Mostrar archivados» → restaurarlo → archivar el módulo
-→ comprobar listas vacías honestas y edición bloqueada → restaurar.
+Manual case (structure, no network): **Code** perspective →
+open Ruth's folder → `model.ts` menu → **Add to the
+analysis** → repeat with `CodeTree.tsx` → **Analyze
+selection** → check cards, one relation and the legend →
+click `CodeTree` → **Open in code** (jumps to its range) →
+edit the file outside → reopen the symbol → check the stale
+notice → **Recalculate** → add a `.rs` file and check
+struct/impl.
 
-Caso manual (hito 10, sin red, desde diseños ya aprobados): abrir un
-diseño → pestaña **Lienzo/Editor** → arrastrar, zoom con rueda y botones
-(ajustar, 100 %) → mover elementos y comprobar que no aparece "sin
-guardar" semántico → añadir un paso/atributo con el inspector,
-deshacer/rehacer → **Guardar y crear versión** → comprobar procedencia
-humana sin aprobación heredada → reordenar solo posiciones → guardar
-disposición → cerrar y reabrir → comprobar contenido y posiciones.
+Manual case (code, no network): **Code** perspective →
+**Open folder** (frontend) → **+ Add folder** (backend) →
+expand and open the same name in both (disambiguated in the
+tab) → edit → Ctrl+S → check Saved in the header → **Open
+terminal here** in each root → change a file outside Ruth →
+Ctrl+S → **Compare**, **Reload** or **Replace** →
+close/reopen → check roots, closed tabs and content.
 
-Caso manual (hito 9, sin red): crear requisitos, flujo y ER de ventas y
-aprobarlos → **Exportar** → **Preparar entrega** → elegir artefactos →
-**Crear baseline** A → cambiar la regla de reservas y aprobarla → volver a
-preparar y comprobar el bloqueo por fuentes desactualizadas → actualizar,
-revisar y aprobar flujo y ER → crear baseline B → **Guardar ZIP** de B con
-el diálogo nativo → exportar también A y comprobar que conserva las
-versiones anteriores → abrir los ZIP y cotejar `manifest.json` con
-`sha256sum`.
+Manual case (assistant, with `META_API_KEY` set): open the
+Assistant tab → check context and the drafts notice → pick
+Propose requirements → Send a description → review the fed
+field and generate → accept a proposal → pick Generate flow
+→ mark sources and generate → accept the draft → open
+Impact with a source → back to the assistant → Propose
+updating an affected design → compare and take in → expand
+the history and check model, tokens and pendings.
 
-Caso manual (hito 8, con `META_API_KEY` configurada): aprobar requisitos,
-flujo y ER de ventas → cambiar y aprobar la regla de reservas → abrir
-**Impacto** → **Proponer actualización** del flujo → comparar diagramas y
-diff → **Aceptar como borrador** → revisar y aprobar → comprobar que ER
-sigue pendiente → actualizar ER igual → cerrar y reabrir → comprobar
-historial, fuentes y propuestas.
+Manual case (screens, with `META_API_KEY` set): user-signup
+requirements → **Mockups** view → **Propose screens**
+(review context and save drafts when there are any) → take
+a screen in → add a field, button and icon → define actions
+and data source → Ctrl+S → **Generate design** with
+requirements and mockup → review `mockup/component` quotes
+and questions → close/reopen → check persistence and export
+a work delivery.
 
-Caso manual (hito 7, sin red): crear y aprobar requisitos de ventas →
-generar y aprobar flujo y ER → cambiar la regla a "Reservar unidades antes
-de confirmar; cancelar libera la reserva" → abrir **Impacto** → comprobar
-diseños pendientes con fuentes antiguas → revisar un diseño y crear otra
-versión → comprobar que su pendiente desaparece mientras el otro continúa.
+Manual case (stage B, with `META_API_KEY` set): **Mockups**
+view → create a "New booking" screen → add customer, product
+and quantity fields plus a Confirm button → Ctrl+S →
+**Generate design** from the mockup (add requirements by
+hand when needed) → review the flow and ER proposal → edit
+a field → Ctrl+S → open **Impact** → take the update in
+with no mandatory approval → close and reopen → check
+mockup, history and sources → export a work delivery and
+verify the ZIP carries the mockup JSON plus its summary.
 
-Caso manual (hito 6, con `META_API_KEY` configurada): aprobar requisitos
-de ventas → vista **Diseño** → seleccionar fuentes → **Generar flujo** →
-revisar diagrama y JSON, editar si hace falta → **Aceptar como borrador**
-→ aprobar desde Revisión → repetir con **Generar ER** → cerrar y reabrir
-→ comprobar diagramas, fuentes e historial.
+Manual case (renaming, no network): "…" menu of an untitled
+requirement → check its first line shows → Rename → set a
+title → check tree, header and inspectors → create a
+baseline → rename again → open the historical detail and
+check pinned vs. current title → export the ZIP and compare
+headers and `manifest.json` → rename project and module
+from the tree → close and reopen → check everything
+persists.
 
-## Transparencia
+Manual case (archiving, no network): create a draft
+requirement → "…" menu → Delete permanently (empty summary,
+confirmation with the name) → check it is gone → create
+another, individual archive → check it hides → "Show
+archived" → restore it → archive the module → check honest
+empty lists and blocked editing → restore.
 
-Antes del evento existió una exploración previa (Atelier / Ruth IDE) cuyo
-código **no se ha leído ni reutilizado** en este repositorio: todo el código
-aquí se creó desde cero durante el hackathon. Ver
+Manual case (milestone 10, no network, from already-approved
+designs): open a design → **Canvas/Editor** tab → drag, wheel
+zoom and buttons (fit, 100%) → move elements and check no
+semantic "unsaved" appears → add a step/attribute with the
+inspector, undo/redo → **Save version** → check human
+provenance without inherited approval → reorder positions
+only → save layout → close and reopen → check content and
+positions.
+
+Manual case (milestone 9, no network): create sales
+requirements, flow and ER and approve them → **Export** →
+**Prepare delivery** → pick artifacts → **Create baseline**
+A → change the booking rule and approve it → prepare again
+and check the stale-sources block → update, review and
+approve flow and ER → create baseline B → **Save ZIP** of B
+with the native dialog → also export A and check it keeps
+the earlier versions → open the ZIPs and compare
+`manifest.json` with `sha256sum`.
+
+Note for the milestone 6–8 cases: they were written when
+generating required approving. Since live design, review is
+optional: the "approve" steps may be skipped and the
+walkthrough stays valid.
+
+Manual case (milestone 8, with `META_API_KEY` set): approve
+sales requirements, flow and ER → change and approve the
+booking rule → open **Impact** → **Propose update** of the
+flow → compare diagrams and diff → **Accept as draft** →
+review and approve → check the ER stays pending → update
+the ER the same way → close and reopen → check history,
+sources and proposals.
+
+Manual case (milestone 7, no network): create and approve
+sales requirements → generate and approve flow and ER →
+change the rule to "Reserve units before confirming;
+canceling frees the reservation" → open **Impact** →
+check pending designs with old sources → review a design
+and create another version → check its pending disappears
+while the other continues.
+
+Manual case (milestone 6, with `META_API_KEY` set): approve
+sales requirements → **Design** view → select sources →
+**Generate flow** → review diagram and JSON, edit when
+needed → **Accept as draft** → approve from Review →
+repeat with **Generate ER** → close and reopen → check
+diagrams, sources and history.
+
+## Transparency
+
+Before the event there was an earlier exploration (Atelier /
+Ruth IDE) whose code **has not been read or reused** in this
+repo: all code here was created from scratch during the
+hackathon. See
 [docs/alcance-hackathon.md](docs/alcance-hackathon.md).

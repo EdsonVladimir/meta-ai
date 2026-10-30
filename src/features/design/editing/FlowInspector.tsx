@@ -1,6 +1,6 @@
-// Inspector de flujos: nodo seleccionado (identidad, etiqueta, tipo,
-// citas, borrado con consecuencias), conexión seleccionada (etiqueta de
-// rama, borrado) y creación accesible por teclado.
+// Flow inspector: selected node (identity, label, kind, citations,
+// deletion with consequences), selected connection (branch label,
+// deletion) and keyboard-accessible creation.
 import { useState } from "react";
 import {
   flowDeleteConsequences,
@@ -12,13 +12,13 @@ import {
   type FlowNodeKind,
   type FlowSpec,
 } from "./specModel";
-import { CommitInput, DeleteConfirm, RefsPicker } from "./inspector";
+import { CommitInput, DeleteConfirm, MockupRefsEditor, RefsPicker } from "./inspector";
 
 const NODE_KINDS: { value: FlowNodeKind; label: string }[] = [
-  { value: "start", label: "Inicio" },
-  { value: "step", label: "Paso" },
-  { value: "decision", label: "Decisión" },
-  { value: "end", label: "Fin" },
+  { value: "start", label: "Start" },
+  { value: "step", label: "Step" },
+  { value: "decision", label: "Decision" },
+  { value: "end", label: "End" },
 ];
 
 export type FlowSelection =
@@ -54,13 +54,13 @@ export function FlowInspector({
   return (
     <div className="inspector-body">
       {node !== undefined && (
-        <section aria-label={`Nodo ${node.id}`}>
+        <section aria-label={`Node ${node.id}`}>
           <h4>
-            Nodo <code>{node.id}</code>
+            Node <code>{node.id}</code>
           </h4>
           <CommitInput
             key={`id:${node.id}`}
-            label="Identificador"
+            label="Identifier"
             value={node.id}
             maxLength={64}
             onCommit={(next) => {
@@ -68,7 +68,7 @@ export function FlowInspector({
               if (trimmed === node.id) return;
               const renamed = renameFlowNodeId(spec, node.id, trimmed);
               if (!renamed.ok) {
-                setRenameError(renamed.reason ?? "Identificador inválido.");
+                setRenameError(renamed.reason ?? "Invalid identifier.");
                 return;
               }
               setRenameError(null);
@@ -83,13 +83,13 @@ export function FlowInspector({
           )}
           <CommitInput
             key={`label:${node.id}:${node.label}`}
-            label="Etiqueta"
+            label="Label"
             value={node.label}
             maxLength={160}
             onCommit={(label) => onSpec(updateFlowNode(spec, node.id, { label: label.trim() }))}
           />
           <label className="field">
-            <span>Tipo</span>
+            <span>Kind</span>
             <select
               value={node.kind}
               onChange={(e) => onSpec(updateFlowNode(spec, node.id, { kind: e.target.value as FlowNodeKind }))}
@@ -106,9 +106,14 @@ export function FlowInspector({
             selected={node.requirements}
             onChange={(requirements) => onSpec(updateFlowNode(spec, node.id, { requirements }))}
           />
+          <MockupRefsEditor
+            mockups={allowed.filter((id) => id.startsWith("mockup-"))}
+            selected={node.mockups}
+            onChange={(mockups) => onSpec(updateFlowNode(spec, node.id, { mockups }))}
+          />
           {confirming === node.id ? (
             <DeleteConfirm
-              what={`el nodo ${node.id}`}
+              what={`node ${node.id}`}
               consequences={flowDeleteConsequences(spec, node.id)}
               onConfirm={() => {
                 onSpec(removeFlowNode(spec, node.id).spec);
@@ -119,21 +124,21 @@ export function FlowInspector({
             />
           ) : (
             <button type="button" className="danger small" onClick={() => setConfirming(node.id)}>
-              Eliminar nodo…
+              Delete node…
             </button>
           )}
         </section>
       )}
 
       {selection?.kind === "edge" && edge !== undefined && (
-        <section aria-label={`Conexión ${selection.index + 1}`}>
-          <h4>Conexión</h4>
+        <section aria-label={`Connection ${selection.index + 1}`}>
+          <h4>Connection</h4>
           <p className="hint">
             <code>{edge.from}</code> → <code>{edge.to}</code>
           </p>
           <CommitInput
             key={`edge:${selection.index}:${edge.label ?? ""}`}
-            label="Etiqueta de rama (vacía = sin etiqueta)"
+            label="Branch label (empty = no label)"
             value={edge.label ?? ""}
             maxLength={160}
             onCommit={(label) =>
@@ -148,28 +153,28 @@ export function FlowInspector({
               onSelect(null);
             }}
           >
-            Eliminar conexión
+            Delete connection
           </button>
         </section>
       )}
 
       {selection === null && (
-        <p className="hint">Selecciona un nodo o una conexión para editarlo. Clic en el fondo para soltar.</p>
+        <p className="hint">Select a node or a connection to edit it. Click the background to release.</p>
       )}
 
-      <section aria-label="Crear conexión">
-        <h4>Crear conexión</h4>
+      <section aria-label="Create connection">
+        <h4>Create connection</h4>
         <div className="add-row">
-          <select value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Origen">
-            <option value="">Origen…</option>
+          <select value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Origin">
+            <option value="">Origin…</option>
             {spec.nodes.map((node) => (
               <option key={node.id} value={node.id}>
                 {node.id}
               </option>
             ))}
           </select>
-          <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Destino">
-            <option value="">Destino…</option>
+          <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Target">
+            <option value="">Target…</option>
             {spec.nodes.map((node) => (
               <option key={node.id} value={node.id}>
                 {node.id}
@@ -182,7 +187,7 @@ export function FlowInspector({
             disabled={from === "" || to === ""}
             onClick={() => onConnectRequest(from, to)}
           >
-            Conectar
+            Connect
           </button>
         </div>
       </section>

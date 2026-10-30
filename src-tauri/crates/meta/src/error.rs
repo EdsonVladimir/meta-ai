@@ -1,14 +1,14 @@
-//! Errores tipados del adaptador de Meta.
+//! Typed errors of the Meta adapter.
 //!
-//! El `kind` distingue los casos que la interfaz debe tratar de forma
-//! diferente (autenticación, facturación, rate limit, red...). Los mensajes
-//! son breves, en español y nunca contienen la clave: todo texto externo se
-//! sanea y se trunca antes de exponerse.
+//! The `kind` distinguishes the cases the UI must treat differently
+//! (authentication, billing, rate limit, network...). Messages are short,
+//! in English and never contain the key: all external text is sanitized
+//! and truncated before exposure.
 
 use serde::Serialize;
 
-/// Clasificación estable del fallo. Debe coincidir con `MetaErrorKind` del
-/// frontend (`src/features/connection/types.ts`).
+/// Stable failure classification. Must match the frontend `MetaErrorKind`
+/// (`src/features/connection/types.ts`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MetaErrorKind {
@@ -29,7 +29,7 @@ pub enum MetaErrorKind {
     Unexpected,
 }
 
-/// Error serializable hacia el frontend vía comando Tauri.
+/// Error serializable to the frontend via a Tauri command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetaError {
@@ -42,7 +42,7 @@ pub struct MetaError {
     pub status: Option<u16>,
 }
 
-/// Longitud máxima de cualquier texto externo (mensajes de la API).
+/// Maximum length of any external text (API messages).
 const MAX_MESSAGE_CHARS: usize = 280;
 
 impl MetaError {
@@ -69,8 +69,8 @@ impl MetaError {
     pub fn missing_key() -> Self {
         Self::new(
             MetaErrorKind::MissingKey,
-            "META_API_KEY no está configurada en el entorno del proceso. \
-             Configúrala y pulsa «Probar conexión». No se ha hecho ninguna petición.",
+            "META_API_KEY is not set in the process environment. Set it and \
+             press Test connection. No request was made.",
             false,
         )
     }
@@ -78,7 +78,7 @@ impl MetaError {
     pub fn busy() -> Self {
         Self::new(
             MetaErrorKind::Busy,
-            "Ya hay una prueba de conexión en curso. Espera a que termine.",
+            "A connection test is already running. Wait for it to finish.",
             false,
         )
     }
@@ -86,22 +86,22 @@ impl MetaError {
     pub fn timeout() -> Self {
         Self::new(
             MetaErrorKind::Timeout,
-            "La petición a Meta agotó el tiempo de espera. Revisa tu conexión y reintenta.",
+            "The Meta request timed out. Check your connection and retry.",
             true,
         )
     }
 
     pub fn network(detail: &str) -> Self {
         let message = if detail.is_empty() {
-            "No se pudo contactar con Meta: fallo de red.".to_string()
+            "Could not reach Meta: network failure.".to_string()
         } else {
-            format!("No se pudo contactar con Meta: {detail}")
+            format!("Could not reach Meta: {detail}")
         };
         Self::new(MetaErrorKind::Network, message, true)
     }
 }
 
-/// Deja el texto en una sola línea segura para mostrar y lo trunca.
+/// Leaves the text on a single display-safe line and truncates it.
 pub fn sanitize(text: String) -> String {
     let single_line: String = text
         .chars()
@@ -111,7 +111,7 @@ pub fn sanitize(text: String) -> String {
     truncate(&collapsed, MAX_MESSAGE_CHARS)
 }
 
-/// Garantía extra: elimina cualquier aparición accidental del secreto.
+/// Extra guarantee: removes any accidental occurrence of the secret.
 pub fn redact(text: &str, secret: &str) -> String {
     if secret.is_empty() {
         return text.to_string();
@@ -137,8 +137,8 @@ mod tests {
 
     #[test]
     fn sanitize_collapses_and_truncates() {
-        let dirty = "  hola\n\tmundo  con   espacios  ";
-        assert_eq!(sanitize(dirty.to_string()), "hola mundo con espacios");
+        let dirty = "  hello\n\tworld  with   spaces  ";
+        assert_eq!(sanitize(dirty.to_string()), "hello world with spaces");
         let long = "x".repeat(500);
         let clean = sanitize(long);
         assert!(clean.chars().count() <= MAX_MESSAGE_CHARS + 1);
@@ -147,15 +147,15 @@ mod tests {
 
     #[test]
     fn redact_removes_secret() {
-        let secret = "sk-meta-secreto";
-        let text = "fallo con sk-meta-secreto dentro";
-        assert_eq!(redact(text, secret), "fallo con [redacted] dentro");
+        let secret = "sk-test";
+        let text = "failure with sk-test inside";
+        assert_eq!(redact(text, secret), "failure with [redacted] inside");
         assert_eq!(redact(text, ""), text);
     }
 
     #[test]
     fn serializes_error_shape_for_frontend() {
-        let err = MetaError::new(MetaErrorKind::RateLimit, "límite", true)
+        let err = MetaError::new(MetaErrorKind::RateLimit, "limit", true)
             .with_status(429)
             .with_retry_after(30);
         let json = serde_json::to_value(&err).expect("serializable");

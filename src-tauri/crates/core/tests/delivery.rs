@@ -1,7 +1,7 @@
-//! Entregas de trabajo/borrador: foto de versiones guardadas SIN exigir
-//! aprobación. Invariantes separadas de la baseline aprobada: entradas
-//! actuales, del proyecto, no archivadas y sin duplicar artefacto; las
-//! revisiones y desactualizaciones se identifican al leer.
+//! Work/draft deliveries: a snapshot of saved versions WITHOUT requiring
+//! approval. Invariants separate from the approved baseline: current
+//! entries, from the project, unarchived and without artifact duplicates;
+//! reviews and staleness are identified on read.
 
 use ruth_core::application::{Snapshot, Store};
 use ruth_core::domain::{
@@ -18,13 +18,13 @@ fn setup() -> (Store, ProjectId, ModuleId, ArtifactId, VersionId) {
     let module = ModuleId::new("mod-1").expect("id");
     let req = ArtifactId::new("req-1").expect("id");
     let mut store = Store::new();
-    store.create_project(project.clone()).expect("proyecto");
+    store.create_project(project.clone()).expect("project");
     store
         .create_module(&project, module.clone())
-        .expect("módulo");
+        .expect("module");
     store
         .create_artifact(&project, &module, req.clone(), ArtifactType::Requirement)
-        .expect("artefacto");
+        .expect("artifact");
     let v1 = VersionId::new("req-1-v1").expect("id");
     store
         .create_version(
@@ -53,7 +53,7 @@ fn save_req(store: &mut Store, project: &ProjectId, req: &ArtifactId, id: &str) 
             &human("ana"),
             &[],
         )
-        .expect("versión");
+        .expect("version");
     vid
 }
 
@@ -65,17 +65,17 @@ fn delivery_needs_no_approval() -> Result<(), CoreError> {
     let delivery = store.create_work_delivery(
         &project,
         DeliveryId::new("entrega-1")?,
-        "Trabajo del lunes".to_string(),
+        "Monday work".to_string(),
         None,
         Some(module.clone()),
         &[(req.clone(), v1.clone())],
         at,
     )?;
-    assert_eq!(delivery.name(), "Trabajo del lunes");
+    assert_eq!(delivery.name(), "Monday work");
     assert_eq!(delivery.scope_module(), Some(&module));
     assert_eq!(delivery.entries(), &[(req, v1)]);
     assert_eq!(store.deliveries().len(), 1);
-    // La baseline aprobada sigue exigiendo revisión: invariantes separadas.
+    // The approved baseline still requires review: separate invariants.
     let err = store
         .create_baseline(
             &project,
@@ -83,7 +83,7 @@ fn delivery_needs_no_approval() -> Result<(), CoreError> {
             delivery.entries(),
             Date::new("2026-10-28T10:00:00Z")?,
         )
-        .expect_err("baseline sin aprobar");
+        .expect_err("unapproved baseline");
     assert!(matches!(err, CoreError::VersionNotApproved { .. }));
     Ok(())
 }
@@ -91,21 +91,21 @@ fn delivery_needs_no_approval() -> Result<(), CoreError> {
 #[test]
 fn delivery_rejects_structural_problems() -> Result<(), CoreError> {
     let (mut store, project, module, req, v1) = setup();
-    let at = || Date::new("2026-10-28T10:00:00Z").expect("fecha");
-    // Vacía.
+    let at = || Date::new("2026-10-28T10:00:00Z").expect("date");
+    // Empty.
     let err = store
         .create_work_delivery(
             &project,
             DeliveryId::new("e-vacia")?,
-            "Vacía".to_string(),
+            "Empty".to_string(),
             None,
             None,
             &[],
             at(),
         )
-        .expect_err("vacía");
+        .expect_err("empty");
     assert_eq!(err, CoreError::EmptyDelivery);
-    // Versión obsoleta: solo actuales.
+    // Obsolete version: current ones only.
     let v2 = save_req(&mut store, &project, &req, "req-1-v2");
     let err = store
         .create_work_delivery(
@@ -132,7 +132,7 @@ fn delivery_rejects_structural_problems() -> Result<(), CoreError> {
         )
         .expect_err("duplicado");
     assert!(matches!(err, CoreError::DeliveryDuplicateArtifact { .. }));
-    // Alcance de otro proyecto.
+    // Scope from another project.
     let other_project = ProjectId::new("proy-9")?;
     store.create_project(other_project.clone())?;
     let other_module = ModuleId::new("mod-9")?;
@@ -163,7 +163,7 @@ fn delivery_rejects_structural_problems() -> Result<(), CoreError> {
         )
         .expect_err("archivada");
     assert!(matches!(err, CoreError::ArchivedArtifact { .. }));
-    // El módulo no se tocó en el intento de alcance ajeno.
+    // The module was untouched by the foreign-scope attempt.
     assert!(store.module(&module).is_some());
     Ok(())
 }
@@ -182,15 +182,15 @@ fn delivery_freezes_titles_and_stays_immutable() -> Result<(), CoreError> {
     let delivery = store.create_work_delivery(
         &project,
         DeliveryId::new("entrega-1")?,
-        "Con título".to_string(),
-        Some("para exportar".to_string()),
+        "With title".to_string(),
+        Some("for export".to_string()),
         None,
         &[(req.clone(), v1)],
         Date::new("2026-10-28T10:00:00Z")?,
     )?;
     assert_eq!(delivery.title_of(&req), Some(Some("Confirmar venta")));
-    assert_eq!(delivery.description(), Some("para exportar"));
-    // Retitular después no mueve la entrega.
+    assert_eq!(delivery.description(), Some("for export"));
+    // Retitling later does not move the delivery.
     store.rename_artifact(
         &project,
         &req,
@@ -201,7 +201,7 @@ fn delivery_freezes_titles_and_stays_immutable() -> Result<(), CoreError> {
     )?;
     let frozen = store
         .delivery(&DeliveryId::new("entrega-1")?)
-        .expect("entrega");
+        .expect("delivery");
     assert_eq!(frozen.title_of(&req), Some(Some("Confirmar venta")));
     assert_eq!(frozen.entries().len(), 1);
     Ok(())
@@ -256,7 +256,7 @@ fn reconstitute_validates_deliveries() -> Result<(), CoreError> {
     };
     let loaded = Store::reconstitute(snapshot)?;
     assert_eq!(loaded.deliveries().len(), 1);
-    // Entrada colgada: se rechaza sin cargar nada.
+    // Dangling entry: rejected without loading anything.
     let ghost = VersionId::new("req-1-v99")?;
     let bad = Snapshot {
         projects: loaded.projects().iter().map(|p| (*p).clone()).collect(),

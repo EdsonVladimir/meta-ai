@@ -1,9 +1,20 @@
-// Árbol presentacional del explorador: roles tree/treeitem/group con
-// teclado completo (flechas, Inicio/Fin, type-ahead; Enter/Espacio activan
-// por ser botones nativos) y roving tabindex. Sin carga ni Zustand: recibe
-// el bosque ya construido y emite intenciones.
+// Presentational explorer tree: tree/treeitem/group roles with
+// full keyboard (arrows, Home/End, type-ahead; Enter/Space activate
+// as native buttons) and roving tabindex. No loading or Zustand: it receives
+// the already-built forest and emits intents.
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  RuthDesignIcon,
+  RuthFolderIcon,
+  RuthMockupIcon,
+  RuthModuleIcon,
+  RuthOtherIcon,
+  RuthProjectIcon,
+  RuthRequirementIcon,
+  RuthStatusIcon,
+} from "../../components/icons";
 import type { ArchiveAction } from "../requirements/archive";
+import type { CodeLinkDto } from "../code/types";
 import {
   findTypeahead,
   flattenVisible,
@@ -13,11 +24,11 @@ import {
 
 interface ExplorerTreeProps {
   /**
-   * Bosque con `selected` ya marcado por fila (requisito y diseño
-   * coexisten; un diseño aparece en el índice y bajo cada requisito).
+   * Forest with `selected` already marked per row (requirement and design
+   * coexist; a design shows in the index and under each requirement).
    */
   forest: FlatNode[];
-  /** Fila que sigue el foco al cambiar la selección externa. */
+  /** Row that follows focus when the external selection changes. */
   followId: string | null;
   busy: boolean;
   onToggle: (nodeId: string) => void;
@@ -29,10 +40,14 @@ interface ExplorerTreeProps {
   onNewRequirement: (projectId: string, moduleId: string) => void;
   onPropose: (projectId: string, moduleId: string) => void;
   onNewMockup: (projectId: string, moduleId: string) => void;
-  /** Archivar, restaurar o eliminar un módulo o requisito. */
+  /** Archive, restore or delete a module or requirement. */
   onArchiveAction: (node: FlatNode, action: ArchiveAction) => void;
-  /** Renombrar un proyecto, módulo, requisito, diseño o mockup. */
+  /** Rename a project, module, requirement, design or mockup. */
   onRename: (node: FlatNode) => void;
+  /** Module↔path links per module (selected project). */
+  moduleLinks?: Record<string, CodeLinkDto[]>;
+  /** Jump to a folder in the code tree. */
+  onOpenInCode?: (rootId: string, rel: string) => void;
 }
 
 function Chevron({ expanded }: { expanded: boolean }) {
@@ -57,38 +72,42 @@ function Chevron({ expanded }: { expanded: boolean }) {
 }
 
 function KindIcon({ node }: { node: FlatNode }) {
-  const d =
-    node.kind === "project"
-      ? "M1 3.5A1.5 1.5 0 0 1 2.5 2h3l1.5 2h3.5A1.5 1.5 0 0 1 12 5.5v4a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 1 9.5v-6Z"
-      : node.kind === "module"
-        ? "M6 1 11 3.5v5L6 11 1 8.5v-5L6 1Z M1 3.5 6 6l5-2.5 M6 6v5"
-        : node.kind === "design"
-          ? "M2 2h8v8H2z M2 5h8 M5 5v5"
-          : node.kind === "mockup"
-            ? "M2 1.5h8v9H2z M2 3.5h8 M4 6.5h4"
-            : "M3 1.5h4.5L10 4v6.5H3V1.5Z M7.5 1.5V4H10";
-  return (
-    <svg viewBox="0 0 12 12" width="13" height="13" aria-hidden="true" className="node-icon">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-    </svg>
-  );
+  switch (node.kind) {
+    case "project":
+      return <RuthProjectIcon />;
+    case "module":
+      return <RuthModuleIcon />;
+    case "requirement":
+      return <RuthRequirementIcon />;
+    case "design":
+      return <RuthDesignIcon />;
+    case "mockup":
+    case "screen":
+      return <RuthMockupIcon />;
+    case "reqGroup":
+    case "designGroup":
+    case "mockupGroup":
+      return <RuthFolderIcon open={node.expanded} />;
+    default:
+      return <RuthOtherIcon />;
+  }
 }
 
 function designKindLabel(kind: string | null): string {
-  if (kind === "flow") return "flujo";
-  if (kind === "data_model") return "datos";
+  if (kind === "flow") return "flow";
+  if (kind === "data_model") return "data";
   if (kind === "mockup") return "mockup";
   return kind ?? "";
 }
 
 /**
- * Título completo de la fila: en accesos incluye el vínculo para
- * consultarlo en el tooltip sin badges redundantes que roben espacio.
+ * Full row title: on shortcuts it includes the link, so the tooltip
+ * shows it without redundant space-stealing badges.
  */
 function rowTitle(node: FlatNode): string {
   if (node.linkKind === null) return node.title;
-  const link = node.linkKind === "direct" ? "directo" : "transitivo";
-  return `${node.title} · vínculo ${link}${node.staleLink ? " desactualizado" : ""}`;
+  const link = node.linkKind === "direct" ? "direct" : "transitive";
+  return `${node.title} · ${link} link${node.staleLink ? ", stale" : ""}`;
 }
 
 export function ExplorerTree({
@@ -106,18 +125,20 @@ export function ExplorerTree({
   onNewMockup,
   onArchiveAction,
   onRename,
+  moduleLinks,
+  onOpenInCode,
 }: ExplorerTreeProps) {
   const rows = useMemo(() => flattenVisible(forest), [forest]);
   const focusable = useMemo(() => rows.filter(isFocusable), [rows]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Un solo menú contextual abierto (id de fila o null).
+  // A single open context menu (row id or null).
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const buttonsRef = useRef(new Map<string, HTMLButtonElement>());
   const typeRef = useRef({ buffer: "", timer: 0 });
 
-  // El foco sigue a la selección externa solo cuando esta cambia (sin
-  // robar el foco del teclado); si la fila activa desaparece por una
-  // contracción, cae a la primera visible.
+  // Focus follows the external selection only when it changes (without
+  // stealing keyboard focus); when the active row vanishes through a
+  // collapse, it falls to the first visible one.
   const prevSelectedRef = useRef<string | null>(null);
   useEffect(() => {
     const selectionChanged = prevSelectedRef.current !== followId;
@@ -196,7 +217,7 @@ export function ExplorerTree({
       default:
         break;
     }
-    // Type-ahead: un carácter salta a la siguiente coincidencia visible.
+    // Type-ahead: one character jumps to the next visible match.
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       const state = typeRef.current;
       window.clearTimeout(state.timer);
@@ -216,8 +237,14 @@ export function ExplorerTree({
 
   function renderNodes(nodes: FlatNode[], grouped: boolean) {
     return (
-      <ul role={grouped ? "group" : "tree"} aria-label={grouped ? undefined : "Proyectos"}>
-        {nodes.map((node) => (
+      <ul role={grouped ? "group" : "tree"} aria-label={grouped ? undefined : "Projects"}>
+        {nodes.map((node) => {
+          // Module↔path links of the selected project (chip + jump).
+          const codeLinks =
+            node.kind === "module" && node.moduleId !== null
+              ? (moduleLinks?.[node.moduleId] ?? [])
+              : [];
+          return (
           <li
             key={node.id}
             role="treeitem"
@@ -248,7 +275,7 @@ export function ExplorerTree({
                       type="button"
                       tabIndex={-1}
                       className="chev-btn"
-                      aria-label={`${node.expanded ? "Contraer" : "Expandir"} ${node.label}`}
+                      aria-label={`${node.expanded ? "Collapse" : "Expand"} ${node.label}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggle(node.id);
@@ -274,9 +301,7 @@ export function ExplorerTree({
                       onActivate(node);
                     }}
                   >
-                    {node.kind !== "reqGroup" && node.kind !== "designGroup" && node.kind !== "mockupGroup" && (
-                      <KindIcon node={node} />
-                    )}
+                    <KindIcon node={node} />
                     <span className="tree-text">
                       <span className="tree-primary">
                         {node.kind === "reqGroup" || node.kind === "designGroup" || node.kind === "mockupGroup" ? (
@@ -300,22 +325,22 @@ export function ExplorerTree({
                       <span className="kind-badge">{designKindLabel(node.artifactKind)}</span>
                     )}
                     {node.linkKind === "transitive" && (
-                      <span className="link-badge" title="El diseño llega vía otros diseños">
-                        transitivo
+                      <span className="link-badge" title="The design arrives via other designs">
+                        transitive
                       </span>
                     )}
                     {node.linkKind !== null && (
                       <span className="sr-only">
-                        Vínculo {node.linkKind === "direct" ? "directo" : "transitivo"}
-                        {node.staleLink ? ", desactualizado" : ""}
+                        {node.linkKind === "direct" ? "Direct" : "Transitive"} link
+                        {node.staleLink ? ", stale" : ""}
                       </span>
                     )}
                     {node.staleLink && (
                       <span
                         className="stale-badge"
-                        title="Fija versiones que ya no son las actuales"
+                        title="Pins versions that are no longer current"
                       >
-                        desactualizado
+                        stale
                       </span>
                     )}
                     {node.approved !== null && (
@@ -323,22 +348,39 @@ export function ExplorerTree({
                         className={node.approved ? "review-badge ok" : "review-badge draft"}
                         title={
                           node.approved
-                            ? "Versión actual revisada (opcional)"
-                            : "Sin revisar: informativo, no bloquea"
+                            ? "Current version reviewed (optional)"
+                            : "Not reviewed: informational, never blocks"
                         }
                       >
-                        {node.approved ? "revisado" : "sin revisar"}
+                        {node.approved ? "reviewed" : "not reviewed"}
                       </span>
                     )}
                     {node.archived && (
-                      <span className="archived-badge" title="Archivado: solo lectura">
-                        archivado
+                      <span className="archived-badge" title="Archived: read-only">
+                        archived
+                      </span>
+                    )}
+                    {codeLinks.length > 0 && (
+                      <span
+                        className="code-badge"
+                        title={`Linked folder: ${codeLinks[0].rootId}/${codeLinks[0].rel}`}
+                      >
+                        {codeLinks[0].rel}
+                        {codeLinks.length > 1 && ` +${codeLinks.length - 1}`}
                       </span>
                     )}
                   </button>
+                  {codeLinks.length > 0 && onOpenInCode !== undefined && (
+                    <RowAction
+                      label={`Open in code: ${codeLinks[0].rel}`}
+                      symbol="↗"
+                      busy={busy}
+                      onClick={() => onOpenInCode(codeLinks[0].rootId, codeLinks[0].rel)}
+                    />
+                  )}
                   {node.kind === "project" && node.projectId !== null && (
                     <RowAction
-                      label={`Crear módulo en ${node.projectId}`}
+                      label={`Create module in ${node.projectId}`}
                       symbol="+"
                       busy={busy}
                       onClick={() => onCreateModule(node.projectId as string)}
@@ -351,8 +393,8 @@ export function ExplorerTree({
                         <RowAction
                           label={
                             node.archived
-                              ? `Módulo archivado: restaura ${node.moduleId} para crear`
-                              : `Crear requisito en ${node.moduleId}`
+                              ? `Archived module: restore ${node.moduleId} to create`
+                              : `Create requirement in ${node.moduleId}`
                           }
                           symbol="+"
                           busy={busy}
@@ -364,10 +406,10 @@ export function ExplorerTree({
                         <RowAction
                           label={
                             node.archived
-                              ? `Módulo archivado: restaura ${node.moduleId} para proponer`
-                              : `Proponer requisitos con IA en ${node.moduleId}`
+                              ? `Archived module: restore ${node.moduleId} to propose`
+                              : `Propose requirements with AI in ${node.moduleId}`
                           }
-                          symbol="IA"
+                          symbol="AI"
                           busy={busy}
                           disabled={node.archived}
                           onClick={() =>
@@ -382,8 +424,8 @@ export function ExplorerTree({
                       <RowAction
                         label={
                           node.archived
-                            ? `Módulo archivado: restaura ${node.moduleId} para crear`
-                            : `Crear mockup en ${node.moduleId}`
+                            ? `Archived module: restore ${node.moduleId} to create`
+                            : `Create mockup in ${node.moduleId}`
                         }
                         symbol="+"
                         busy={busy}
@@ -419,7 +461,8 @@ export function ExplorerTree({
               </>
             )}
           </li>
-        ))}
+          );
+        })}
       </ul>
     );
   }
@@ -443,13 +486,14 @@ function StatusRow({
   onRetryGraph: (projectId: string, moduleId: string) => void;
 }) {
   if (node.loadState === "error") {
-    // El reintento necesita su contexto: se deduce del id del padre.
+    // Retrying needs its context: derived from the parent id.
     const parentId = node.id.slice(0, node.id.lastIndexOf("#"));
     const projectMatch = /^p:(.+)$/.exec(parentId);
     const moduleMatch = /^g:([^/]+)\/(.+)\/(req|design|mockup)$/.exec(parentId);
     const linkMatch = /^ls:(.+)$/.exec(parentId);
     return (
       <span className="tree-status error">
+        <RuthStatusIcon />
         <span className="tree-text">{node.label}</span>
         {(projectMatch ?? moduleMatch ?? linkMatch) && (
           <button
@@ -463,7 +507,7 @@ function StatusRow({
               }
             }}
           >
-            Reintentar
+            Retry
           </button>
         )}
       </span>
@@ -471,6 +515,7 @@ function StatusRow({
   }
   return (
     <span className="tree-status hint">
+      <RuthStatusIcon />
       <span className="tree-text">{node.label}</span>
     </span>
   );
@@ -507,11 +552,11 @@ function RowAction({
 }
 
 /**
- * Menú contextual de una fila (proyecto, módulo, requisito o diseño):
- * renombrar, archivar o restaurar según su estado, y eliminar
- * definitivamente (el resumen previo decide si es seguro). Los proyectos no
- * se archivan ni eliminan: solo se renombran. Se cierra con Escape, al
- * elegir o al pulsar fuera.
+ * A row's context menu (project, module, requirement or design): rename,
+ * archive or restore per its state, and delete permanently (the preview
+ * summary decides whether it is safe). Projects are never archived: only
+ * renamed or deleted (empty and loose). Closes with Escape, on pick or
+ * when clicking outside.
  */
 function RowMenu({
   node,
@@ -555,14 +600,14 @@ function RowMenu({
 
   const what =
     node.kind === "module"
-      ? "módulo"
+      ? "module"
       : node.kind === "design"
-        ? "diagrama"
+        ? "design"
         : node.kind === "mockup"
           ? "mockup"
           : node.kind === "project"
-            ? "proyecto"
-            : "requisito";
+            ? "project"
+            : "requirement";
   const name = node.artifactId ?? node.moduleId ?? node.label;
   return (
     <div className="tree-menu-wrap" ref={menuRef}>
@@ -570,8 +615,8 @@ function RowMenu({
         type="button"
         ref={triggerRef}
         className="tree-action"
-        aria-label={`Acciones para ${name}`}
-        title={`Acciones para ${name}`}
+        aria-label={`Actions for ${name}`}
+        title={`Actions for ${name}`}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={busy}
@@ -583,53 +628,58 @@ function RowMenu({
         …
       </button>
       {open && (
-        <div className="tree-menu" role="menu" aria-label={`Acciones para ${name}`}>
+        <div className="tree-menu" role="menu" aria-label={`Actions for ${name}`}>
           <button
             type="button"
             role="menuitem"
             disabled={node.archivedOwn}
-            title={node.archivedOwn ? "Restaura el elemento antes de renombrarlo" : undefined}
+            title={node.archivedOwn ? "Restore the item before renaming it" : undefined}
             onClick={(e) => {
               e.stopPropagation();
               onRename();
             }}
           >
-            Renombrar {what}
+            Rename {what}
           </button>
-          {node.kind === "project" ? null : node.archivedOwn ? (
+          {(node.kind === "module" || node.kind === "requirement") &&
+            (node.archivedOwn ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction("restore");
+                }}
+              >
+                Restore {what}
+              </button>
+            ) : (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction("archive");
+                }}
+              >
+                Archive {what}
+              </button>
+            ))}
+          {(node.kind === "project" ||
+            node.kind === "module" ||
+            node.kind === "requirement") && (
             <button
               type="button"
               role="menuitem"
+              className="danger-item"
               onClick={(e) => {
                 e.stopPropagation();
-                onAction("restore");
+                onAction("delete");
               }}
             >
-              Restaurar {what}
-            </button>
-          ) : (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAction("archive");
-              }}
-            >
-              Archivar {what}
+              Delete permanently…
             </button>
           )}
-          <button
-            type="button"
-            role="menuitem"
-            className="danger-item"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAction("delete");
-            }}
-          >
-            Eliminar definitivamente…
-          </button>
         </div>
       )}
     </div>

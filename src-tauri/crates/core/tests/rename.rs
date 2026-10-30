@@ -1,6 +1,6 @@
-//! Renombrado: nombres organizativos y títulos como metadato separado del
-//! contenido. Sin cambios de identidad, versiones, fuentes, aprobaciones ni
-//! impacto; con historial de títulos y títulos fijados en baselines.
+//! Renaming: organizational names and titles as metadata separate from
+//! content. No identity, version, source, approval or impact changes;
+//! with title history and titles pinned in baselines.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{
@@ -17,13 +17,13 @@ fn setup() -> (Store, ProjectId, ModuleId, ArtifactId) {
     let module = ModuleId::new("mod-1").expect("id");
     let req = ArtifactId::new("req-1").expect("id");
     let mut store = Store::new();
-    store.create_project(project.clone()).expect("proyecto");
+    store.create_project(project.clone()).expect("project");
     store
         .create_module(&project, module.clone())
-        .expect("módulo");
+        .expect("module");
     store
         .create_artifact(&project, &module, req.clone(), ArtifactType::Requirement)
-        .expect("artefacto");
+        .expect("artifact");
     (store, project, module, req)
 }
 
@@ -39,17 +39,17 @@ fn rename(
             project,
             artifact,
             expected,
-            Name::new(title.to_string()).expect("nombre"),
+            Name::new(title.to_string()).expect("name"),
             &HumanId::new("ana").expect("id"),
-            Date::new("2026-10-28").expect("fecha"),
+            Date::new("2026-10-28").expect("date"),
         )
-        .expect("renombrar");
+        .expect("rename");
 }
 
 #[test]
 fn rename_all_four_kinds_without_touching_identity() {
     let (mut store, project, module, req) = setup();
-    // Nombres iniciales = IDs.
+    // Initial names = IDs.
     assert_eq!(store.project(&project).expect("p").name(), "proy-1");
     assert_eq!(store.module(&module).expect("m").name(), "mod-1");
     assert_eq!(store.artifact(&req).expect("a").title(), None);
@@ -60,7 +60,7 @@ fn rename_all_four_kinds_without_touching_identity() {
             "proy-1",
             Name::new("Ventas 2026".to_string()).expect("n"),
         )
-        .expect("proyecto");
+        .expect("project");
     store
         .rename_module(
             &project,
@@ -68,7 +68,7 @@ fn rename_all_four_kinds_without_touching_identity() {
             "mod-1",
             Name::new("Ventas mostrador".to_string()).expect("n"),
         )
-        .expect("módulo");
+        .expect("module");
     rename(
         &mut store,
         &project,
@@ -79,7 +79,7 @@ fn rename_all_four_kinds_without_touching_identity() {
     let flow = ArtifactId::new("flujo-1").expect("id");
     store
         .create_artifact(&project, &module, flow.clone(), ArtifactType::Flow)
-        .expect("flujo");
+        .expect("flow");
     rename(&mut store, &project, &flow, None, "Flujo de caja");
 
     assert_eq!(store.project(&project).expect("p").name(), "Ventas 2026");
@@ -122,7 +122,7 @@ fn rename_does_not_create_versions_or_invalidate_approvals() {
             &human("bruno"),
             Date::new("2026-10-28").expect("f"),
         )
-        .expect("aprobar");
+        .expect("approve");
     rename(&mut store, &project, &req, None, "Descontar stock");
     rename(
         &mut store,
@@ -137,7 +137,7 @@ fn rename_does_not_create_versions_or_invalidate_approvals() {
     assert_eq!(store.current_version(&req).expect("v").id(), &v1);
     assert!(store.is_approved(&v1));
     assert_eq!(store.approvals_of(&v1).len(), 1);
-    // Historial de títulos registrado en orden.
+    // Title history recorded in order.
     let history: Vec<&str> = store
         .title_history(&req)
         .iter()
@@ -152,7 +152,7 @@ fn rename_does_not_create_impact_and_allows_duplicates() {
     let flow = ArtifactId::new("flujo-1").expect("id");
     store
         .create_artifact(&project, &module, flow.clone(), ArtifactType::Flow)
-        .expect("flujo");
+        .expect("flow");
     let v1 = VersionId::new("req-1-v1").expect("id");
     store
         .create_version(
@@ -176,10 +176,10 @@ fn rename_does_not_create_impact_and_allows_duplicates() {
             std::slice::from_ref(&v1),
         )
         .expect("f1");
-    // Mismo título en dos artefactos: permitido, la identidad manda.
+    // Same title on two artifacts: allowed, identity wins.
     rename(&mut store, &project, &req, None, "Ventas");
     rename(&mut store, &project, &flow, None, "Ventas");
-    // Sin versiones nuevas no hay impacto que calcular.
+    // Without new versions there is no impact to compute.
     assert_eq!(store.versions_of(&req).len(), 1);
     assert_eq!(store.versions_of(&flow).len(), 1);
     assert!(store.validity(&v1).expect("v").valid);
@@ -221,13 +221,13 @@ fn rename_rejects_stale_expectations_without_mutating() {
             &HumanId::new("ana").expect("id"),
             Date::new("2026-10-28").expect("f"),
         )
-        .expect_err("debe fallar");
+        .expect_err("must fail");
     assert!(matches!(err, CoreError::StaleName { .. }));
     assert_eq!(store, before);
-    // Proyecto y módulo igual, con nombres esperados.
+    // Same project and module, with expected names.
     let err = store
-        .rename_project(&project, "otro", Name::new("Nuevo".to_string()).expect("n"))
-        .expect_err("debe fallar");
+        .rename_project(&project, "other", Name::new("New".to_string()).expect("n"))
+        .expect_err("must fail");
     assert!(matches!(err, CoreError::StaleName { .. }));
     assert_eq!(store, before);
 }
@@ -237,33 +237,33 @@ fn rename_is_blocked_on_archived_elements() {
     let (mut store, project, module, req) = setup();
     store
         .set_module_archived(&project, &module, true)
-        .expect("archivar");
+        .expect("archive");
     let err = store
         .rename_module(
             &project,
             &module,
             "mod-1",
-            Name::new("Nuevo".to_string()).expect("n"),
+            Name::new("New".to_string()).expect("n"),
         )
-        .expect_err("debe fallar");
+        .expect_err("must fail");
     assert!(matches!(err, CoreError::ArchivedModule { .. }));
-    // Por contexto también bloquea el artefacto.
+    // By context it blocks the artifact too.
     let err = store
         .rename_artifact(
             &project,
             &req,
             None,
-            Name::new("Nuevo".to_string()).expect("n"),
+            Name::new("New".to_string()).expect("n"),
             &HumanId::new("ana").expect("id"),
             Date::new("2026-10-28").expect("f"),
         )
-        .expect_err("debe fallar");
+        .expect_err("must fail");
     assert!(matches!(err, CoreError::ArchivedArtifact { .. }));
-    // Restaurar desbloquea.
+    // Restoring unlocks.
     store
         .set_module_archived(&project, &module, false)
-        .expect("restaurar");
-    rename(&mut store, &project, &req, None, "Nuevo");
+        .expect("restore");
+    rename(&mut store, &project, &req, None, "New");
 }
 
 #[test]
@@ -289,8 +289,8 @@ fn baselines_pin_titles_and_ignore_later_renames() {
             &human("bruno"),
             Date::new("2026-10-28").expect("f"),
         )
-        .expect("aprobar");
-    rename(&mut store, &project, &req, None, "Título original");
+        .expect("approve");
+    rename(&mut store, &project, &req, None, "Original title");
     let base = BaselineId::new("base-1").expect("id");
     store
         .create_baseline(
@@ -304,16 +304,13 @@ fn baselines_pin_titles_and_ignore_later_renames() {
         &mut store,
         &project,
         &req,
-        Some("Título original"),
-        "Título nuevo",
+        Some("Original title"),
+        "New title",
     );
 
     let baseline = store.baseline(&base).expect("b");
-    assert_eq!(baseline.title_of(&req), Some(Some("Título original")));
-    assert_eq!(
-        store.artifact(&req).expect("a").title(),
-        Some("Título nuevo")
-    );
+    assert_eq!(baseline.title_of(&req), Some(Some("Original title")));
+    assert_eq!(store.artifact(&req).expect("a").title(), Some("New title"));
 }
 
 #[test]
@@ -321,6 +318,6 @@ fn delete_removes_title_history_with_the_artifact() {
     let (mut store, project, _module, req) = setup();
     rename(&mut store, &project, &req, None, "Temporal");
     assert_eq!(store.title_history(&req).len(), 1);
-    store.delete_artifact(&project, &req).expect("borrar");
+    store.delete_artifact(&project, &req).expect("delete");
     assert!(store.title_history(&req).is_empty());
 }

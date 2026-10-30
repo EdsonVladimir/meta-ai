@@ -1,6 +1,6 @@
-//! Aplicación: coordinación de casos de uso sobre un [`Store`] en memoria.
+//! Application: use-case coordination over an in-memory [`Store`].
 //!
-//! Cada operación valida todo antes de mutar: un error deja el estado intacto.
+//! Each operation validates everything before mutating: an error leaves state intact.
 
 mod store;
 

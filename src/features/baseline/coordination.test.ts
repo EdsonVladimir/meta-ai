@@ -8,13 +8,13 @@ import {
   prepareKey,
 } from "./coordination";
 
-describe("frescura de respuestas", () => {
-  it("descarta respuestas de otra consulta", () => {
+describe("response freshness", () => {
+  it("discards responses from another query", () => {
     expect(isStaleBaselineResponse("a", "b")).toBe(true);
     expect(isStaleBaselineResponse("a", "a")).toBe(false);
   });
 
-  it("la clave incluye proyecto, módulo y selección ordenada", () => {
+  it("the key includes project, module and sorted selection", () => {
     const one = prepareKey("p", "m", ["b", "a"]);
     const two = prepareKey("p", "m", ["a", "b"]);
     expect(one).toBe(two);
@@ -23,44 +23,44 @@ describe("frescura de respuestas", () => {
   });
 });
 
-describe("nombre del ZIP", () => {
-  it("deriva un nombre seguro del nombre y el ID", () => {
-    expect(defaultZipName("Entrega ventas", "base-1")).toBe("entrega-ventas-base-1.zip");
+describe("ZIP naming", () => {
+  it("derives a safe name from the name and ID", () => {
+    expect(defaultZipName("Sales delivery", "base-1")).toBe("sales-delivery-base-1.zip");
   });
 
-  it("neutraliza separadores y caracteres especiales", () => {
+  it("neutralizes separators and special characters", () => {
     const name = defaultZipName("../../etc/evil ñandú", "base-../1");
     expect(name).not.toContain("/");
     expect(name).not.toContain("..");
     expect(name).toMatch(/^[a-z0-9-]+\.zip$/);
   });
 
-  it("usa valores por defecto si no queda nada", () => {
-    expect(defaultZipName("!!!", "???")).toBe("entrega-baseline.zip");
+  it("falls back to defaults when nothing remains", () => {
+    expect(defaultZipName("!!!", "???")).toBe("delivery-baseline.zip");
   });
 });
 
-describe("tamaños", () => {
-  it("formatea bytes, KB y MB", () => {
+describe("sizes", () => {
+  it("formats bytes, KB and MB", () => {
     expect(formatBytes(512)).toBe("512 B");
     expect(formatBytes(2048)).toBe("2.0 KB");
     expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
   });
 
-  it("no inventa valores ante entradas inválidas", () => {
+  it("invents no values for invalid inputs", () => {
     expect(formatBytes(-1)).toBe("—");
     expect(formatBytes(Number.NaN)).toBe("—");
   });
 });
 
-describe("etiquetas", () => {
-  it("nombra tipos y bloqueos conocidos", () => {
-    expect(kindLabel("requirement")).toBe("requisito");
-    expect(kindLabel("flow")).toBe("flujo");
-    expect(kindLabel("data_model")).toBe("modelo ER");
-    expect(kindLabel("raro")).toBe("raro");
-    expect(blockerTitle("draft")).toBe("Sin aprobar");
-    expect(blockerTitle("stale_sources")).toBe("Fuentes desactualizadas");
-    expect(blockerTitle("otro")).toBe("otro");
+describe("labels", () => {
+  it("names known kinds and blockers", () => {
+    expect(kindLabel("requirement")).toBe("requirement");
+    expect(kindLabel("flow")).toBe("flow");
+    expect(kindLabel("data_model")).toBe("ER model");
+    expect(kindLabel("weird")).toBe("weird");
+    expect(blockerTitle("draft")).toBe("Unapproved");
+    expect(blockerTitle("stale_sources")).toBe("Stale sources");
+    expect(blockerTitle("other")).toBe("other");
   });
 });

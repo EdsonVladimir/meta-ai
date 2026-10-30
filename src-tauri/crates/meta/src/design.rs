@@ -1,30 +1,30 @@
-//! Generación asistida de diseño vinculado a requisitos (hito 6).
+//! Assisted generation of requirement-linked design (milestone 6).
 //!
-//! Misma modalidad que `generation`: Responses API con `text.format`
-//! (`type: "json_schema"`) y validación autoritativa en Rust. Cada llamada
-//! genera UNA propuesta de flujo de operación o de modelo entidad-relación
-//! a partir de requisitos seleccionados (versiones guardadas).
+//! Same mode as `generation`: Responses API with `text.format`
+//! (`type: "json_schema"`) and authoritative validation in Rust. Each call
+//! generates ONE operation-flow or entity-relationship model proposal from
+//! selected requirements (saved versions).
 //!
-//! ## Subconjunto inicial (documentado, no es un modelador UML universal)
+//! ## Initial subset (documented; not a universal UML modeler)
 //!
-//! Flujo: nodos con identidad (`[A-Za-z0-9_]`), tipo (`start`, `step`,
-//! `decision`, `end`), etiqueta y requisitos referenciados; aristas con
-//! origen, destino y etiqueta opcional. Los ciclos en el flujo son válidos
-//! (un bucle de operación no es un ciclo de dependencias del núcleo).
+//! Flow: nodes with identity (`[A-Za-z0-9_]`), kind (`start`, `step`,
+//! `decision`, `end`), label and referenced requirements; edges with
+//! origin, destination and optional label. Cycles in the flow are valid
+//! (an operation loop is not a core dependency cycle).
 //!
-//! ER: entidades con nombre (`[A-Za-z0-9_]`), atributos (nombre + marca de
-//! clave, SIN tipos: fuera del subconjunto) y requisitos referenciados;
-//! relaciones con extremos, etiqueta opcional y cardinalidades del conjunto
-//! `1`, `0..1`, `N`, `0..N`.
+//! ER: entities with name (`[A-Za-z0-9_]`), attributes (name + key mark,
+//! NO types: outside the subset) and referenced requirements; relations
+//! with endpoints, optional label and cardinalities from the set `1`,
+//! `0..1`, `N`, `0..N`.
 //!
-//! Las referencias a requisitos usan identificadores de ARTEFACTO (`req-3`),
-//! estables ante nuevas versiones; las versiones exactas utilizadas se
-//! registran aparte, a nivel de generación. Toda referencia debe pertenecer
-//! al conjunto enviado: lo demás se rechaza.
+//! Requirement references use ARTIFACT identifiers (`req-3`), stable
+//! across new versions; the exact versions used are recorded separately,
+//! at generation level. Every reference must belong to the sent set:
+//! anything else is rejected.
 //!
-//! El JSON canónico es el contenido autoritativo; Mermaid se deriva con
-//! `to_mermaid` (determinista, con etiquetas escapadas: el modelo no puede
-//! introducir HTML, scripts, directivas ni enlaces).
+//! The canonical JSON is the authoritative content; Mermaid derives from
+//! it with `to_mermaid` (deterministic, with escaped labels: the model
+//! cannot introduce HTML, scripts, directives or links).
 
 use std::time::Duration;
 
@@ -33,15 +33,17 @@ use serde::{Deserialize, Serialize};
 use crate::error::{redact, MetaError, MetaErrorKind};
 use crate::protocol::{classify_transport, parse_error, parse_success_capped, TokenUsage};
 
-/// Versión de la plantilla de instrucciones de diseño. La v2 (diseño vivo)
-/// deja de hablar de requisitos «aprobados»: genera desde versiones
-/// guardadas y pide señalar ambigüedades sin inventar decisiones.
-pub const DESIGN_TEMPLATE_VERSION: u32 = 2;
-/// Límites de entrada (el contexto lo filtra `ruth-api` al módulo activo).
+/// Design instruction template version. v2 (living design) stopped talking
+/// about "approved" requirements: it generates from saved versions and asks
+/// to flag ambiguities without inventing decisions. v3 is the English
+/// translation of the v2 instructions; v1/v2 rows keep describing their
+/// original Spanish prompt.
+pub const DESIGN_TEMPLATE_VERSION: u32 = 3;
+/// Input limits (the context is filtered by `ruth-api` to the active module).
 pub const MAX_DESIGN_CONTEXT_ITEMS: usize = 20;
 pub const MAX_DESIGN_CONTEXT_CONTENT_CHARS: usize = 2000;
 pub const MAX_DESIGN_INPUT_CHARS: usize = 50_000;
-/// Límites de salida por campo y cantidad.
+/// Per-field and count output limits.
 pub const MAX_DESIGN_ID_CHARS: usize = 64;
 pub const MAX_DESIGN_TITLE_CHARS: usize = 200;
 pub const MAX_DESIGN_LABEL_CHARS: usize = 160;
@@ -54,12 +56,12 @@ pub const MAX_FLOW_EDGES: usize = 40;
 pub const MAX_ER_ENTITIES: usize = 16;
 pub const MAX_ER_ATTRIBUTES: usize = 12;
 pub const MAX_ER_RELATIONS: usize = 24;
-/// Límite de salida, timeout y tope de cuerpo (como en requisitos).
+/// Output limit, timeout and body cap (as with requirements).
 pub const DESIGN_MAX_OUTPUT_TOKENS: u32 = 4096;
 pub const DESIGN_TIMEOUT_SECS: u64 = 90;
 pub const DESIGN_MAX_BODY_BYTES: usize = 262_144;
 
-/// Tipo de diseño pedido y validado. Coincide con `ArtifactType` del núcleo
+/// Requested and validated design kind. Matches the core `ArtifactType`
 /// (`Flow` ↔ `"flow"`, `DataModel` ↔ `"data_model"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -75,7 +77,7 @@ impl DesignKind {
             "data_model" => Ok(Self::DataModel),
             other => Err(MetaError::new(
                 MetaErrorKind::InvalidResponse,
-                format!("tipo de diseño desconocido: {other}"),
+                format!("unknown design kind: {other}"),
                 false,
             )),
         }
@@ -89,7 +91,7 @@ impl DesignKind {
     }
 }
 
-/// Tipo de nodo del subconjunto inicial de flujos.
+/// Node kind of the initial flow subset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FlowNodeKind {
@@ -99,7 +101,7 @@ pub enum FlowNodeKind {
     End,
 }
 
-/// Cardinalidad del subconjunto inicial de ER.
+/// Cardinality of the initial ER subset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Cardinality {
     #[serde(rename = "1")]
@@ -119,6 +121,11 @@ pub struct FlowNode {
     pub label: String,
     #[serde(default)]
     pub requirements: Vec<String>,
+    /// `mockup/component` citations motivating the node (informative,
+    /// not dependencies). Omitted when empty to keep earlier designs'
+    /// canonical form unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mockups: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,6 +149,10 @@ pub struct ErEntity {
     pub attributes: Vec<ErAttribute>,
     #[serde(default)]
     pub requirements: Vec<String>,
+    /// `mockup/component` citations motivating the entity (informative,
+    /// not dependencies). Empty ones are omitted from the canonical form.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mockups: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,8 +177,8 @@ pub struct ErSpec {
     pub relations: Vec<ErRelation>,
 }
 
-/// Propuesta validada, lista para registrar. El contenido autoritativo es
-/// `canonical_json`; Mermaid se deriva y nunca se almacena como fuente.
+/// Validated proposal, ready to record. The authoritative content is
+/// `canonical_json`; Mermaid derives from it and is never stored as source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedDesign {
     pub title: String,
@@ -178,7 +189,7 @@ pub struct ValidatedDesign {
     pub questions: Vec<String>,
 }
 
-/// Resultado completo con metadatos de la llamada (modelo y uso, si los da).
+/// Complete result with call metadata (model and usage, when given).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesignResult {
     pub design: ValidatedDesign,
@@ -186,21 +197,21 @@ pub struct DesignResult {
     pub usage: Option<TokenUsage>,
 }
 
-const FLOW_INSTRUCTION: &str = "Eres un diseñador que propone un flujo de operación a partir de requisitos (versiones guardadas). \
-Responde SOLO con el objeto JSON pedido, sin texto adicional. \
-Propón UN flujo: title, nodes (al menos uno; cada uno con id único de letras, dígitos y subrayado, kind entre start, step, decision y end, label y requirements con identificadores de los requisitos enviados), \
-edges (origen y destino existentes, label opcional), explanation breve y questions (como mucho 5, vacía si no hay). \
-Señala ambigüedades en questions y no inventes decisiones como aprobadas.";
+const FLOW_INSTRUCTION: &str = "You are a designer proposing an operation flow from requirements (saved versions). \
+Reply ONLY with the requested JSON object, no extra text. \
+Propose ONE flow: title, nodes (at least one; each with a unique id of letters, digits and underscore, kind among start, step, decision and end, label and requirements with identifiers of the sent requirements), \
+edges (existing origin and destination, optional label), brief explanation and questions (at most 5, empty if none). \
+Flag ambiguities in questions and never invent decisions as approved.";
 
-const ER_INSTRUCTION: &str = "Eres un diseñador que propone un modelo entidad-relación a partir de requisitos (versiones guardadas). \
-Responde SOLO con el objeto JSON pedido, sin texto adicional. \
-Propón UN modelo: title, entities (al menos una; cada una con name único de letras, dígitos y subrayado, attributes con al menos un atributo de name y key, y requirements con identificadores de los requisitos enviados), \
-relations (extremos existentes, label opcional, from_card y to_card entre 1, 0..1, N y 0..N), explanation breve y questions (como mucho 5, vacía si no hay). \
-No propongas tipos de atributos: están fuera del subconjunto. \
-Señala ambigüedades en questions y no inventes decisiones como aprobadas.";
+const ER_INSTRUCTION: &str = "You are a designer proposing an entity-relationship model from requirements (saved versions). \
+Reply ONLY with the requested JSON object, no extra text. \
+Propose ONE model: title, entities (at least one; each with a unique name of letters, digits and underscore, attributes with at least one attribute of name and key, and requirements with identifiers of the sent requirements), \
+relations (existing endpoints, optional label, from_card and to_card among 1, 0..1, N and 0..N), brief explanation and questions (at most 5, empty if none). \
+Do not propose attribute types: they are outside the subset. \
+Flag ambiguities in questions and never invent decisions as approved.";
 
-/// Monta el texto enviado al modelo. El contexto ya llega filtrado a
-/// requisitos seleccionados del módulo; aquí solo se aplican topes.
+/// Builds the text sent to the model. The context already arrives filtered
+/// to selected module requirements; only caps apply here.
 pub fn build_design_input(
     kind: DesignKind,
     context: &[crate::generation::GenerationContextItem],
@@ -225,7 +236,7 @@ pub fn build_design_input(
         .collect();
     loop {
         let input = format!(
-            "{instruction}\n\nRequisitos seleccionados — versiones guardadas (contexto; {}):\n{}",
+            "{instruction}\n\nSelected requirements — saved versions (context; {}):\n{}",
             rendered.len(),
             rendered.join("\n\n")
         );
@@ -236,30 +247,34 @@ pub fn build_design_input(
     }
 }
 
-/// Versión de la plantilla de diseño desde mockups (etapa B): el mismo
-/// esquema de salida, con instrucciones que leen pantallas y componentes.
-pub const DESIGN_MOCKUP_TEMPLATE_VERSION: u32 = 1;
+/// Design-from-mockups template version: the same output schema, with
+/// instructions that read screens and components, cite what motivates
+/// them and only propose technical attributes with justification. v3 is
+/// the English translation; v2 rows keep their original Spanish prompt.
+pub const DESIGN_MOCKUP_TEMPLATE_VERSION: u32 = 3;
 
-const FLOW_FROM_MOCKUP_INSTRUCTION: &str = "Eres un diseñador que propone un flujo de operación a partir de mockups y requisitos (versiones guardadas). \
-Responde SOLO con el objeto JSON pedido, sin texto adicional. \
-Lee las pantallas y sus componentes (textos, campos con su origen declarado, selectores, botones con acción o destino, tablas) y deduce los pasos y decisiones del flujo; relaciona cada elemento con los requisitos enviados cuando corresponda. \
-Propón UN flujo: title, nodes (al menos uno; cada uno con id único de letras, dígitos y subrayado, kind entre start, step, decision y end, label y requirements con identificadores del contexto enviado), \
-edges (origen y destino existentes, label opcional), explanation breve (incluye qué campos o acciones del mockup motivan cada parte) y questions (como mucho 5, vacía si no hay). \
-Si algún dato falta (por ejemplo, generas solo desde mockups sin requisitos), dilo en questions: no inventes reglas, aprobaciones ni certezas. \
-Conserva en explanation los elementos que la persona deba revisar a mano.";
+const FLOW_FROM_MOCKUP_INSTRUCTION: &str = "You are a designer proposing an operation flow from mockups and requirements (saved versions). \
+Reply ONLY with the requested JSON object, no extra text. \
+Read the screens and their components (texts, fields with their declared origin, selectors, buttons with action or destination, tables) and deduce the flow steps and decisions; relate each element to the sent requirements when relevant. \
+Propose ONE flow: title, nodes (at least one; each with a unique id of letters, digits and underscore, kind among start, step, decision and end, label, requirements with identifiers of the sent context and optional mockups with mockup/component citations motivating the node), \
+edges (existing origin and destination, optional label), brief explanation (include which mockup fields or actions motivate each part) and questions (at most 5, empty if none). \
+If any data is missing (for example, you generate only from mockups without requirements), say so in questions: do not invent rules, approvals or certainties. \
+Keep in the explanation the elements a person must review by hand.";
 
-const ER_FROM_MOCKUP_INSTRUCTION: &str = "Eres un diseñador que propone un modelo entidad-relación a partir de mockups y requisitos (versiones guardadas). \
-Responde SOLO con el objeto JSON pedido, sin texto adicional. \
-Lee las pantallas y sus componentes; los campos y tablas con origen persisted sugieren datos guardados, mientras que calculated, temporary, external o undefined NO implican columnas: si los reflejas, explícalo como supuesto. \
-Propón UN modelo: title, entities (al menos una; cada una con name único de letras, dígitos y subrayado, attributes con al menos un atributo de name y key, y requirements con identificadores del contexto enviado), \
-relations (extremos existentes, label opcional, from_card y to_card entre 1, 0..1, N y 0..N), explanation breve (incluye qué campos o tablas del mockup motivan cada entidad) y questions (como mucho 5, vacía si no hay). \
-No propongas tipos de atributos: están fuera del subconjunto. \
-Si algún dato falta (por ejemplo, generas solo desde mockups sin requisitos), dilo en questions: no inventes reglas, aprobaciones ni certezas.";
+const ER_FROM_MOCKUP_INSTRUCTION: &str = "You are a designer proposing an entity-relationship model from mockups and requirements (saved versions). \
+Reply ONLY with the requested JSON object, no extra text. \
+Read the screens and their components; fields and tables with persisted origin suggest stored data, while calculated, temporary, external or undefined do NOT imply columns: if you reflect them, explain it as an assumption. \
+A screen is NOT an entity nor a field a column: propose entities and attributes only with justification in requirements or mockups. \
+Propose ONE model: title, entities (at least one; each with a unique name of letters, digits and underscore, attributes with at least one attribute of name and key, requirements with identifiers of the sent context and optional mockups with mockup/component citations motivating the entity), \
+relations (existing endpoints, optional label, from_card and to_card among 1, 0..1, N and 0..N), brief explanation (include which mockup fields or tables motivate each entity) and questions (at most 5, empty if none). \
+Do not propose attribute types: they are outside the subset. \
+Technical attributes (created_at, updated_at, deleted_at, expirations) only when the context justifies them, explained as an assumption: never by default. \
+If any data is missing (for example, you generate only from mockups without requirements), say so in questions: do not invent rules, approvals or certainties.";
 
-/// Monta el texto para proponer un diseño desde mockups y requisitos
-/// guardados. Los mockups viajan como resumen legible (sin posiciones);
-/// al menos un elemento de contexto es obligatorio y se aplican los
-/// mismos topes que en la creación desde requisitos.
+/// Builds the text for proposing a design from saved mockups and
+/// requirements. Mockups travel as a readable summary (no positions);
+/// at least one context element is mandatory and the same caps as
+/// requirement-based creation apply.
 pub fn build_mockup_design_input(
     kind: DesignKind,
     requirements: &[crate::generation::GenerationContextItem],
@@ -293,7 +308,7 @@ pub fn build_mockup_design_input(
     rendered.truncate(MAX_DESIGN_CONTEXT_ITEMS);
     loop {
         let input = format!(
-            "{instruction}\n\nContexto guardado — {} requisitos, {} mockups:\n{}",
+            "{instruction}\n\nSaved context — {} requirements, {} mockups:\n{}",
             reqs.len().min(MAX_DESIGN_CONTEXT_ITEMS),
             mocks.len().min(MAX_DESIGN_CONTEXT_ITEMS),
             rendered.join("\n\n")
@@ -305,7 +320,7 @@ pub fn build_mockup_design_input(
     }
 }
 
-/// Esquema JSON enviado en `text.format` para el tipo pedido.
+/// JSON schema sent in `text.format` for the requested kind.
 pub fn design_json_schema(kind: DesignKind) -> serde_json::Value {
     let questions = serde_json::json!({
         "type": "array",
@@ -313,6 +328,11 @@ pub fn design_json_schema(kind: DesignKind) -> serde_json::Value {
         "items": { "type": "string" }
     });
     let requirements = serde_json::json!({
+        "type": "array",
+        "maxItems": MAX_DESIGN_REFS,
+        "items": { "type": "string" }
+    });
+    let mockups = serde_json::json!({
         "type": "array",
         "maxItems": MAX_DESIGN_REFS,
         "items": { "type": "string" }
@@ -330,6 +350,7 @@ pub fn design_json_schema(kind: DesignKind) -> serde_json::Value {
                         "kind": { "type": "string" },
                         "label": { "type": "string" },
                         "requirements": requirements,
+                        "mockups": mockups,
                     },
                     "required": ["id", "kind", "label", "requirements"],
                     "additionalProperties": false
@@ -374,6 +395,7 @@ pub fn design_json_schema(kind: DesignKind) -> serde_json::Value {
                             }
                         },
                         "requirements": requirements,
+                        "mockups": mockups,
                     },
                     "required": ["name", "attributes", "requirements"],
                     "additionalProperties": false
@@ -399,7 +421,7 @@ pub fn design_json_schema(kind: DesignKind) -> serde_json::Value {
     };
     let mut properties = serde_json::Map::new();
     properties.insert("title".to_string(), serde_json::json!({ "type": "string" }));
-    for (key, value) in spec.as_object().expect("objeto") {
+    for (key, value) in spec.as_object().expect("object") {
         properties.insert(key.clone(), value.clone());
     }
     properties.insert(
@@ -421,7 +443,7 @@ pub fn design_json_schema(kind: DesignKind) -> serde_json::Value {
     })
 }
 
-/// Cuerpo de la petición de diseño.
+/// Design request body.
 pub fn build_design_body(kind: DesignKind, model: &str, input: &str) -> serde_json::Value {
     let name = match kind {
         DesignKind::Flow => "operation_flow",
@@ -447,11 +469,11 @@ pub(crate) fn invalid(message: impl Into<String>) -> MetaError {
     MetaError::new(MetaErrorKind::InvalidResponse, message.into(), false)
 }
 
-/// Valida el texto del modelo como propuesta de diseño del tipo pedido.
-/// `allowed` son los identificadores de artefacto enviados como contexto:
-/// toda referencia debe pertenecer al conjunto. Rechaza sin crear nada
-/// ante JSON ausente, tipo ausente o erróneo, campos inválidos, ids
-/// duplicados, referencias inexistentes o cardinalidades no admitidas.
+/// Validates the model text as a design proposal of the requested kind.
+/// `allowed` are the artifact identifiers sent as context: every
+/// reference must belong to the set. Rejects without creating anything
+/// on missing JSON, missing or wrong kind, invalid fields, duplicate
+/// ids, missing references or disallowed cardinalities.
 pub fn parse_design_output(
     text: &str,
     kind: DesignKind,
@@ -460,16 +482,16 @@ pub fn parse_design_output(
     let json = crate::generation::extract_json(text).ok_or_else(|| {
         MetaError::new(
             MetaErrorKind::InvalidResponse,
-            "La API devolvió un diseño que no es JSON válido.",
+            "The API returned a design that is not valid JSON.",
             false,
         )
     })?;
     let title = string_field(&json, "title")
         .and_then(|t| non_empty(&t, MAX_DESIGN_TITLE_CHARS))
-        .ok_or_else(|| invalid("diseño sin título válido"))?;
+        .ok_or_else(|| invalid("design without a valid title"))?;
     let explanation = string_field(&json, "explanation")
         .and_then(|t| non_empty(&t, MAX_DESIGN_EXPLANATION_CHARS))
-        .ok_or_else(|| invalid("diseño sin explicación válida"))?;
+        .ok_or_else(|| invalid("design without a valid explanation"))?;
     let questions = string_items(&json, "questions", 0, MAX_DESIGN_QUESTIONS)?;
     let (flow, er) = match kind {
         DesignKind::Flow => (Some(parse_flow(&json, allowed)?), None),
@@ -485,20 +507,19 @@ pub fn parse_design_output(
     })
 }
 
-/// Revalida una especificación editada (JSON ya parseado) contra el tipo y
-/// el conjunto permitido. Misma validación que la salida del modelo.
+/// Revalidates an edited spec (already parsed JSON) against the kind and
+/// the allowed set. Same validation as the model output.
 pub fn validate_design_value(
     kind: DesignKind,
     value: &serde_json::Value,
     allowed: &[String],
 ) -> Result<ValidatedDesign, MetaError> {
-    let text =
-        serde_json::to_string(value).map_err(|_| invalid("especificación no serializable"))?;
+    let text = serde_json::to_string(value).map_err(|_| invalid("spec not serializable"))?;
     parse_design_output(&text, kind, allowed)
 }
 
-/// Contenido autoritativo canónico: serialización fija de lo validado.
-/// Es lo que se guarda en la versión al aceptar; Mermaid se deriva de aquí.
+/// Authoritative canonical content: fixed serialization of the validated.
+/// It is what is saved in the version on accept; Mermaid derives from here.
 pub fn canonical_json(design: &ValidatedDesign) -> String {
     let mut map = serde_json::Map::new();
     map.insert("title".to_string(), serde_json::json!(design.title));
@@ -519,12 +540,12 @@ pub fn canonical_json(design: &ValidatedDesign) -> String {
         serde_json::json!(design.explanation),
     );
     map.insert("questions".to_string(), serde_json::json!(design.questions));
-    serde_json::to_string(&map).expect("lo validado serializa")
+    serde_json::to_string(&map).expect("validated serializes")
 }
 
-/// Serializa lo validado a Mermaid de forma determinista. Las etiquetas se
-/// escapan (sin comillas, directivas ni HTML posibles) y los identificadores
-/// ya vienen restringidos por validación: el modelo no puede inyectar nada.
+/// Serializes the validated to Mermaid deterministically. Labels are
+/// escaped (no quotes, directives or HTML possible) and identifiers already
+/// come restricted by validation: the model cannot inject anything.
 pub fn to_mermaid(design: &ValidatedDesign) -> String {
     match (&design.flow, &design.er) {
         (Some(flow), _) => flow_mermaid(flow),
@@ -568,7 +589,7 @@ fn er_mermaid(er: &ErSpec) -> String {
     for entity in &er.entities {
         out.push_str(&format!("    {} {{\n", entity.name));
         for attr in &entity.attributes {
-            // Sin tipos en el subconjunto inicial: tipo fijo `string`.
+            // No types in the initial subset: fixed `string` type.
             if attr.key {
                 out.push_str(&format!("        string {} PK\n", attr.name));
             } else {
@@ -585,10 +606,10 @@ fn er_mermaid(er: &ErSpec) -> String {
             card_symbol(relation.to_card),
             relation.to,
         ));
-        // erDiagram exige `: etiqueta` en cada relación: sin ella Mermaid
-        // no compila (`Expecting COLON`). Se entrecomilla (puede tener
-        // espacios) y `rel` cubre la ausencia; el escape ya eliminó
-        // comillas, directivas e inyecciones.
+        // erDiagram requires `: label` on each relation: without it Mermaid
+        // does not compile (`Expecting COLON`). It is quoted (may contain
+        // spaces) and `rel` covers absence; escaping already removed
+        // quotes, directives and injections.
         let raw = relation.label.as_deref().unwrap_or("rel");
         let clean = escape_label(raw);
         let label = if clean.is_empty() {
@@ -610,8 +631,8 @@ fn card_symbol(card: Cardinality) -> &'static str {
     }
 }
 
-/// Escapa una etiqueta para Mermaid: fuera comillas, directivas (`%%`),
-/// HTML y caracteres con significado en diagramas. Determinista.
+/// Escapes a label for Mermaid: out with quotes, directives (`%%`),
+/// HTML and diagram-meaningful characters. Deterministic.
 fn escape_label(label: &str) -> String {
     let mut clean = String::with_capacity(label.len());
     for ch in label.chars() {
@@ -645,19 +666,19 @@ fn parse_flow(json: &serde_json::Value, allowed: &[String]) -> Result<FlowSpec, 
     let nodes = json
         .get("nodes")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| invalid("flujo sin lista de nodos"))?;
+        .ok_or_else(|| invalid("flow without a node list"))?;
     if nodes.is_empty() || nodes.len() > MAX_FLOW_NODES {
         return Err(invalid(format!(
-            "el flujo debe tener entre 1 y {MAX_FLOW_NODES} nodos"
+            "the flow must have between 1 and {MAX_FLOW_NODES} nodes"
         )));
     }
     let edges = json
         .get("edges")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| invalid("flujo sin lista de aristas"))?;
+        .ok_or_else(|| invalid("flow without an edge list"))?;
     if edges.len() > MAX_FLOW_EDGES {
         return Err(invalid(format!(
-            "demasiadas aristas: {} (máximo {MAX_FLOW_EDGES})",
+            "too many edges: {} (max {MAX_FLOW_EDGES})",
             edges.len()
         )));
     }
@@ -667,47 +688,49 @@ fn parse_flow(json: &serde_json::Value, allowed: &[String]) -> Result<FlowSpec, 
         let n = i + 1;
         let id = string_field(node, "id")
             .filter(|id| valid_id(id))
-            .ok_or_else(|| invalid(format!("nodo {n}: identificador inválido")))?;
+            .ok_or_else(|| invalid(format!("node {n}: invalid identifier")))?;
         if !seen.insert(id.clone()) {
-            return Err(invalid(format!("nodo {n}: identificador duplicado")));
+            return Err(invalid(format!("node {n}: duplicate identifier")));
         }
         let kind: FlowNodeKind = node
             .get("kind")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .ok_or_else(|| invalid(format!("nodo {n}: tipo inválido")))?;
+            .ok_or_else(|| invalid(format!("node {n}: invalid kind")))?;
         let label = string_field(node, "label")
             .and_then(|t| non_empty(&t, MAX_DESIGN_LABEL_CHARS))
-            .ok_or_else(|| invalid(format!("nodo {n}: etiqueta vacía o excesiva")))?;
-        let requirements = ref_items(node, "requirements", n, allowed, "nodo")?;
+            .ok_or_else(|| invalid(format!("node {n}: empty or oversized label")))?;
+        let requirements = ref_items(node, "requirements", n, allowed, "node")?;
+        let mockups = mockup_ref_items(node, n, allowed, "node")?;
         out_nodes.push(FlowNode {
             id,
             kind,
             label,
             requirements,
+            mockups,
         });
     }
     let mut out_edges = Vec::with_capacity(edges.len());
     for (i, edge) in edges.iter().enumerate() {
         let n = i + 1;
-        let from =
-            string_field(edge, "from").ok_or_else(|| invalid(format!("arista {n}: sin origen")))?;
-        let to =
-            string_field(edge, "to").ok_or_else(|| invalid(format!("arista {n}: sin destino")))?;
+        let from = string_field(edge, "from")
+            .ok_or_else(|| invalid(format!("edge {n}: missing origin")))?;
+        let to = string_field(edge, "to")
+            .ok_or_else(|| invalid(format!("edge {n}: missing destination")))?;
         if !seen.contains(&from) {
-            return Err(invalid(format!("arista {n}: origen inexistente")));
+            return Err(invalid(format!("edge {n}: dangling origin")));
         }
         if !seen.contains(&to) {
-            return Err(invalid(format!("arista {n}: destino inexistente")));
+            return Err(invalid(format!("edge {n}: dangling destination")));
         }
         let label = match edge.get("label") {
             None | Some(serde_json::Value::Null) => None,
             Some(value) => {
                 let text = value
                     .as_str()
-                    .ok_or_else(|| invalid(format!("arista {n}: etiqueta no textual")))?;
+                    .ok_or_else(|| invalid(format!("edge {n}: non-text label")))?;
                 Some(
                     non_empty(text, MAX_DESIGN_LABEL_CHARS)
-                        .ok_or_else(|| invalid(format!("arista {n}: etiqueta vacía o excesiva")))?,
+                        .ok_or_else(|| invalid(format!("edge {n}: empty or oversized label")))?,
                 )
             }
         };
@@ -723,19 +746,19 @@ fn parse_er(json: &serde_json::Value, allowed: &[String]) -> Result<ErSpec, Meta
     let entities = json
         .get("entities")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| invalid("modelo sin lista de entidades"))?;
+        .ok_or_else(|| invalid("model without an entity list"))?;
     if entities.is_empty() || entities.len() > MAX_ER_ENTITIES {
         return Err(invalid(format!(
-            "el modelo debe tener entre 1 y {MAX_ER_ENTITIES} entidades"
+            "the model must have between 1 and {MAX_ER_ENTITIES} entities"
         )));
     }
     let relations = json
         .get("relations")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| invalid("modelo sin lista de relaciones"))?;
+        .ok_or_else(|| invalid("model without a relation list"))?;
     if relations.len() > MAX_ER_RELATIONS {
         return Err(invalid(format!(
-            "demasiadas relaciones: {} (máximo {MAX_ER_RELATIONS})",
+            "too many relations: {} (max {MAX_ER_RELATIONS})",
             relations.len()
         )));
     }
@@ -745,17 +768,17 @@ fn parse_er(json: &serde_json::Value, allowed: &[String]) -> Result<ErSpec, Meta
         let n = i + 1;
         let name = string_field(entity, "name")
             .filter(|name| valid_id(name))
-            .ok_or_else(|| invalid(format!("entidad {n}: nombre inválido")))?;
+            .ok_or_else(|| invalid(format!("entity {n}: invalid name")))?;
         if !seen.insert(name.clone()) {
-            return Err(invalid(format!("entidad {n}: nombre duplicado")));
+            return Err(invalid(format!("entity {n}: duplicate name")));
         }
         let attributes = entity
             .get("attributes")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| invalid(format!("entidad {n}: sin lista de atributos")))?;
+            .ok_or_else(|| invalid(format!("entity {n}: missing attribute list")))?;
         if attributes.is_empty() || attributes.len() > MAX_ER_ATTRIBUTES {
             return Err(invalid(format!(
-                "entidad {n}: entre 1 y {MAX_ER_ATTRIBUTES} atributos"
+                "entity {n}: between 1 and {MAX_ER_ATTRIBUTES} attributes"
             )));
         }
         let mut seen_attrs = std::collections::HashSet::new();
@@ -764,9 +787,9 @@ fn parse_er(json: &serde_json::Value, allowed: &[String]) -> Result<ErSpec, Meta
             let m = j + 1;
             let attr_name = string_field(attr, "name")
                 .filter(|name| valid_id(name))
-                .ok_or_else(|| invalid(format!("entidad {n}: atributo {m} inválido")))?;
+                .ok_or_else(|| invalid(format!("entity {n}: invalid attribute {m}")))?;
             if !seen_attrs.insert(attr_name.clone()) {
-                return Err(invalid(format!("entidad {n}: atributo duplicado")));
+                return Err(invalid(format!("entity {n}: duplicate attribute")));
             }
             let key = attr.get("key").and_then(|v| v.as_bool()).unwrap_or(false);
             out_attrs.push(ErAttribute {
@@ -774,25 +797,27 @@ fn parse_er(json: &serde_json::Value, allowed: &[String]) -> Result<ErSpec, Meta
                 key,
             });
         }
-        let requirements = ref_items(entity, "requirements", n, allowed, "entidad")?;
+        let requirements = ref_items(entity, "requirements", n, allowed, "entity")?;
+        let mockups = mockup_ref_items(entity, n, allowed, "entity")?;
         out_entities.push(ErEntity {
             name,
             attributes: out_attrs,
             requirements,
+            mockups,
         });
     }
     let mut out_relations = Vec::with_capacity(relations.len());
     for (i, relation) in relations.iter().enumerate() {
         let n = i + 1;
         let from = string_field(relation, "from")
-            .ok_or_else(|| invalid(format!("relación {n}: sin origen")))?;
+            .ok_or_else(|| invalid(format!("relation {n}: missing origin")))?;
         let to = string_field(relation, "to")
-            .ok_or_else(|| invalid(format!("relación {n}: sin destino")))?;
+            .ok_or_else(|| invalid(format!("relation {n}: missing destination")))?;
         if !seen.contains(&from) {
-            return Err(invalid(format!("relación {n}: origen inexistente")));
+            return Err(invalid(format!("relation {n}: dangling origin")));
         }
         if !seen.contains(&to) {
-            return Err(invalid(format!("relación {n}: destino inexistente")));
+            return Err(invalid(format!("relation {n}: dangling destination")));
         }
         let label =
             match relation.get("label") {
@@ -800,20 +825,20 @@ fn parse_er(json: &serde_json::Value, allowed: &[String]) -> Result<ErSpec, Meta
                 Some(value) => {
                     let text = value
                         .as_str()
-                        .ok_or_else(|| invalid(format!("relación {n}: etiqueta no textual")))?;
+                        .ok_or_else(|| invalid(format!("relation {n}: non-text label")))?;
                     Some(non_empty(text, MAX_DESIGN_LABEL_CHARS).ok_or_else(|| {
-                        invalid(format!("relación {n}: etiqueta vacía o excesiva"))
+                        invalid(format!("relation {n}: empty or oversized label"))
                     })?)
                 }
             };
         let from_card: Cardinality = relation
             .get("from_card")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .ok_or_else(|| invalid(format!("relación {n}: cardinalidad de origen no admitida")))?;
+            .ok_or_else(|| invalid(format!("relation {n}: disallowed origin cardinality")))?;
         let to_card: Cardinality = relation
             .get("to_card")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .ok_or_else(|| invalid(format!("relación {n}: cardinalidad de destino no admitida")))?;
+            .ok_or_else(|| invalid(format!("relation {n}: disallowed destination cardinality")))?;
         out_relations.push(ErRelation {
             from,
             to,
@@ -847,8 +872,8 @@ pub(crate) fn valid_id(id: &str) -> bool {
         && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Referencias a requisitos: dentro del conjunto enviado, sin duplicados,
-/// con tope. Vacías permitidas (no todo elemento cita requisitos).
+/// Requirement references: inside the sent set, no duplicates, with a
+/// cap. Empty allowed (not every element cites requirements).
 fn ref_items(
     parent: &serde_json::Value,
     name: &str,
@@ -859,10 +884,10 @@ fn ref_items(
     let values = parent
         .get(name)
         .and_then(|v| v.as_array())
-        .ok_or_else(|| invalid(format!("{what} {n}: falta {name} o no es lista")))?;
+        .ok_or_else(|| invalid(format!("{what} {n}: missing {name} or not a list")))?;
     if values.len() > MAX_DESIGN_REFS {
         return Err(invalid(format!(
-            "{what} {n}: demasiadas referencias (máximo {MAX_DESIGN_REFS})"
+            "{what} {n}: too many references (max {MAX_DESIGN_REFS})"
         )));
     }
     let mut seen = std::collections::HashSet::new();
@@ -870,17 +895,65 @@ fn ref_items(
     for value in values {
         let text = value
             .as_str()
-            .ok_or_else(|| invalid(format!("{what} {n}: referencia no textual")))?;
+            .ok_or_else(|| invalid(format!("{what} {n}: non-text reference")))?;
         let text = text.trim().to_string();
         if text.is_empty() || !allowed.contains(&text) {
             return Err(invalid(format!(
-                "{what} {n}: referencia fuera del conjunto enviado"
+                "{what} {n}: reference outside the sent set"
             )));
         }
         if !seen.insert(text.clone()) {
-            return Err(invalid(format!("{what} {n}: referencia duplicada")));
+            return Err(invalid(format!("{what} {n}: duplicate reference")));
         }
         out.push(text);
+    }
+    Ok(out)
+}
+
+/// `mockup/component` citations motivating a node or entity. Optional
+/// (missing or null = empty); with a cap, no duplicates and the mockup
+/// inside the sent set. Symmetric to `designs` in mockups: informative,
+/// never core dependencies.
+fn mockup_ref_items(
+    parent: &serde_json::Value,
+    n: usize,
+    allowed: &[String],
+    what: &str,
+) -> Result<Vec<String>, MetaError> {
+    let Some(node) = parent.get("mockups") else {
+        return Ok(Vec::new());
+    };
+    if node.is_null() {
+        return Ok(Vec::new());
+    };
+    let values = node
+        .as_array()
+        .ok_or_else(|| invalid(format!("{what} {n}: mockups is not a list")))?;
+    if values.len() > MAX_DESIGN_REFS {
+        return Err(invalid(format!(
+            "{what} {n}: too many citations (max {MAX_DESIGN_REFS})"
+        )));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::with_capacity(values.len());
+    for value in values {
+        let text = value
+            .as_str()
+            .ok_or_else(|| invalid(format!("{what} {n}: non-text citation")))?;
+        let (artifact, element) = text.split_once('/').ok_or_else(|| {
+            invalid(format!(
+                "{what} {n}: citation without mockup/component shape ({text})"
+            ))
+        })?;
+        if !allowed.contains(&artifact.to_string()) || !valid_id(element) {
+            return Err(invalid(format!(
+                "{what} {n}: citation outside the sent set ({text})"
+            )));
+        }
+        if !seen.insert(text.to_string()) {
+            return Err(invalid(format!("{what} {n}: duplicate citation")));
+        }
+        out.push(text.to_string());
     }
     Ok(out)
 }
@@ -894,19 +967,19 @@ fn string_items(
     let values = json
         .get(name)
         .and_then(|v| v.as_array())
-        .ok_or_else(|| invalid(format!("falta {name} o no es lista")))?;
+        .ok_or_else(|| invalid(format!("missing {name} or not a list")))?;
     if values.len() < min || values.len() > max {
         return Err(invalid(format!(
-            "{name} debe tener entre {min} y {max} elementos"
+            "{name} must have between {min} and {max} items"
         )));
     }
     let mut out = Vec::with_capacity(values.len());
     for (i, value) in values.iter().enumerate() {
         let text = value
             .as_str()
-            .ok_or_else(|| invalid(format!("{name}[{}] no es texto", i + 1)))?;
+            .ok_or_else(|| invalid(format!("{name}[{}] is not text", i + 1)))?;
         let text = non_empty(text, MAX_DESIGN_QUESTION_CHARS)
-            .ok_or_else(|| invalid(format!("{name}[{}] vacío o excesivo", i + 1)))?;
+            .ok_or_else(|| invalid(format!("{name}[{}] empty or oversized", i + 1)))?;
         out.push(text);
     }
     Ok(out)
@@ -924,9 +997,9 @@ pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
     format!("{}…", text[..end].trim_end())
 }
 
-/// Ejecuta una generación de diseño: un único POST sin reintentos, con
-/// timeout propio y tope de cuerpo. Misma clasificación de errores que el
-/// resto de llamadas. `allowed` son los artefactos enviados como contexto.
+/// Runs a design generation: a single POST without retries, with its own
+/// timeout and body cap. Same error classification as the other calls.
+/// `allowed` are the artifacts sent as context.
 pub async fn generate_design(
     config: &crate::MetaConfig,
     kind: DesignKind,
@@ -960,7 +1033,7 @@ pub async fn generate_design(
     if bytes.len() > DESIGN_MAX_BODY_BYTES {
         return Err(MetaError::new(
             MetaErrorKind::InvalidResponse,
-            "La API devolvió una respuesta que excede el tamaño máximo.",
+            "The API returned a response exceeding the maximum size.",
             false,
         )
         .with_status(status));
@@ -968,7 +1041,7 @@ pub async fn generate_design(
     let body = String::from_utf8(bytes.to_vec()).map_err(|_| {
         MetaError::new(
             MetaErrorKind::InvalidResponse,
-            "La API devolvió una respuesta que no es texto válido.",
+            "The API returned a response that is not valid text.",
             false,
         )
         .with_status(status)
@@ -987,26 +1060,28 @@ pub async fn generate_design(
     })
 }
 
-/// Versión de la plantilla de actualización (hito 8): el mismo esquema de
-/// salida del hito 6, con instrucciones de ajuste en vez de creación.
-pub const DESIGN_UPDATE_TEMPLATE_VERSION: u32 = 1;
+/// Update template version (milestone 8): the same milestone-6 output
+/// schema, with adjustment instructions instead of creation ones. v3 is
+/// the English translation; v2 rows keep their original Spanish prompt.
+pub const DESIGN_UPDATE_TEMPLATE_VERSION: u32 = 3;
 
-const FLOW_UPDATE_INSTRUCTION: &str = "Eres un diseñador que PROPONE AJUSTES a un flujo de operación existente porque cambiaron sus requisitos fuente. \
-Responde SOLO con el objeto JSON pedido, sin texto adicional. \
-Conserva todo lo que no necesite cambiar y mantén los identificadores de los elementos existentes cuando sea posible; ajusta solo lo justificado por los requisitos actuales. \
-Propón el flujo COMPLETO actualizado: title, nodes (id único de letras, dígitos y subrayado, kind entre start, step, decision y end, label y requirements con identificadores de los requisitos enviados), \
-edges (origen y destino existentes, label opcional), explanation breve de QUÉ cambió y POR QUÉ, y questions (como mucho 5, vacía si no hay). \
-Señala incertidumbres en questions y no presentes supuestos como decisiones aprobadas.";
+const FLOW_UPDATE_INSTRUCTION: &str = "You are a designer PROPOSING ADJUSTMENTS to an existing operation flow because its source requirements changed. \
+Reply ONLY with the requested JSON object, no extra text. \
+Keep everything that needs no change and retain existing element identifiers when possible; adjust only what the current requirements justify. \
+Propose the updated COMPLETE flow: title, nodes (unique id of letters, digits and underscore, kind among start, step, decision and end, label and requirements with identifiers of the sent requirements), \
+edges (existing origin and destination, optional label), brief explanation of WHAT changed and WHY, and questions (at most 5, empty if none). \
+Flag uncertainties in questions and do not present assumptions as approved decisions.";
 
-const ER_UPDATE_INSTRUCTION: &str = "Eres un diseñador que PROPONE AJUSTES a un modelo entidad-relación existente porque cambiaron sus requisitos fuente. \
-Responde SOLO con el objeto JSON pedido, sin texto adicional. \
-Conserva todo lo que no necesite cambiar y mantén los nombres de entidades, atributos y relaciones existentes cuando sea posible; ajusta solo lo justificado por los requisitos actuales. \
-Propón el modelo COMPLETO actualizado: title, entities (name único de letras, dígitos y subrayado, attributes con name y key, requirements con identificadores de los requisitos enviados), \
-relations (extremos existentes, label opcional, from_card y to_card entre 1, 0..1, N y 0..N), explanation breve de QUÉ cambió y POR QUÉ, y questions (como mucho 5, vacía si no hay). \
-No propongas tipos de atributos: están fuera del subconjunto. \
-Señala incertidumbres en questions y no presentes supuestos como decisiones aprobadas.";
+const ER_UPDATE_INSTRUCTION: &str = "You are a designer PROPOSING ADJUSTMENTS to an existing entity-relationship model because its source requirements changed. \
+Reply ONLY with the requested JSON object, no extra text. \
+Keep everything that needs no change and retain existing entity, attribute and relation names when possible; adjust only what the current requirements justify. \
+Keep hand-written technical attributes (created_at, updated_at, deleted_at, expirations) even when missing from the new context: do not delete them for not seeing them on a screen. \
+Propose the updated COMPLETE model: title, entities (unique name of letters, digits and underscore, attributes with name and key, requirements with identifiers of the sent requirements), \
+relations (existing endpoints, optional label, from_card and to_card among 1, 0..1, N and 0..N), brief explanation of WHAT changed and WHY, and questions (at most 5, empty if none). \
+Do not propose attribute types: they are outside the subset. \
+Flag uncertainties in questions and do not present assumptions as approved decisions.";
 
-/// Fuente del diseño con su versión utilizada y su versión actual.
+/// Design source with its used version and its current version.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateSource {
     pub artifact_id: String,
@@ -1016,7 +1091,7 @@ pub struct UpdateSource {
     pub current_content: String,
 }
 
-/// Cambio del requisito que originó el informe de impacto, si se conoce.
+/// Change of the requirement that caused the impact report, if known.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OriginChange {
     pub artifact_id: String,
@@ -1026,9 +1101,9 @@ pub struct OriginChange {
     pub current_content: String,
 }
 
-/// Monta la entrada para proponer la actualización de un diseño: el diseño
-/// actual (JSON canónico), cada fuente con su versión utilizada y actual,
-/// el cambio origen y los caminos relevantes. Mismos topes que la creación.
+/// Builds the input for proposing a design update: the current design
+/// (canonical JSON), each source with its used and current version, the
+/// origin change and the relevant paths. Same caps as creation.
 pub fn build_update_input(
     kind: DesignKind,
     current_spec: &str,
@@ -1048,7 +1123,7 @@ pub fn build_update_input(
         .map(|item| {
             if item.used_version_id == item.current_version_id {
                 format!(
-                    "[{} @ {} (sin cambios)]\n{}",
+                    "[{} @ {} (unchanged)]\n{}",
                     item.artifact_id,
                     item.current_version_id,
                     truncate_chars(
@@ -1058,7 +1133,7 @@ pub fn build_update_input(
                 )
             } else {
                 format!(
-                    "[{}]\nutilizada {}:\n{}\nactual {}:\n{}",
+                    "[{}]\nused {}:\n{}\ncurrent {}:\n{}",
                     item.artifact_id,
                     item.used_version_id,
                     truncate_chars(item.used_content.trim(), MAX_DESIGN_CONTEXT_CONTENT_CHARS),
@@ -1074,7 +1149,7 @@ pub fn build_update_input(
     let spec = truncate_chars(current_spec.trim(), MAX_DESIGN_INPUT_CHARS / 2);
     let origin_text = match origin {
         Some(change) => format!(
-            "\n\nCambio que originó el impacto [{} {} → {}]:\nantes:\n{}\nahora:\n{}",
+            "\n\nChange that caused the impact [{} {} → {}]:\nbefore:\n{}\nafter:\n{}",
             change.artifact_id,
             change.from_version_id,
             change.current_version_id,
@@ -1095,10 +1170,10 @@ pub fn build_update_input(
         let paths_text = if path_lines.is_empty() {
             String::new()
         } else {
-            format!("\n\nCaminos de dependencia:\n{}", path_lines.join("\n"))
+            format!("\n\nDependency paths:\n{}", path_lines.join("\n"))
         };
         let input = format!(
-            "{instruction}\n\nDiseño actual (JSON a actualizar):\n{spec}\n\nFuentes utilizadas frente a actuales ({}):\n{}{origin_text}{paths_text}",
+            "{instruction}\n\nCurrent design (JSON to update):\n{spec}\n\nUsed vs current sources ({}):\n{}{origin_text}{paths_text}",
             rendered.len(),
             rendered.join("\n\n")
         );
@@ -1115,8 +1190,8 @@ pub fn build_update_input(
     }
 }
 
-/// Elemento del diff estructural: `kind` es `title`, `node`, `edge`,
-/// `entity`, `attribute` o `relation`; `detail` describe el cambio.
+/// Structural diff item: `kind` is `title`, `node`, `edge`, `entity`,
+/// `attribute` or `relation`; `detail` describes the change.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiffItem {
     pub kind: String,
@@ -1124,9 +1199,9 @@ pub struct DiffItem {
     pub detail: String,
 }
 
-/// Diferencias estructurales deterministas entre dos diseños validados del
-/// mismo tipo. Si cambian los identificadores se reflejan como
-/// adición+eliminación: nunca se inventan equivalencias.
+/// Deterministic structural differences between two validated designs of
+/// the same kind. Changed identifiers show as addition+removal: no
+/// equivalences are ever invented.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesignDiff {
     pub added: Vec<DiffItem>,
@@ -1160,8 +1235,8 @@ fn joined(items: &[String]) -> String {
     sorted.join(", ")
 }
 
-/// Diff entre el diseño actual y el propuesto. Exige el mismo tipo en
-/// ambos; el tipo distinto es un error de programación del llamante.
+/// Diff between the current and the proposed design. Requires the same
+/// kind on both; a different kind is a caller programming error.
 #[derive(Default)]
 struct DiffAcc {
     added: Vec<DiffItem>,
@@ -1171,7 +1246,7 @@ struct DiffAcc {
 
 pub fn diff_designs(old: &ValidatedDesign, new: &ValidatedDesign) -> Result<DesignDiff, MetaError> {
     if old.kind != new.kind {
-        return Err(invalid("no se comparan diseños de distinto tipo"));
+        return Err(invalid("designs of different kinds are not compared"));
     }
     let mut acc = DiffAcc::default();
     if old.title != new.title {
@@ -1184,12 +1259,12 @@ pub fn diff_designs(old: &ValidatedDesign, new: &ValidatedDesign) -> Result<Desi
     match (&old.flow, &new.flow) {
         (Some(before), Some(after)) => diff_flow(before, after, &mut acc),
         (None, None) => {}
-        _ => return Err(invalid("no se comparan diseños de distinto tipo")),
+        _ => return Err(invalid("designs of different kinds are not compared")),
     }
     match (&old.er, &new.er) {
         (Some(before), Some(after)) => diff_er(before, after, &mut acc),
         (None, None) => {}
-        _ => return Err(invalid("no se comparan diseños de distinto tipo")),
+        _ => return Err(invalid("designs of different kinds are not compared")),
     }
     sort_items(&mut acc.added);
     sort_items(&mut acc.removed);
@@ -1244,6 +1319,13 @@ fn diff_flow(before: &FlowSpec, after: &FlowSpec, acc: &mut DiffAcc) {
                 "requirements [{}] → [{}]",
                 joined(&prev.requirements),
                 joined(&node.requirements)
+            ));
+        }
+        if joined(&prev.mockups) != joined(&node.mockups) {
+            changes.push(format!(
+                "mockups [{}] → [{}]",
+                joined(&prev.mockups),
+                joined(&node.mockups)
             ));
         }
         if !changes.is_empty() {
@@ -1345,6 +1427,17 @@ fn diff_er(before: &ErSpec, after: &ErSpec, acc: &mut DiffAcc) {
                     "requirements [{}] → [{}]",
                     joined(&prev.requirements),
                     joined(&entity.requirements)
+                ),
+            });
+        }
+        if joined(&prev.mockups) != joined(&entity.mockups) {
+            acc.modified.push(DiffItem {
+                kind: "entity".to_string(),
+                id: name.clone(),
+                detail: format!(
+                    "mockups [{}] → [{}]",
+                    joined(&prev.mockups),
+                    joined(&entity.mockups)
                 ),
             });
         }
@@ -1460,7 +1553,7 @@ mod tests {
     use super::*;
     use crate::generation::GenerationContextItem;
 
-    const SECRET: &str = "sk-prueba";
+    const SECRET: &str = "sk-test";
 
     fn allowed() -> Vec<String> {
         vec!["req-3".to_string(), "req-5".to_string()]
@@ -1468,37 +1561,142 @@ mod tests {
 
     fn envelope_text(fixture: &str) -> String {
         crate::protocol::parse_success_capped(200, fixture, SECRET, DESIGN_MAX_BODY_BYTES)
-            .expect("envolvente válida")
+            .expect("valid envelope")
             .text
+    }
+
+    #[test]
+    fn nodes_and_entities_cite_mockups_inside_sent_set() {
+        let flow = serde_json::json!({
+            "title": "F", "explanation": "E", "questions": [],
+            "nodes": [
+                {"id": "a", "kind": "start", "label": "A",
+                 "requirements": ["req-3"], "mockups": ["mockup-1/f_name"]},
+                {"id": "b", "kind": "end", "label": "B",
+                 "requirements": [], "mockups": []}
+            ],
+            "edges": [{"from": "a", "to": "b"}]
+        })
+        .to_string();
+        let allowed = vec!["req-3".to_string(), "mockup-1".to_string()];
+        let design = parse_design_output(&flow, DesignKind::Flow, &allowed).expect("citations");
+        assert_eq!(
+            design.flow.as_ref().expect("flow").nodes[0].mockups,
+            vec!["mockup-1/f_name".to_string()]
+        );
+        assert!(design.flow.as_ref().expect("flow").nodes[1]
+            .mockups
+            .is_empty());
+        let canonical = canonical_json(&design);
+        assert!(
+            canonical.contains("\"mockups\":[\"mockup-1/f_name\"]"),
+            "{canonical}"
+        );
+        // Empty ones are omitted: earlier designs' canonical form is unchanged.
+        assert_eq!(canonical.matches("\"mockups\"").count(), 1);
+
+        let er = serde_json::json!({
+            "title": "M", "explanation": "E", "questions": [],
+            "entities": [
+                {"name": "Venta", "attributes": [{"name": "id", "key": true}],
+                 "requirements": ["req-3"], "mockups": ["mockup-1/tb"]}
+            ],
+            "relations": []
+        })
+        .to_string();
+        let design = parse_design_output(&er, DesignKind::DataModel, &allowed).expect("entity");
+        assert_eq!(
+            design.er.as_ref().expect("model").entities[0].mockups,
+            vec!["mockup-1/tb".to_string()]
+        );
+    }
+
+    #[test]
+    fn mockup_citations_reject_bad_shape_and_outside_set() {
+        let bad = serde_json::json!({
+            "title": "F", "explanation": "E", "questions": [],
+            "nodes": [
+                {"id": "a", "kind": "start", "label": "A",
+                 "requirements": ["req-3"], "mockups": ["no-slash"]}
+            ],
+            "edges": []
+        })
+        .to_string();
+        let allowed = vec!["req-3".to_string(), "mockup-1".to_string()];
+        let err = parse_design_output(&bad, DesignKind::Flow, &allowed).expect_err("shape");
+        assert!(err.message.contains("mockup/component"), "{}", err.message);
+        let outside = serde_json::json!({
+            "title": "F", "explanation": "E", "questions": [],
+            "nodes": [
+                {"id": "a", "kind": "start", "label": "A",
+                 "requirements": ["req-3"], "mockups": ["mockup-9/x"]}
+            ],
+            "edges": []
+        })
+        .to_string();
+        parse_design_output(&outside, DesignKind::Flow, &allowed).expect_err("outside");
+        let dup = serde_json::json!({
+            "title": "F", "explanation": "E", "questions": [],
+            "nodes": [
+                {"id": "a", "kind": "start", "label": "A",
+                 "requirements": ["req-3"],
+                 "mockups": ["mockup-1/x", "mockup-1/x"]}
+            ],
+            "edges": []
+        })
+        .to_string();
+        parse_design_output(&dup, DesignKind::Flow, &allowed).expect_err("duplicate");
+    }
+
+    #[test]
+    fn mockup_template_cites_motivation_and_justifies_tech_attributes() {
+        let input = build_mockup_design_input(
+            DesignKind::DataModel,
+            &[GenerationContextItem {
+                artifact_id: "req-3".to_string(),
+                version_id: "req-3-v1".to_string(),
+                content: "vender".to_string(),
+            }],
+            &[],
+        );
+        assert!(input.contains("mockup/component"), "{input}");
+        assert!(input.contains("is NOT an entity"), "{input}");
+        assert!(input.contains("never by default"), "{input}");
+        let update = build_update_input(DesignKind::DataModel, "{}", &[], None, &[]);
+        assert!(update.contains("do not delete them"), "{update}");
+        let flow = build_mockup_design_input(DesignKind::Flow, &[], &[]);
+        assert!(flow.contains("mockup/component"), "{flow}");
+        assert_eq!(DESIGN_MOCKUP_TEMPLATE_VERSION, 3);
+        assert_eq!(DESIGN_UPDATE_TEMPLATE_VERSION, 3);
     }
 
     #[test]
     fn parses_valid_flow_fixture_and_renders_mermaid() {
         let body = include_str!("../tests/fixtures/design_flow_completed.json");
-        let design = parse_design_output(&envelope_text(body), DesignKind::Flow, &allowed())
-            .expect("válido");
-        assert_eq!(design.title, "Confirmar venta con stock");
-        let flow = design.flow.as_ref().expect("flujo");
+        let design =
+            parse_design_output(&envelope_text(body), DesignKind::Flow, &allowed()).expect("valid");
+        assert_eq!(design.title, "Confirm sale with stock");
+        let flow = design.flow.as_ref().expect("flow");
         assert_eq!(flow.nodes.len(), 4);
         assert_eq!(flow.edges.len(), 4);
         assert_eq!(design.questions.len(), 1);
-        // El ciclo decisión→revisar es válido en un flujo de operación.
+        // The decision→review cycle is valid in an operation flow.
         assert!(flow
             .edges
             .iter()
-            .any(|e| e.from == "decision" && e.to == "revisar"));
+            .any(|e| e.from == "decision" && e.to == "review"));
         let mermaid = to_mermaid(&design);
         let expected = "flowchart TD\n\
-             \x20   inicio([\"Venta creada\"])\n\
-             \x20   revisar[\"Revisar stock disponible\"]\n\
-             \x20   decision{\"¿Hay stock suficiente?\"}\n\
-             \x20   fin([\"Venta confirmada\"])\n\
-             \x20   inicio --> revisar\n\
-             \x20   revisar --> decision\n\
-             \x20   decision -- \"sí\" --> fin\n\
-             \x20   decision -- \"no\" --> revisar\n";
+             \x20   start([\"Sale created\"])\n\
+             \x20   review[\"Review available stock\"]\n\
+             \x20   decision{\"Is there enough stock?\"}\n\
+             \x20   end([\"Sale confirmed\"])\n\
+             \x20   start --> review\n\
+             \x20   review --> decision\n\
+             \x20   decision -- \"yes\" --> end\n\
+             \x20   decision -- \"no\" --> review\n";
         assert_eq!(mermaid, expected);
-        // Determinista: segunda serialización idéntica.
+        // Deterministic: identical second serialization.
         assert_eq!(to_mermaid(&design), expected);
     }
 
@@ -1506,29 +1704,29 @@ mod tests {
     fn parses_valid_er_fixture_and_renders_mermaid() {
         let body = include_str!("../tests/fixtures/design_er_completed.json");
         let design = parse_design_output(&envelope_text(body), DesignKind::DataModel, &allowed())
-            .expect("válido");
-        assert_eq!(design.title, "Ventas y stock");
-        let er = design.er.as_ref().expect("modelo");
+            .expect("valid");
+        assert_eq!(design.title, "Sales and stock");
+        let er = design.er.as_ref().expect("model");
         assert_eq!(er.entities.len(), 2);
         assert_eq!(er.relations.len(), 1);
         let mermaid = to_mermaid(&design);
         let expected = "erDiagram\n\
-             \x20   VENTA {\n\
+             \x20   SALE {\n\
              \x20       string id PK\n\
-             \x20       string estado\n\
+             \x20       string status\n\
              \x20   }\n\
-             \x20   LINEA {\n\
+             \x20   LINE {\n\
              \x20       string id PK\n\
-             \x20       string cantidad\n\
+             \x20       string quantity\n\
              \x20   }\n\
-             \x20   VENTA ||--}| LINEA : \"contiene\"\n";
+             \x20   SALE ||--}| LINE : \"contains\"\n";
         assert_eq!(mermaid, expected);
     }
 
     #[test]
     fn er_relations_always_carry_a_quoted_label() {
-        // Regresión: erDiagram exige `: etiqueta` y Mermaid 12 falla con
-        // `Expecting COLON` si falta; multi-palabra exige comillas.
+        // Regression: erDiagram requires `: label` and Mermaid 12 fails
+        // with `Expecting COLON` when missing; multi-word requires quotes.
         let text = serde_json::json!({
             "title": "Ventas",
             "entities": [
@@ -1545,30 +1743,30 @@ mod tests {
             "questions": []
         })
         .to_string();
-        let design = parse_design_output(&text, DesignKind::DataModel, &[]).expect("válido");
+        let design = parse_design_output(&text, DesignKind::DataModel, &[]).expect("valid");
         let mermaid = to_mermaid(&design);
         let relations: Vec<&str> = mermaid.lines().filter(|line| line.contains("--")).collect();
         assert_eq!(relations.len(), 3);
         for line in &relations {
             assert!(
                 line.contains(" : \"") && line.ends_with('"'),
-                "relación sin etiqueta entrecomillada: {line}"
+                "relation without a quoted label: {line}"
             );
         }
         assert!(mermaid.contains("A ||--}| B : \"rel\""));
         assert!(mermaid.contains("B ||--}o C : \"se compone de varias\""));
-        // Hostil neutralizada pero etiqueta presente.
+        // Hostile input neutralized but label present.
         assert!(!mermaid.contains('%') && !mermaid.contains('<'));
     }
 
     #[test]
     fn canonical_json_roundtrips() {
         let body = include_str!("../tests/fixtures/design_flow_completed.json");
-        let design = parse_design_output(&envelope_text(body), DesignKind::Flow, &allowed())
-            .expect("válido");
+        let design =
+            parse_design_output(&envelope_text(body), DesignKind::Flow, &allowed()).expect("valid");
         let canonical = canonical_json(&design);
         let again =
-            parse_design_output(&canonical, DesignKind::Flow, &allowed()).expect("canónico");
+            parse_design_output(&canonical, DesignKind::Flow, &allowed()).expect("canonical");
         assert_eq!(again, design);
         assert_eq!(canonical_json(&again), canonical);
     }
@@ -1586,12 +1784,12 @@ mod tests {
             "questions": []
         })
         .to_string();
-        // Las etiquetas se aceptan como texto libre con tope: es el
-        // serializador quien las neutraliza al derivar Mermaid.
-        let design = parse_design_output(&text, DesignKind::Flow, &[]).expect("pasa validación");
+        // Labels are accepted as capped free text: it is the serializer
+        // that neutralizes them when deriving Mermaid.
+        let design = parse_design_output(&text, DesignKind::Flow, &[]).expect("passes validation");
         let mermaid = to_mermaid(&design);
-        // Ni etiquetas HTML, ni directivas, ni URLs, ni sintaxis de enlace:
-        // (`>` solo sobrevive en las flechas estructurales `-->`.)
+        // No HTML tags, directives, URLs or link syntax: (`>` only
+        // survives in the structural `-->` arrows.)
         assert!(!mermaid.contains('<'), "{mermaid}");
         assert!(!mermaid.contains("%%"), "{mermaid}");
         assert!(!mermaid.contains("http://"), "{mermaid}");
@@ -1600,7 +1798,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_ids_dangling_edges_and_bad_cards() {
-        // Nodos duplicados.
+        // Duplicate nodes.
         let dup = serde_json::json!({
             "title": "T",
             "nodes": [
@@ -1611,24 +1809,24 @@ mod tests {
         })
         .to_string();
         assert!(parse_design_output(&dup, DesignKind::Flow, &[]).is_err());
-        // Arista a nodo inexistente.
+        // Edge to a missing node.
         let dangling = serde_json::json!({
             "title": "T",
             "nodes": [{"id": "n", "kind": "step", "label": "A", "requirements": []}],
-            "edges": [{"from": "n", "to": "fantasma"}],
+            "edges": [{"from": "n", "to": "ghost"}],
             "explanation": "E", "questions": []
         })
         .to_string();
-        let err = parse_design_output(&dangling, DesignKind::Flow, &[]).expect_err("colgada");
+        let err = parse_design_output(&dangling, DesignKind::Flow, &[]).expect_err("dangling");
         assert_eq!(err.kind, MetaErrorKind::InvalidResponse);
-        // Cardinalidad no admitida.
+        // Disallowed cardinality.
         let card = serde_json::json!({
             "title": "T",
             "entities": [
                 {"name": "A", "attributes": [{"name": "id", "key": true}], "requirements": []},
                 {"name": "B", "attributes": [{"name": "id", "key": true}], "requirements": []}
             ],
-            "relations": [{"from": "A", "to": "B", "from_card": "1", "to_card": "muchos"}],
+            "relations": [{"from": "A", "to": "B", "from_card": "1", "to_card": "many"}],
             "explanation": "E", "questions": []
         })
         .to_string();
@@ -1645,8 +1843,8 @@ mod tests {
         .to_string();
         assert!(parse_design_output(&text, DesignKind::Flow, &allowed()).is_ok());
         let err = parse_design_output(&text, DesignKind::Flow, &["req-9".to_string()])
-            .expect_err("ajeno");
-        assert!(err.message.contains("fuera del conjunto"));
+            .expect_err("foreign");
+        assert!(err.message.contains("outside the sent set"));
     }
 
     #[test]
@@ -1661,7 +1859,7 @@ mod tests {
         })
         .to_string();
         assert!(parse_design_output(&text, DesignKind::Flow, &[]).is_err());
-        // ER pedido pero flujo recibido.
+        // ER requested but flow received.
         let flow = serde_json::json!({
             "title": "T",
             "nodes": [{"id": "n", "kind": "step", "label": "A", "requirements": []}],
@@ -1680,7 +1878,7 @@ mod tests {
             (DesignKind::Flow, "operation_flow", "nodes"),
             (DesignKind::DataModel, "er_model", "entities"),
         ] {
-            let body = build_design_body(kind, "muse-spark-1.3", "entrada");
+            let body = build_design_body(kind, "muse-spark-1.3", "input");
             assert_eq!(body["max_output_tokens"], DESIGN_MAX_OUTPUT_TOKENS);
             let format = &body["text"]["format"];
             assert_eq!(format["type"], "json_schema");
@@ -1690,7 +1888,7 @@ mod tests {
     }
 
     #[test]
-    fn design_input_renders_approved_context_with_caps() {
+    fn design_input_renders_saved_context_with_caps() {
         let items: Vec<GenerationContextItem> = (0..25)
             .map(|i| GenerationContextItem {
                 artifact_id: format!("req-{i:02}"),
@@ -1705,11 +1903,11 @@ mod tests {
     }
 
     fn flow_spec(text: &str) -> ValidatedDesign {
-        parse_design_output(text, DesignKind::Flow, &allowed()).expect("flujo válido")
+        parse_design_output(text, DesignKind::Flow, &allowed()).expect("valid flow")
     }
 
     fn er_spec(text: &str) -> ValidatedDesign {
-        parse_design_output(text, DesignKind::DataModel, &allowed()).expect("ER válido")
+        parse_design_output(text, DesignKind::DataModel, &allowed()).expect("valid ER")
     }
 
     #[test]
@@ -1735,10 +1933,10 @@ mod tests {
             Some(&origin),
             &[vec!["req-3".to_string(), "flujo-4".to_string()]],
         );
-        assert!(input.contains("PROPONE AJUSTES"));
+        assert!(input.contains("PROPOSING ADJUSTMENTS"));
         assert!(input.contains("{\"title\":\"Flujo\"}"));
-        assert!(input.contains("utilizada req-3-v1"));
-        assert!(input.contains("actual req-3-v2"));
+        assert!(input.contains("used req-3-v1"));
+        assert!(input.contains("current req-3-v2"));
         assert!(input.contains("Reserva antes de confirmar."));
         assert!(input.contains("req-3 → flujo-4"));
         assert!(input.chars().count() <= MAX_DESIGN_INPUT_CHARS);
@@ -1750,14 +1948,14 @@ mod tests {
             .map(|i| UpdateSource {
                 artifact_id: format!("req-{i:02}"),
                 used_version_id: format!("req-{i:02}-v1"),
-                used_content: "Mismo.".to_string(),
+                used_content: "Same.".to_string(),
                 current_version_id: format!("req-{i:02}-v1"),
-                current_content: "Mismo.".to_string(),
+                current_content: "Same.".to_string(),
             })
             .collect();
         let big_spec = format!("{{\"title\":\"{}\"}}", "x".repeat(MAX_DESIGN_INPUT_CHARS));
         let input = build_update_input(DesignKind::DataModel, &big_spec, &sources, None, &[]);
-        assert!(input.contains("(sin cambios)"));
+        assert!(input.contains("(unchanged)"));
         assert!(!input.contains("[req-20 @"));
         assert!(input.chars().count() <= MAX_DESIGN_INPUT_CHARS);
     }
@@ -1772,7 +1970,7 @@ mod tests {
                     {"id": "fin", "kind": "end", "label": "Venta confirmada", "requirements": []}
                 ],
                 "edges": [{"from": "inicio", "to": "fin"}],
-                "explanation": "Antes.",
+                "explanation": "Before.",
                 "questions": []
             })
             .to_string(),
@@ -1789,7 +1987,7 @@ mod tests {
                     {"from": "inicio", "to": "reserva"},
                     {"from": "reserva", "to": "fin"}
                 ],
-                "explanation": "Después.",
+                "explanation": "After.",
                 "questions": []
             })
             .to_string(),
@@ -1807,10 +2005,10 @@ mod tests {
         assert!(kinds.contains(&("removed", "inicio → fin")));
         assert!(kinds.contains(&("modified", "title")));
         assert!(kinds.contains(&("modified", "fin")));
-        let fin = diff.modified.iter().find(|i| i.id == "fin").expect("fin");
+        let fin = diff.modified.iter().find(|i| i.id == "fin").expect("end");
         assert!(fin.detail.contains("Venta confirmada"));
         assert!(fin.detail.contains("Venta cerrada"));
-        // Determinista: mismo orden en cada cálculo.
+        // Deterministic: same order on each computation.
         assert_eq!(diff, diff_designs(&old, &new).expect("diff"));
     }
 
@@ -1823,7 +2021,7 @@ mod tests {
                     {"name": "venta", "attributes": [{"name": "id", "key": true}], "requirements": ["req-3"]}
                 ],
                 "relations": [],
-                "explanation": "Antes.",
+                "explanation": "Before.",
                 "questions": []
             })
             .to_string(),
@@ -1836,7 +2034,7 @@ mod tests {
                     {"name": "reserva", "attributes": [{"name": "id", "key": true}], "requirements": ["req-3"]}
                 ],
                 "relations": [{"from": "venta", "to": "reserva", "from_card": "1", "to_card": "0..N"}],
-                "explanation": "Después.",
+                "explanation": "After.",
                 "questions": []
             })
             .to_string(),

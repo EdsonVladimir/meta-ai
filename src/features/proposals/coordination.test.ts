@@ -38,12 +38,12 @@ function generation(id: string, stale = false): GenerationDto {
 }
 
 describe("upsertGeneration", () => {
-  it("añade la generación nueva al final", () => {
+  it("appends the new generation at the end", () => {
     const next = upsertGeneration([generation("gen-1")], generation("gen-2"));
     expect(next.map((g) => g.id)).toEqual(["gen-1", "gen-2"]);
   });
 
-  it("sustituye en su posición al refrescar", () => {
+  it("replaces in place on refresh", () => {
     const first = [generation("gen-1"), generation("gen-2")];
     const updated = generation("gen-1", true);
     const next = upsertGeneration(first, updated);
@@ -51,7 +51,7 @@ describe("upsertGeneration", () => {
     expect(next[0].stale).toBe(true);
   });
 
-  it("no toca generaciones de otro módulo mezcladas", () => {
+  it("leaves generations from another mixed module alone", () => {
     const other = { ...generation("gen-9"), moduleId: "mod-8" };
     const next = upsertGeneration([other], generation("gen-1"));
     expect(next).toHaveLength(2);
@@ -60,7 +60,7 @@ describe("upsertGeneration", () => {
 });
 
 describe("isActionable", () => {
-  it("solo pendiente, fresca y sin trabajo", () => {
+  it("only when pending, fresh and idle", () => {
     expect(isActionable(proposal(), false, false)).toBe(true);
     expect(isActionable(proposal(), true, false)).toBe(false);
     expect(isActionable(proposal(), false, true)).toBe(false);
@@ -71,7 +71,7 @@ describe("isActionable", () => {
 });
 
 describe("editFromProposal y splitItems", () => {
-  it("convierte criterios a texto y de vuelta sin perderlos", () => {
+  it("converts criteria to text and back without losing them", () => {
     const edit = editFromProposal(
       proposal({ acceptance: ["Uno", "Dos"], assumptions: ["Tal vez"] }),
     );

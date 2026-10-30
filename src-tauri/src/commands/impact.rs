@@ -1,8 +1,8 @@
-//! Comando de impacto: consulta pura sobre la memoria.
+//! Impact command: pure query over memory.
 //!
-//! No muta ni persiste: bloquea corto, comprueba disponibilidad y traduce el
-//! análisis del núcleo. Recalcular el informe nunca toca versiones ni
-//! aprobaciones.
+//! Mutates and persists nothing: locks briefly, checks availability and
+//! translates the core analysis. Recomputing the report never touches
+//! versions or approvals.
 
 use tauri::State;
 

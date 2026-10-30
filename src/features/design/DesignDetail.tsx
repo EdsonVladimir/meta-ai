@@ -1,9 +1,10 @@
-// Detalle de un artefacto de diseño: valida en Rust la versión mostrada
-// (estructural, sin consumir API), dibuja el diagrama y expone explicación,
-// preguntas, fuentes y procedencia. Informa a la revisión si la versión
-// mostrada está validada y renderizada: aprobar exige ese estado además de
-// la revalidación en Rust. La pestaña de lienzo/editor carga diferida el
-// editor visual; solo el montaje canónico edita (los demás son lectura).
+// Design artifact detail: validates the shown version in Rust
+// (structural, no API consumption), draws the diagram and exposes the
+// explanation, questions, sources and provenance. Informs the review
+// whether the shown version is validated and rendered: approval requires
+// that state plus revalidation in Rust. The canvas/editor tab lazy
+// loads the visual editor; only the canonical mount edits (the rest is
+// read-only).
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   approvalsForVersion,
@@ -22,7 +23,7 @@ const DesignEditor = lazy(() =>
   import("./editing/DesignEditor").then((module) => ({ default: module.DesignEditor })),
 );
 
-/** Cableado del borrador visual. Ausente = montaje de solo lectura. */
+/** Visual draft wiring. Missing = read-only mount. */
 export interface DesignDetailEditing {
   projectId: string;
   draft: VisualDraftState | null;
@@ -40,11 +41,11 @@ interface DesignDetailProps {
   onValidatedVersion: (versionId: string, ok: boolean) => void;
   editing?: DesignDetailEditing;
   /**
-   * Renombrar el diagrama; ausente = sin acción (lectura, histórica o
-   * archivado). Recibe el detalle para derivar el objetivo.
+   * Rename the diagram; missing = no action (reading, historic or
+   * archived). Receives the detail to derive the target.
    */
   onRename?: () => void;
-  /** Diseño archivado: sin renombrar hasta restaurarlo. */
+  /** Archived design: no renaming until restored. */
   renameDisabled?: boolean;
 }
 
@@ -98,7 +99,7 @@ export function DesignDetail({
         spec = JSON.parse(shownContent) as unknown;
       } catch {
         if (cancelledRef.current) return;
-        setValidateError("El contenido guardado no es JSON válido.");
+        setValidateError("The saved content is not valid JSON.");
         return;
       }
       try {
@@ -126,7 +127,7 @@ export function DesignDetail({
   }, [artifactId]);
 
   return (
-    <section className="editor design-detail" aria-label="Detalle de diseño">
+    <section className="editor design-detail" aria-label="Design detail">
       <div className="editor-head">
         <h3>
           {title !== null && title !== "" ? (
@@ -138,14 +139,14 @@ export function DesignDetail({
           )}{" "}
           · {kindLabel} · v{shown?.number}{" "}
           {viewing !== null ? (
-            <span className="badge">lectura</span>
+            <span className="badge">read-only</span>
           ) : (
-            <span className="badge">actual</span>
+            <span className="badge">current</span>
           )}
         </h3>
         {viewing !== null && (
           <button type="button" className="secondary small" onClick={onBackToCurrent}>
-            Volver a la actual (v{current?.number})
+            Back to current (v{current?.number})
           </button>
         )}
         {onRename !== undefined && viewing === null && (
@@ -154,9 +155,9 @@ export function DesignDetail({
             className="secondary small"
             onClick={onRename}
             disabled={renameDisabled}
-            title={renameDisabled ? "Restaura el diagrama antes de renombrarlo" : "Renombrar diagrama"}
+            title={renameDisabled ? "Restore the diagram before renaming it" : "Rename diagram"}
           >
-            Renombrar
+            Rename
           </button>
         )}
       </div>
@@ -164,33 +165,33 @@ export function DesignDetail({
       {shown && (
         <dl className="facts">
           <div>
-            <dt>Procedencia</dt>
+            <dt>Origin</dt>
             <dd>
               {shown.provenance.kind === "ai"
-                ? `propuesta de IA (${shown.provenance.by})`
+                ? `AI proposal (${shown.provenance.by})`
                 : shown.provenance.by}
             </dd>
           </div>
           <div>
-            <dt>Aprobación</dt>
+            <dt>Approval</dt>
             <dd>
               {approvals.length === 0
-                ? "Sin aprobar"
+                ? "Unapproved"
                 : approvals.map((a) => `${a.approvedBy} · ${a.at}`).join("; ")}
             </dd>
           </div>
           <div>
-            <dt>Fuentes</dt>
+            <dt>Sources</dt>
             <dd>
               {shown.sources.length === 0
-                ? "Sin dependencias"
+                ? "No dependencies"
                 : shown.sources.join(", ")}
             </dd>
           </div>
         </dl>
       )}
 
-      <div className="tabs" role="tablist" aria-label="Vistas del diseño">
+      <div className="tabs" role="tablist" aria-label="Design views">
         <button
           type="button"
           role="tab"
@@ -198,7 +199,7 @@ export function DesignDetail({
           className={tab === "diagram" ? "active" : ""}
           onClick={() => setTab("diagram")}
         >
-          Diagrama
+          Diagram
         </button>
         <button
           type="button"
@@ -207,7 +208,7 @@ export function DesignDetail({
           className={tab === "canvas" ? "active" : ""}
           onClick={() => setTab("canvas")}
         >
-          {editing !== undefined ? "Editor" : "Lienzo"}
+          {editing !== undefined ? "Editor" : "Canvas"}
         </button>
       </div>
 
@@ -226,15 +227,15 @@ export function DesignDetail({
                 onRenderState={(ok) => notifyRef.current(shownId, ok)}
               />
               <details>
-                <summary>Fuente Mermaid (solo lectura)</summary>
+                <summary>Mermaid source (read-only)</summary>
                 <pre className="readonly-box">{mermaid}</pre>
               </details>
             </>
           )}
           {summary.explanation !== "" && <p>{summary.explanation}</p>}
           {summary.questions.length > 0 && (
-            <section className="questions" aria-label="Preguntas pendientes">
-              <h5>Preguntas pendientes</h5>
+            <section className="questions" aria-label="Open questions">
+              <h5>Open questions</h5>
               <ul>
                 {summary.questions.map((question, i) => (
                   <li key={i}>{question}</li>
@@ -244,7 +245,7 @@ export function DesignDetail({
           )}
         </>
       ) : shown !== undefined && current !== undefined && (kind === "flow" || kind === "data_model") ? (
-        <Suspense fallback={<p className="hint">Cargando editor…</p>}>
+        <Suspense fallback={<p className="hint">Loading editor…</p>}>
           <DesignEditor
             projectId={editing?.projectId ?? detail.artifact.projectId}
             artifactId={artifactId}
@@ -263,11 +264,11 @@ export function DesignDetail({
           />
         </Suspense>
       ) : (
-        <p className="hint">Este artefacto no tiene lienzo visual.</p>
+        <p className="hint">This artifact has no visual canvas.</p>
       )}
       <p className="hint">
-        Sintaxis válida no garantiza corrección del diseño. Las versiones
-        anteriores no se pueden editar ni aprobar como actuales.
+        Valid syntax does not guarantee design correctness. Earlier
+        versions cannot be edited or approved as current.
       </p>
     </section>
   );

@@ -1,11 +1,10 @@
-// Editor visual de mockups (carga diferida con el lienzo). Compone
-// paleta, lienzo de la pantalla activa, inspector y guardado.
-//
-// El borrador vive elevado en el workspace (sobrevive a cambios de
-// pestaña); aquí solo se interpreta y se despachan acciones. La versión
-// histórica o el montaje no canónico muestran el lienzo en lectura.
-// Guardar crea una versión nueva con procedencia humana; mover o
-// redimensionar sin cambiar semántica solo guarda disposición.
+// Visual mockup editor (lazy loaded with the canvas). Composes the
+// palette, the active-screen canvas, the inspector and saving. The
+// draft lives lifted in the workspace (survives tab switches); here it
+// is only interpreted and actions are dispatched. A historic version or
+// a non-canonical mount shows the canvas read-only. Saving creates a
+// new version with human provenance; moving or resizing without
+// semantic changes only saves layout.
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { Node } from "@xyflow/react";
 import type { UpdateSourceDto } from "../design/types";
@@ -18,17 +17,21 @@ import { MockupInspector, type MockupSelection } from "./MockupInspector";
 import {
   addComponent,
   addScreen,
+  alignMoves,
   autoMockupLayout,
   canonicalMockup,
   componentIds,
   defaultComponentSize,
   detectMockupRename,
+  duplicateComponent,
   newComponent,
   parseMockupSpec,
   removeComponent,
   screenIds,
   suggestMockupId,
   validateMockupOrientative,
+  type MockupAlign,
+  type MockupBox,
   type MockupComponentKind,
   type MockupSpec,
 } from "./mockupModel";
@@ -39,6 +42,7 @@ import {
   type MockupDraftState,
 } from "./mockupDraft";
 import { CommitInput } from "../design/editing/inspector";
+import { buildScreenNodes } from "./screenNodes";
 import { MOCKUP_COMPONENT_LABELS } from "./types";
 
 const MockupCanvas = lazy(() =>
@@ -59,14 +63,14 @@ interface MockupEditorProps {
   projectId: string;
   moduleId: string;
   artifactId: string;
-  /** Versión mostrada (puede ser histórica). */
+  /** Shown version (may be historic). */
   versionId: string;
   currentVersionId: string;
-  /** Contenido JSON de la versión mostrada. */
+  /** JSON content of the shown version. */
   content: string;
-  /** Fuentes de la versión ACTUAL (fijación inicial al guardar). */
+  /** CURRENT version sources (initial pins on save). */
   currentPins: string[];
-  /** Solo el montaje canónico edita; el resto es lectura. */
+  /** Only the canonical mount edits; the rest is read-only. */
   editable: boolean;
   draft: MockupDraftState | null;
   onAction: (action: MockupDraftAction) => void;
@@ -75,14 +79,19 @@ interface MockupEditorProps {
   onSaveLayoutOnly: () => void;
   onAdoptPins: (pins: string[]) => void;
   onDeclareSources: (pins: string[], allowed: string[]) => void;
+  /** Screen requested from outside (tree). Null = the kept or first one. */
+  screenId: string | null;
+  onScreenChange: (id: string | null) => void;
 }
 
 const PALETTE: { kind: MockupComponentKind; label: string }[] = [
-  { kind: "text", label: "+ Texto" },
-  { kind: "field", label: "+ Campo" },
+  { kind: "text", label: "+ Text" },
+  { kind: "field", label: "+ Field" },
   { kind: "selector", label: "+ Selector" },
-  { kind: "button", label: "+ Botón" },
-  { kind: "table", label: "+ Tabla" },
+  { kind: "button", label: "+ Button" },
+  { kind: "table", label: "+ Table" },
+  { kind: "container", label: "+ Container" },
+  { kind: "icon", label: "+ Icon" },
 ];
 
 function parseDraft(text: string): MockupSpec | null {
@@ -111,6 +120,8 @@ export function MockupEditor({
   onSaveLayoutOnly,
   onAdoptPins,
   onDeclareSources,
+  screenId: externalScreenId,
+  onScreenChange,
 }: MockupEditorProps) {
   const isCurrent = versionId === currentVersionId;
   const editing = editable && isCurrent;
@@ -123,8 +134,9 @@ export function MockupEditor({
   const [activeScreen, setActiveScreen] = useState<string | null>(null);
   const [author, setAuthor] = useState("");
   const [screenName, setScreenName] = useState("");
+  const [grid, setGrid] = useState(true);
 
-  // Disposición guardada (todas las vistas) con guarda de obsolescencia.
+  // Saved layout (all views) with an obsolescence guard.
   useEffect(() => {
     let fresh = true;
     setSavedLayout(null);
@@ -137,7 +149,7 @@ export function MockupEditor({
       } catch (raw) {
         if (!fresh) return;
         setSavedLayout({});
-        setLayoutNote(`Sin disposición guardada (${normalizeCoreError(raw).message}).`);
+        setLayoutNote(`No saved layout (${normalizeCoreError(raw).message}).`);
       }
     })();
     return () => {
@@ -145,7 +157,7 @@ export function MockupEditor({
     };
   }, [artifactId, versionId]);
 
-  // Frescura de fuentes para citas y adopción explícita (solo al editar).
+  // Source freshness for citations and explicit adoption (editing only).
   useEffect(() => {
     if (!editing) return;
     let fresh = true;
@@ -164,7 +176,7 @@ export function MockupEditor({
     };
   }, [editing, projectId, artifactId]);
 
-  // Candidatas a declarar: versiones actuales del módulo (solo al editar).
+  // Candidates to declare: current module versions (editing only).
   const [candidates, setCandidates] = useState<ModuleCandidate[] | null>(null);
   const [candidatePick, setCandidatePick] = useState("");
   useEffect(() => {
@@ -190,11 +202,23 @@ export function MockupEditor({
     };
   }, [editing, projectId, moduleId, artifactId]);
 
-  // La selección y la pantalla no sobreviven a un cambio de versión.
+  // Selection and screen do not survive a version change.
   useEffect(() => {
     setSelection(null);
     setActiveScreen(null);
   }, [key]);
+
+  // The tree may request a screen: adopted when it exists (otherwise
+  // the first-screen fallback ignores it without breaking anything).
+  useEffect(() => {
+    if (externalScreenId !== null) setActiveScreen(externalScreenId);
+  }, [externalScreenId, key]);
+
+  function pickScreen(id: string): void {
+    setActiveScreen(id);
+    setSelection(null);
+    onScreenChange(id);
+  }
 
   const activeDraft = editing && draft?.key === key ? draft : null;
   const detachedDraft =
@@ -202,8 +226,8 @@ export function MockupEditor({
       ? draft
       : null;
 
-  // Inicio único del borrador cuando hay disposición (las citas derivan
-  // de las fijaciones). Un borrador separado no se pisa.
+  // Single draft start once there is layout (citations derive from
+  // pins). A detached draft is not overwritten.
   useEffect(() => {
     if (!editing || savedLayout === null) return;
     if (draft !== null && (draft.key === key || draft.key.startsWith(`${artifactId}:`))) return;
@@ -217,7 +241,7 @@ export function MockupEditor({
   const parsed = useMemo(() => parseDraft(draftText), [draftText]);
   const layout = activeDraft?.layout ?? savedLayout ?? {};
 
-  // Pantalla activa: la conservada si existe, si no la primera.
+  // Active screen: the kept one when it exists, else the first.
   const screenId =
     parsed !== null && activeScreen !== null && parsed.screens.some((s) => s.id === activeScreen)
       ? activeScreen
@@ -238,29 +262,14 @@ export function MockupEditor({
 
   const nodes: Node[] = useMemo(() => {
     if (screen === null) return [];
-    return screen.components.map((component) => {
-      const entry = layout[component.id] ?? auto[component.id] ?? { x: 0, y: 0 };
-      const size = defaultComponentSize(component.kind);
-      return {
-        id: component.id,
-        type: "mockupNode",
-        position: { x: entry.x, y: entry.y },
-        style: { width: entry.w ?? size.w, height: entry.h ?? size.h },
-        data: {
-          componentKind: component.kind,
-          text: component.text,
-          label: component.label,
-          fieldType: component.fieldType,
-          required: component.required,
-          options: component.options,
-          columns: component.columns,
-          action: component.action,
-          target: component.target,
-          origin: component.origin,
-          readOnly: !editing,
-        },
-        selected: effectiveSelection?.kind === "component" && effectiveSelection.id === component.id,
-      };
+    const positions: Record<string, { x: number; y: number; w?: number; h?: number }> = {};
+    for (const component of screen.components) {
+      const entry = layout[component.id] ?? auto[component.id];
+      if (entry) positions[component.id] = entry;
+    }
+    return buildScreenNodes(screen, positions, {
+      readOnly: !editing,
+      selectedId: effectiveSelection?.kind === "component" ? effectiveSelection.id : undefined,
     });
   }, [screen, layout, auto, editing, effectiveSelection]);
 
@@ -301,30 +310,69 @@ export function MockupEditor({
 
   function handleAddComponent(kind: MockupComponentKind): void {
     if (parsed === null || screenId === null) return;
-    const id = suggestMockupId(kind === "field" ? "campo" : kind, componentIds(parsed));
+    const id = suggestMockupId(kind === "field" ? "field" : kind, componentIds(parsed));
     commit(addComponent(parsed, screenId, newComponent(kind, id)));
-    // Posición inicial en la rejilla automática: es disposición, no
-    // semántica, y la persona la ajusta arrastrando.
+    // Initial position on the automatic grid: it is layout, not
+    // semantics, and the person adjusts it by dragging.
     const count = screen?.components.length ?? 0;
     onAction({ type: "move", id, x: (count % 3) * 220 + 20, y: Math.floor(count / 3) * 110 + 20 });
     setSelection({ kind: "component", id });
   }
 
+  function handleDuplicate(): void {
+    if (parsed === null || screenId === null || effectiveSelection?.kind !== "component") return;
+    const dup = duplicateComponent(parsed, screenId, effectiveSelection.id);
+    if (!dup) return;
+    commit(dup.spec);
+    // Clones appear offset next to their original.
+    for (const clone of dup.clones) {
+      const entry = layout[clone.from];
+      onAction({ type: "move", id: clone.id, x: (entry?.x ?? 0) + 24, y: (entry?.y ?? 0) + 24 });
+    }
+    setSelection({ kind: "component", id: dup.cloneId });
+  }
+
+  function handleAlign(mode: MockupAlign): void {
+    if (screen === null) return;
+    // With a container selected its children align; otherwise the whole
+    // screen. Layout only: semantics untouched.
+    const selected =
+      effectiveSelection?.kind === "component"
+        ? screen.components.find((c) => c.id === effectiveSelection.id)
+        : undefined;
+    const ids =
+      selected?.kind === "container" && selected.children.length > 0
+        ? selected.children
+        : screen.components.map((c) => c.id);
+    const boxes: MockupBox[] = [];
+    for (const id of ids) {
+      const component = screen.components.find((c) => c.id === id);
+      if (!component) continue;
+      const entry = layout[id] ?? auto[id] ?? { x: 0, y: 0 };
+      const size = defaultComponentSize(component.kind);
+      boxes.push({ id, x: entry.x, y: entry.y, w: entry.w ?? size.w, h: entry.h ?? size.h });
+    }
+    for (const move of alignMoves(boxes, mode)) {
+      onAction({ type: "move", id: move.id, x: move.x, y: move.y });
+    }
+  }
+
   function handleAddScreen(): void {
     if (parsed === null) return;
-    const name = screenName.trim() === "" ? "Pantalla" : screenName.trim();
-    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "pantalla";
+    const name = screenName.trim() === "" ? "Screen" : screenName.trim();
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "screen";
     const id = suggestMockupId(base, screenIds(parsed));
     commit(addScreen(parsed, id, name));
     setActiveScreen(id);
     setSelection({ kind: "screen" });
     setScreenName("");
+    onScreenChange(id);
   }
 
   if (parsed === null) {
     return (
       <p className="error" role="alert">
-        El contenido guardado no es un mockup válido.
+        The saved content is not a valid mockup.
       </p>
     );
   }
@@ -333,24 +381,21 @@ export function MockupEditor({
     return (
       <div className="editor-readonly">
         {!isCurrent && (
-          <p className="hint">Versión histórica en lectura: vuelve a la actual para editarla.</p>
+          <p className="hint">Historic version, read-only: go back to the current one to edit it.</p>
         )}
         {layoutNote !== null && <p className="hint">{layoutNote}</p>}
         <ScreenTabs
           spec={parsed}
           screenId={screenId}
-          onPick={(id) => {
-            setActiveScreen(id);
-            setSelection(null);
-          }}
+          onPick={pickScreen}
         />
-        <Suspense fallback={<p className="hint">Cargando lienzo…</p>}>
+        <Suspense fallback={<p className="hint">Loading canvas…</p>}>
           <MockupCanvas
             nodes={nodes}
             readOnly
             fitSignal={0}
             onSelectNode={(id) => setSelection(id === null ? null : { kind: "component", id })}
-            ariaLabel={`Lienzo de ${artifactId} en lectura`}
+            ariaLabel={`Read-only canvas of ${artifactId}`}
           />
         </Suspense>
       </div>
@@ -361,14 +406,14 @@ export function MockupEditor({
     return (
       <div className="draft-conflict" role="alert">
         <p>
-          El mockup avanzó a otra versión mientras editabas. Tu borrador se conserva íntegro
-          abajo; para seguir, descártalo y edita la versión actual.
+          The mockup moved to another version while you edited. Your draft is kept intact
+          below; to continue, discard it and edit the current version.
         </p>
         <button type="button" className="secondary small" onClick={() => onAction({ type: "reset" })}>
-          Descartar borrador y editar la actual
+          Discard draft and edit the current one
         </button>
         <details>
-          <summary>JSON del borrador conservado (solo lectura)</summary>
+          <summary>Kept draft JSON (read-only)</summary>
           <pre className="readonly-box">{detachedDraft.history.present}</pre>
         </details>
       </div>
@@ -376,7 +421,7 @@ export function MockupEditor({
   }
 
   if (activeDraft === null || validation === null) {
-    return <p className="hint">Preparando el editor…</p>;
+    return <p className="hint">Preparing the editor…</p>;
   }
 
   const semanticDirty = mockupSemanticDirty(activeDraft);
@@ -397,38 +442,38 @@ export function MockupEditor({
 
   return (
     <div className="design-editor mockup-editor" onKeyDown={handleKeyDown}>
-      <div className="editor-toolbar" role="toolbar" aria-label="Edición del mockup">
+      <div className="editor-toolbar" role="toolbar" aria-label="Mockup editing">
         <div className="editor-toolbar-group">
           <button
             type="button"
             className="secondary small"
             disabled={!canUndo(activeDraft.history)}
             onClick={() => onAction({ type: "undo" })}
-            aria-label="Deshacer cambio"
-            title="Deshacer (Ctrl+Z)"
+            aria-label="Undo change"
+            title="Undo (Ctrl+Z)"
           >
-            Deshacer
+            Undo
           </button>
           <button
             type="button"
             className="secondary small"
             disabled={!canRedo(activeDraft.history)}
             onClick={() => onAction({ type: "redo" })}
-            aria-label="Rehacer cambio"
-            title="Rehacer (Ctrl+Y)"
+            aria-label="Redo change"
+            title="Redo (Ctrl+Y)"
           >
-            Rehacer
+            Redo
           </button>
           <span
             className={`draft-badge${semanticDirty ? " dirty" : layoutDirty ? " layout" : ""}`}
             aria-live="polite"
           >
-            {semanticDirty ? "Cambios sin guardar" : layoutDirty ? "Solo disposición" : "Sin cambios"}
+            {semanticDirty ? "Unsaved changes" : layoutDirty ? "Layout only" : "No changes"}
           </span>
         </div>
-        <div className="editor-toolbar-group" role="group" aria-label="Paleta de componentes">
+        <div className="editor-toolbar-group" role="group" aria-label="Component palette">
           {screenId === null ? (
-            <span className="hint">Crea una pantalla para dibujar.</span>
+            <span className="hint">Create a screen to draw.</span>
           ) : (
             PALETTE.map((item) => (
               <button
@@ -436,24 +481,80 @@ export function MockupEditor({
                 type="button"
                 className="secondary small"
                 onClick={() => handleAddComponent(item.kind)}
-                title={`Añadir ${MOCKUP_COMPONENT_LABELS[item.kind].toLowerCase()} a ${screenId}`}
+                title={`Add ${MOCKUP_COMPONENT_LABELS[item.kind].toLowerCase()} to ${screenId}`}
               >
                 {item.label}
               </button>
             ))
           )}
         </div>
+        <div className="editor-toolbar-group" role="group" aria-label="Duplicate and align">
+          <button
+            type="button"
+            className="secondary small"
+            disabled={effectiveSelection?.kind !== "component"}
+            onClick={handleDuplicate}
+            title="Duplicate the selected component with new IDs"
+          >
+            Duplicate
+          </button>
+          <button
+            type="button"
+            className="secondary small"
+            onClick={() => handleAlign("left")}
+            title="Align left (container children or whole screen)"
+            aria-label="Align left"
+          >
+            ⬅│
+          </button>
+          <button
+            type="button"
+            className="secondary small"
+            onClick={() => handleAlign("top")}
+            title="Align top (container children or whole screen)"
+            aria-label="Align top"
+          >
+            ⬆‾
+          </button>
+          <button
+            type="button"
+            className="secondary small"
+            onClick={() => handleAlign("distributeH")}
+            title="Distribute horizontally (3 or more)"
+            aria-label="Distribute horizontally"
+          >
+            ⇄
+          </button>
+          <button
+            type="button"
+            className="secondary small"
+            onClick={() => handleAlign("distributeV")}
+            title="Distribute vertically (3 or more)"
+            aria-label="Distribute vertically"
+          >
+            ⇅
+          </button>
+          <button
+            type="button"
+            className="secondary small"
+            aria-pressed={grid}
+            onClick={() => setGrid((v) => !v)}
+            title="Show or hide the grid"
+          >
+            Grid
+          </button>
+        </div>
         <div className="editor-toolbar-group">
           <label className="inline-field">
-            <span>Autoría</span>
+            <span>Authorship</span>
             <input
               type="text"
               value={author}
               onChange={(e) => setAuthor(e.target.value)}
-              placeholder="Tu nombre"
+              placeholder="Your name"
               autoComplete="off"
               disabled={save.busy || (!semanticDirty && !layoutDirty)}
-              aria-label="Autoría de la revisión"
+              aria-label="Review authorship"
             />
           </label>
           {semanticDirty ? (
@@ -464,11 +565,11 @@ export function MockupEditor({
               onClick={() => onSave(author.trim())}
               title={
                 validation.length > 0
-                  ? "Corrige los errores antes de guardar"
-                  : "Guardar como versión nueva"
+                  ? "Fix the errors before saving"
+                  : "Save as a new version"
               }
             >
-              {save.busy ? "Guardando…" : "Guardar versión"}
+              {save.busy ? "Saving…" : "Save version"}
             </button>
           ) : (
             <button
@@ -476,9 +577,9 @@ export function MockupEditor({
               className="secondary small"
               disabled={save.busy || !layoutDirty}
               onClick={onSaveLayoutOnly}
-              title="Guardar solo la disposición, sin versión nueva"
+              title="Save only the layout, no new version"
             >
-              {save.busy ? "Guardando…" : "Guardar disposición"}
+              {save.busy ? "Saving…" : "Save layout"}
             </button>
           )}
         </div>
@@ -486,7 +587,7 @@ export function MockupEditor({
 
       {save.error !== null && (
         <p className="error" role="alert">
-          {save.error} El borrador se conserva.
+          {save.error} The draft is kept.
         </p>
       )}
 
@@ -494,39 +595,37 @@ export function MockupEditor({
         <ScreenTabs
           spec={parsed}
           screenId={screenId}
-          onPick={(id) => {
-            setActiveScreen(id);
-            setSelection(null);
-          }}
+          onPick={pickScreen}
         />
         <div className="add-row">
           <input
             type="text"
             value={screenName}
-            placeholder="Nueva pantalla"
+            placeholder="New screen"
             maxLength={200}
-            aria-label="Nombre de la pantalla nueva"
+            aria-label="New screen name"
             onChange={(e) => setScreenName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleAddScreen();
             }}
           />
           <button type="button" className="secondary small" onClick={handleAddScreen}>
-            + Pantalla
+            + Screen
           </button>
         </div>
       </div>
 
       <div className="editor-main">
-        <Suspense fallback={<p className="hint">Cargando lienzo…</p>}>
+        <Suspense fallback={<p className="hint">Loading canvas…</p>}>
           <MockupCanvas
             nodes={nodes}
             readOnly={false}
             fitSignal={0}
+            grid={grid}
             onMoveNode={(id, x, y) => onAction({ type: "move", id, x, y })}
             onResizeNode={(id, w, h) => onAction({ type: "resize", id, w, h })}
             onSelectNode={(id) => setSelection(id === null ? null : { kind: "component", id })}
-            ariaLabel={`Editor de ${artifactId}`}
+            ariaLabel={`Editor of ${artifactId}`}
           />
         </Suspense>
 
@@ -539,19 +638,19 @@ export function MockupEditor({
             onDeclare={(pins, allowed) => onDeclareSources(pins, allowed)}
           />
           {stalePins.length > 0 && (
-            <section className="stale-panel" aria-label="Fuentes obsoletas">
-              <h4>Fuentes obsoletas</h4>
+            <section className="stale-panel" aria-label="Stale sources">
+              <h4>Stale sources</h4>
               <p className="hint">
-                Estas fuentes cambiaron desde la versión fijada. Guardar con las fijadas se
-                bloqueará: adopta explícitamente las actuales (no implica que el contenido sea
-                correcto; sigue requiriendo tu revisión).
+                These sources changed since the pinned version. Saving with the pinned ones
+                will be blocked: explicitly adopt the current ones (this does not imply the
+                content is correct; it still requires your review).
               </p>
               <ul>
                 {stalePins.map((source) => (
                   <li key={source.artifactId}>
                     <code>{source.artifactId}</code>: {source.usedVersionId} →{" "}
                     {source.currentVersionId}
-                    {!source.currentApproved && " (actual sin revisar)"}
+                    {!source.currentApproved && " (current unreviewed)"}
                   </li>
                 ))}
               </ul>
@@ -565,29 +664,29 @@ export function MockupEditor({
                   onAdoptPins(activeDraft.pins.map((pin) => currents.get(pin) ?? pin));
                 }}
               >
-                Usar versiones actuales
+                Use current versions
               </button>
             </section>
           )}
           {unreviewedCurrents.length > 0 && (
             <p className="hint">
-              La versión actual de {unreviewedCurrents.map((s) => s.artifactId).join(", ")} está sin
-              revisar (informativo): puedes guardar y seguir diseñando.
+              The current version of {unreviewedCurrents.map((s) => s.artifactId).join(", ")} is
+              unreviewed (informational): you can save and keep designing.
             </p>
           )}
           {sourcesFailed && (
-            <p className="hint">No se pudo comprobar la frescura de las fuentes.</p>
+            <p className="hint">Source freshness could not be checked.</p>
           )}
 
           {validation.length > 0 && (
-            <section aria-label="Errores del borrador">
-              <h4>Errores ({validation.length})</h4>
+            <section aria-label="Draft errors">
+              <h4>Errors ({validation.length})</h4>
               <ul className="issue-list errors">
                 {validation.map((message, i) => (
                   <li key={i}>{message}</li>
                 ))}
               </ul>
-              <p className="hint">La validación autoritativa es Rust al guardar.</p>
+              <p className="hint">The authoritative validation is Rust on save.</p>
             </section>
           )}
 
@@ -601,11 +700,11 @@ export function MockupEditor({
             onRemoveComponent={(sid, cid) => commit(removeComponent(parsed, sid, cid))}
           />
 
-          <section className="inspector-meta" aria-label="Datos del mockup">
+          <section className="inspector-meta" aria-label="Mockup data">
             <h4>Mockup</h4>
             <CommitInput
               key={`t:${parsed.title}`}
-              label="Título"
+              label="Title"
               value={parsed.title}
               onCommit={(title) => commit({ ...parsed, title })}
               maxLength={200}
@@ -613,7 +712,7 @@ export function MockupEditor({
           </section>
 
           <details>
-            <summary>JSON del borrador (solo lectura)</summary>
+            <summary>Draft JSON (read-only)</summary>
             <pre className="readonly-box">{draftText}</pre>
           </details>
         </aside>
@@ -647,11 +746,11 @@ function SourcesSection({
     onDeclare(next, allowed);
   }
   return (
-    <section aria-label="Fuentes declaradas">
-      <h4>Fuentes ({pins.length})</h4>
+    <section aria-label="Declared sources">
+      <h4>Sources ({pins.length})</h4>
       <p className="hint">
-        Solo se puede citar lo declarado. Añadir fija la versión actual; quitar una citada
-        bloqueará el guardado hasta descitarla.
+        Only declared sources can be cited. Adding pins the current version; removing a
+        cited one will block saving until it is uncited.
       </p>
       {pins.length > 0 && (
         <ul className="question-list">
@@ -661,23 +760,23 @@ function SourcesSection({
               <button
                 type="button"
                 className="secondary small"
-                aria-label={`Quitar fuente ${pin}`}
+                aria-label={`Remove source ${pin}`}
                 onClick={() => declare(pins.filter((p) => p !== pin))}
               >
-                Quitar
+                Remove
               </button>
             </li>
           ))}
         </ul>
       )}
       {candidates === null ? (
-        <p className="hint">Cargando candidatas…</p>
+        <p className="hint">Loading candidates…</p>
       ) : available.length === 0 ? (
-        <p className="hint">Sin más candidatas en el módulo.</p>
+        <p className="hint">No more candidates in the module.</p>
       ) : (
         <div className="add-row">
-          <select value={pick} aria-label="Fuente a declarar" onChange={(e) => onPick(e.target.value)}>
-            <option value="">Declarar fuente…</option>
+          <select value={pick} aria-label="Source to declare" onChange={(e) => onPick(e.target.value)}>
+            <option value="">Declare source…</option>
             {available.map((c) => (
               <option key={c.artifactId} value={c.versionId}>
                 {c.artifactId} ({c.versionId})
@@ -693,7 +792,7 @@ function SourcesSection({
               onPick("");
             }}
           >
-            Añadir
+            Add
           </button>
         </div>
       )}
@@ -711,10 +810,10 @@ function ScreenTabs({
   onPick: (id: string) => void;
 }) {
   if (spec.screens.length === 0) {
-    return <p className="hint">Sin pantallas: crea la primera para dibujar.</p>;
+    return <p className="hint">No screens: create the first one to draw.</p>;
   }
   return (
-    <div className="mockup-tabs" role="tablist" aria-label="Pantallas">
+    <div className="mockup-tabs" role="tablist" aria-label="Screens">
       {spec.screens.map((screen) => (
         <button
           key={screen.id}

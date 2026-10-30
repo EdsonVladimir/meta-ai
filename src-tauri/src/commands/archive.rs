@@ -1,14 +1,14 @@
-//! Comandos de archivo y borrado: envoltorios finos sobre `ruth-api`.
+//! Archive and delete commands: thin wrappers over `ruth-api`.
 //!
-//! El resumen previo es consultivo (no muta); la ejecución revalida las
-//! condiciones en Rust y pasa por `transact`: validar con el núcleo,
-//! persistir en una transacción y publicar solo tras confirmar.
+//! The advance summary is advisory (mutates nothing); execution revalidates
+//! the conditions in Rust and goes through `transact`: validate with
+//! the core, persist in one transaction and publish only after commit.
 
 use tauri::State;
 
 use ruth_api::{
     ApiError, ArchiveModuleInput, ArchivePreviewDto, ArchivePreviewInput, ArchiveRequirementInput,
-    DeleteModuleInput, DeleteRequirementInput, ModuleDto, RequirementDetail,
+    DeleteModuleInput, DeleteProjectInput, DeleteRequirementInput, ModuleDto, RequirementDetail,
 };
 
 use super::{lock, ready};
@@ -26,6 +26,8 @@ pub fn core_archive_preview(
         ready.log,
         ready.designs,
         ready.baseline_meta,
+        ready.code_links,
+        ready.code_roots,
         input,
     )
 }
@@ -61,13 +63,14 @@ pub fn core_delete_module(
 ) -> Result<String, ApiError> {
     let mut guard = lock(&state.inner)?;
     let ready = ready(&mut guard)?;
-    // Los registros se inspeccionan dentro de la misma sección crítica que
-    // la mutación: nada puede colarse entre la revalidación y el borrado.
+    // Logs inspect inside the same critical section as
+    // the mutation: nothing can slip between revalidation and deletion.
     let log = &*ready.log;
     let designs = &*ready.designs;
     let metalog = &*ready.baseline_meta;
+    let links = &*ready.code_links;
     ruth_api::transact(ready.store, ready.ids, ready.db, |s, _| {
-        ruth_api::delete_module_checked(s, log, designs, metalog, input)
+        ruth_api::delete_module_checked(s, log, designs, metalog, links, input)
     })
 }
 
@@ -96,6 +99,21 @@ pub fn core_restore_requirement(
 }
 
 #[tauri::command]
+pub fn core_delete_project(
+    state: State<AppState>,
+    input: DeleteProjectInput,
+) -> Result<String, ApiError> {
+    let mut guard = lock(&state.inner)?;
+    let ready = ready(&mut guard)?;
+    let log = &*ready.log;
+    let designs = &*ready.designs;
+    let roots = &*ready.code_roots;
+    ruth_api::transact(ready.store, ready.ids, ready.db, |s, _| {
+        ruth_api::delete_project_checked(s, log, designs, roots, input)
+    })
+}
+
+#[tauri::command]
 pub fn core_delete_requirement(
     state: State<AppState>,
     input: DeleteRequirementInput,
@@ -104,7 +122,8 @@ pub fn core_delete_requirement(
     let ready = ready(&mut guard)?;
     let log = &*ready.log;
     let designs = &*ready.designs;
+    let links = &*ready.code_links;
     ruth_api::transact(ready.store, ready.ids, ready.db, |s, _| {
-        ruth_api::delete_requirement_checked(s, log, designs, input)
+        ruth_api::delete_requirement_checked(s, log, designs, links, input)
     })
 }

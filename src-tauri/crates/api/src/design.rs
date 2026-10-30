@@ -1,18 +1,18 @@
-//! Lógica de diseños vinculados a requisitos: contexto aprobado, registro,
-//! caducidad, validación de especificaciones, aceptación y aprobación.
+//! Requirement-linked design logic: approved context, recording,
+//! staleness, spec validation, acceptance and approval.
 //!
-//! Espeja `proposals`: sin Tauri ni red, todo testeable con un generador
-//! falso. Diferencias: el contexto son requisitos APROBADOS seleccionados,
-//! cada generación trae UNA propuesta con especificación JSON canónica, y
-//! aceptar puede crear el artefacto o versionar uno elegido.
+//! Mirrors `proposals`: no Tauri or network, everything testable with a fake
+//! generator. Differences: the context is SELECTED approved requirements,
+//! each generation brings ONE proposal with a canonical JSON spec, and
+//! accepting may create the artifact or version a chosen one.
 //!
-//! Reglas:
-//! - El JSON es el contenido autoritativo; Mermaid se deriva y nunca se
-//!   almacena como fuente ni se edita.
-//! - Las dependencias del diseño apuntan a las versiones exactas utilizadas
-//!   (el núcleo las valida: existencia, cruce, ciclos).
-//! - Aceptar es atómico e idempotente; aprobar revalida contenido, vigencia
-//!   y versión actual en Rust, nunca por un flag de React.
+//! Rules:
+//! - JSON is the authoritative content; Mermaid derives from it and is never
+//!   stored as source or edited.
+//! - Design dependencies point to the exact versions used
+//!   (the core validates them: existence, crossing, cycles).
+//! - Accepting is atomic and idempotent; approving revalidates content,
+//!   currency and current version in Rust, never by a React flag.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{
@@ -39,16 +39,16 @@ use crate::error::ApiError;
 use crate::ids::IdGen;
 use crate::logic::{approve_version, get_requirement};
 
-/// Agente registrado como procedencia de lo aceptado desde un diseño.
+/// Agent recorded as provenance of what a design accepts.
 fn agent_for(model: &str) -> Result<AgentId, ApiError> {
     AgentId::new(format!("ruth-gen/{model}")).map_err(ApiError::from)
 }
 
-/// Foto del contexto: versión actual exacta de cada requisito seleccionado.
-/// Todos deben existir en el módulo y ser requisitos con versión actual.
-/// Desde el diseño vivo NO se exige aprobación: se genera desde versiones
-/// guardadas y la revisión queda como información (ver `approved` en la
-/// vista previa). Selección vacía: error antes de consumir red.
+/// Context snapshot: exact current version of each selected requirement.
+/// All must exist in the module and be requirements with a current version.
+/// Since living design, approval is NOT required: generation runs from saved
+/// versions and review stays as information (see `approved` in the
+/// preview). Empty selection: error before consuming network.
 pub fn snapshot_design_context(
     store: &Store,
     project_id: &str,
@@ -58,7 +58,7 @@ pub fn snapshot_design_context(
     if selected.is_empty() {
         return Err(ApiError::coded(
             "empty_selection",
-            "Selecciona al menos un requisito como fuente.",
+            "Select at least one requirement as a source.",
         ));
     }
     let project = ProjectId::new(project_id.to_string())?;
@@ -78,7 +78,7 @@ pub fn snapshot_design_context(
         if !seen.insert(id.clone()) {
             return Err(ApiError::coded(
                 "duplicate_selection",
-                format!("requisito repetido en la selección: {id}"),
+                format!("requirement repeated in the selection: {id}"),
             ));
         }
         let artifact = ruth_core::domain::ArtifactId::new(id.clone())?;
@@ -88,23 +88,23 @@ pub fn snapshot_design_context(
         if known.project() != &project || known.module() != &module {
             return Err(ApiError::coded(
                 "foreign_selection",
-                format!("{id} no pertenece a este módulo"),
+                format!("{id} does not belong to this module"),
             ));
         }
         if known.artifact_type() != ArtifactType::Requirement {
             return Err(ApiError::coded(
                 "not_a_requirement",
-                format!("{id} no es un requisito"),
+                format!("{id} is not a requirement"),
             ));
         }
         if store.is_effectively_archived(&artifact) {
             return Err(CoreError::ArchivedArtifact { artifact }.into());
         }
         let Some(current) = store.current_version(&artifact) else {
-            return Err(ApiError::internal(format!("{id} no tiene versiones")));
+            return Err(ApiError::internal(format!("{id} has no versions")));
         };
-        // Sin barrera de aprobación (diseño vivo): la revisión de cada
-        // fuente viaja como información en la vista previa, no como veto.
+        // No approval barrier (living design): each source's review
+        // travels as information in the preview, not as a veto.
         items.push(GenerationContextItem {
             artifact_id: id.clone(),
             version_id: current.id().as_str().to_string(),
@@ -115,8 +115,8 @@ pub fn snapshot_design_context(
     Ok(items)
 }
 
-/// Vista previa del módulo para seleccionar fuentes: todos los requisitos
-/// con su aprobación vigente.
+/// Module preview for selecting sources: all requirements
+/// with their current approval.
 pub fn design_context_preview(
     store: &Store,
     input: DesignContextInput,
@@ -134,7 +134,7 @@ pub fn design_context_preview(
         if artifact.artifact_type() != ArtifactType::Requirement {
             continue;
         }
-        // Los archivados no se ofrecen como fuentes de diseños nuevos.
+        // Archived ones are not offered as new-design sources.
         if store.is_effectively_archived(artifact.id()) {
             continue;
         }
@@ -169,17 +169,17 @@ fn excerpt(content: &str) -> String {
     format!("{}…", &flat[..end])
 }
 
-/// Objetivo fijado por una propuesta de actualización: el artefacto y su
-/// versión en el momento del snapshot.
+/// Target pinned by an update proposal: the artifact and its
+/// version at snapshot time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateTarget {
     pub artifact_id: String,
     pub version_id: String,
 }
 
-/// Entrada para registrar una generación de diseño recién validada. Sin
-/// `target` es una creación; con él, una propuesta de actualización del
-/// artefacto (misma tabla, mismo ciclo de aceptación).
+/// Input for recording a newly validated design generation. Without
+/// `target` it is a creation; with it, an update proposal for the
+/// artifact (same table, same acceptance cycle).
 pub struct RecordDesignInput {
     pub project_id: String,
     pub module_id: String,
@@ -194,7 +194,7 @@ pub struct RecordDesignInput {
     pub target: Option<UpdateTarget>,
 }
 
-/// Registra la generación en disco y memoria, con Mermaid derivable.
+/// Records the generation on disk and memory, with derivable Mermaid.
 pub fn record_design_generation(
     store: &Store,
     ids: &mut IdGen,
@@ -204,19 +204,19 @@ pub fn record_design_generation(
 ) -> Result<DesignGenerationDto, ApiError> {
     if input.validated.kind != input.kind {
         return Err(ApiError::internal(
-            "el diseño no coincide con el tipo pedido",
+            "the design does not match the requested kind",
         ));
     }
-    // El módulo pudo archivarse durante la red: revalidar antes de registrar.
+    // The module may have archived during the network call: revalidate before recording.
     let module = ruth_core::domain::ModuleId::new(input.module_id.clone())?;
     if store.module(&module).is_some_and(|m| m.archived()) {
         return Err(CoreError::ArchivedModule { module }.into());
     }
     let mut ids_draft = ids.clone();
     let id = ids_draft.generation();
-    // La plantilla queda registrada: actualización, creación desde mockups
-    // (alguna fuente es un mockup) o creación desde requisitos. El contexto
-    // ya fijó las versiones exactas; aquí solo se lee su tipo.
+    // The template stays recorded: update, creation from mockups
+    // (some source is a mockup) or creation from requirements. The context
+    // already pinned the exact versions; only their kind reads here.
     let template_version = if input.target.is_some() {
         DESIGN_UPDATE_TEMPLATE_VERSION
     } else if context_has_mockup(store, &input.context) {
@@ -254,14 +254,15 @@ pub fn record_design_generation(
     log_draft
         .record(generation.clone())
         .map_err(ApiError::storage)?;
-    db.record_design(&generation).map_err(ApiError::storage)?;
+    db.record_design(&generation, ids_draft.checkpoint())
+        .map_err(ApiError::storage)?;
     *log = log_draft;
     *ids = ids_draft;
     to_dto(store, &generation)
 }
 
-/// ¿Alguna versión del contexto pertenece a un mockup? Solo lectura de
-/// tipos; las versiones ya se fijaron al capturar el contexto.
+/// Does any context version belong to a mockup? Kinds only read;
+/// versions were already pinned at context capture.
 fn context_has_mockup(store: &Store, context: &[GenerationContextItem]) -> bool {
     context.iter().any(|item| {
         VersionId::new(item.version_id.clone())
@@ -272,7 +273,7 @@ fn context_has_mockup(store: &Store, context: &[GenerationContextItem]) -> bool 
     })
 }
 
-/// Generaciones de diseño de un módulo con su caducidad calculada.
+/// A module's design generations with their computed staleness.
 pub fn list_designs(
     store: &Store,
     log: &DesignLog,
@@ -293,7 +294,7 @@ pub fn list_designs(
         .collect()
 }
 
-/// ¿Cambió alguna fuente desde la generación? Igual que en requisitos.
+/// Did any source change since the generation? Same as with requirements.
 pub fn design_is_stale(store: &Store, generation: &StoredDesignGeneration) -> bool {
     if context_is_stale(store, generation) {
         return true;
@@ -317,8 +318,8 @@ fn context_is_stale(store: &Store, generation: &StoredDesignGeneration) -> bool 
     false
 }
 
-/// ¿Cambió el objetivo desde el snapshot? Solo para actualizaciones: la
-/// versión actual del artefacto ya no es la fijada al generar.
+/// Did the target change since the snapshot? Updates only: the
+/// artifact's current version is no longer the pinned-at-generation one.
 fn update_target_moved(store: &Store, generation: &StoredDesignGeneration) -> bool {
     let (Some(artifact), Some(version)) = (
         generation.target_artifact_id.as_deref(),
@@ -335,8 +336,8 @@ fn update_target_moved(store: &Store, generation: &StoredDesignGeneration) -> bo
     }
 }
 
-/// Referencias citadas en una especificación: permite validar historial sin
-/// conjunto enviado (todo lo demás se exige igual).
+/// References cited in a spec: allows validating history without
+/// a sent set (everything else still enforced).
 fn cited_refs(value: &serde_json::Value) -> Vec<String> {
     let mut out = Vec::new();
     collect(value, &mut out);
@@ -371,9 +372,9 @@ fn collect(value: &serde_json::Value, out: &mut Vec<String>) {
     }
 }
 
-/// Valida una especificación bajo demanda (editor JSON, historial).
-/// Con conjunto permitido exige referencias dentro de él; sin él, validación
-/// estructural completa (lo que se revalida al aprobar).
+/// Validates a spec on demand (JSON editor, history).
+/// With an allowed set it requires references inside it; without it, full
+/// structural validation (what revalidates on approve).
 pub fn validate_spec(
     kind_str: &str,
     spec: &serde_json::Value,
@@ -389,7 +390,7 @@ pub fn validate_spec(
     }
 }
 
-/// Comando de validación: con generación, dentro de su contexto.
+/// Validation command: with a generation, inside its context.
 pub fn validate_design(
     store: &Store,
     log: &DesignLog,
@@ -398,16 +399,13 @@ pub fn validate_design(
     let allowed: Option<Vec<String>> = match &input.generation_id {
         Some(id) => {
             let generation = log.design(id).ok_or_else(|| {
-                ApiError::coded("design_not_found", format!("generación desconocida: {id}"))
+                ApiError::coded("design_not_found", format!("unknown generation: {id}"))
             })?;
             let mut artifacts = Vec::new();
             for version_id in &generation.context_version_ids {
                 let vid = VersionId::new(version_id.clone())?;
                 let Some(version) = store.version(&vid) else {
-                    return Err(ApiError::coded(
-                        "design_stale",
-                        "La generación está desactualizada.",
-                    ));
+                    return Err(ApiError::coded("design_stale", "The generation is stale."));
                 };
                 artifacts.push(version.artifact().as_str().to_string());
             }
@@ -426,10 +424,12 @@ fn to_dto(
     store: &Store,
     generation: &StoredDesignGeneration,
 ) -> Result<DesignGenerationDto, ApiError> {
-    let spec: serde_json::Value = serde_json::from_str(&generation.proposal.spec_json)
-        .map_err(|_| ApiError::internal(format!("la propuesta de {} no es JSON", generation.id)))?;
-    // Lo guardado se validó al escribir; aquí se revalida estructuralmente
-    // para derivar Mermaid. Si falla, los datos se corrompieron a mano.
+    let spec: serde_json::Value =
+        serde_json::from_str(&generation.proposal.spec_json).map_err(|_| {
+            ApiError::internal(format!("the proposal of {} is not JSON", generation.id))
+        })?;
+    // The saved data validated on write; here it revalidates structurally
+    // to derive Mermaid. On failure, the data was hand-corrupted.
     let validated = validate_spec(&generation.kind, &spec, None)?;
     let (state, artifact_id) = match &generation.proposal.state {
         ProposalState::Pending => ("pending".to_string(), None),
@@ -467,9 +467,9 @@ fn to_dto(
     })
 }
 
-/// La actualización acepta sobre el MISMO artefacto y la MISMA versión
-/// del snapshot: si el diseño se movió, la propuesta caduca (no se acepta
-/// en silencio sobre la nueva versión).
+/// Updates accept over the SAME artifact and the SAME snapshot
+/// version: when the design moved, the proposal expires (it never
+/// accepts silently over the new version).
 fn check_update_target(
     store: &Store,
     generation: &StoredDesignGeneration,
@@ -481,36 +481,36 @@ fn check_update_target(
         return Err(ApiError::coded(
             "update_wrong_target",
             format!(
-                "La propuesta actualiza {snapshot_artifact}: no puede aceptarse en otro artefacto."
+                "The proposal updates {snapshot_artifact}: it cannot be accepted on another artifact."
             ),
         ));
     }
     if input.expected_version_id.as_deref() != Some(snapshot_version) {
         return Err(ApiError::coded(
             "update_stale",
-            "La propuesta se generó sobre otra versión del diseño. Genera de nuevo.",
+            "The proposal generated over another design version. Generate again.",
         ));
     }
     if update_target_moved(store, generation) {
         return Err(ApiError::coded(
             "update_stale",
-            "El diseño cambió durante la revisión: la propuesta está desactualizada. \
-             Genera de nuevo.",
+            "The design changed during review: the proposal is stale. \
+             Generate again.",
         ));
     }
     Ok(())
 }
 
-/// Las fuentes del snapshot existen y siguen vigentes. La vigencia se
-/// recalcula (una fuente de diseño pudo desactualizarse después). Sin
-/// barrera de aprobación (diseño vivo): basta con fuentes guardadas y
-/// vigentes; la revisión es informativa.
+/// The snapshot sources exist and stay current. Currency
+/// recomputes (a design source may have gone stale later). No
+/// approval barrier (living design): saved, current sources suffice;
+/// review is informative.
 fn check_update_sources(store: &Store, sources: &[VersionId]) -> Result<(), ApiError> {
     for source in sources {
         let Some(version) = store.version(source) else {
             return Err(ApiError::coded(
                 "update_stale",
-                "Una fuente del snapshot ya no existe. Genera de nuevo.",
+                "A snapshot source no longer exists. Generate again.",
             ));
         };
         let validity = store.validity(source)?;
@@ -518,7 +518,7 @@ fn check_update_sources(store: &Store, sources: &[VersionId]) -> Result<(), ApiE
             return Err(ApiError::coded(
                 "update_stale",
                 format!(
-                    "{} dejó de estar vigente: actualiza esa fuente y genera de nuevo.",
+                    "{} stopped being current: update that source and generate again.",
                     version.artifact().as_str()
                 ),
             ));
@@ -527,12 +527,12 @@ fn check_update_sources(store: &Store, sources: &[VersionId]) -> Result<(), ApiE
     Ok(())
 }
 
-/// Acepta un diseño como borrador con procedencia IA, sin aprobarlo.
-/// Crea el artefacto o versiona el elegido (con versión esperada), con las
-/// versiones exactas del contexto como dependencias. Atómica e idempotente;
-/// bloqueada si está desactualizada o no pendiente. Las actualizaciones
-/// exigen además objetivo inmóvil y fuentes existentes y vigentes (sin
-/// exigir aprobación: diseño vivo).
+/// Accepts a design as an AI-provenance draft, without approving it.
+/// Creates the artifact or versions the chosen one (with expected version),
+/// with the context's exact versions as dependencies. Atomic and idempotent;
+/// blocked when stale or not pending. Updates additionally require
+/// a still target and existing, current sources (no approval
+/// required: living design).
 pub fn accept_design(
     store: &mut Store,
     ids: &mut IdGen,
@@ -553,7 +553,7 @@ pub fn accept_design(
         .ok_or_else(|| {
             ApiError::coded(
                 "design_not_found",
-                format!("generación desconocida: {}", input.generation_id),
+                format!("unknown generation: {}", input.generation_id),
             )
         })?
         .clone();
@@ -561,13 +561,13 @@ pub fn accept_design(
         ProposalState::Discarded => {
             return Err(ApiError::coded(
                 "design_discarded",
-                "La propuesta está descartada y no puede aceptarse.",
+                "The proposal is discarded and cannot be accepted.",
             ));
         }
         ProposalState::Accepted { .. } => {
             return Err(ApiError::coded(
                 "design_accepted",
-                "La propuesta ya se aceptó.",
+                "The proposal was already accepted.",
             ));
         }
         ProposalState::Pending => {}
@@ -580,26 +580,23 @@ pub fn accept_design(
         if is_update {
             return Err(ApiError::coded(
                 "update_stale",
-                "La propuesta está desactualizada: el diseño o una fuente cambió \
-                 durante la generación o la revisión. Genera de nuevo.",
+                "The proposal is stale: the design or a source changed \
+                 during generation or review. Generate again.",
             ));
         }
         return Err(ApiError::coded(
             "design_stale",
-            "La generación está desactualizada: cambió un requisito usado como \
-             contexto. Genera de nuevo con el contexto actual.",
+            "The generation is stale: a requirement used as context changed. \
+             Generate again with the current context.",
         ));
     }
-    // Conjunto permitido: artefactos del contexto registrado.
+    // Allowed set: artifacts from the recorded context.
     let mut allowed = Vec::with_capacity(generation.context_version_ids.len());
     let mut sources = Vec::with_capacity(generation.context_version_ids.len());
     for version_id in &generation.context_version_ids {
         let vid = VersionId::new(version_id.clone())?;
         let Some(version) = store.version(&vid) else {
-            return Err(ApiError::coded(
-                "design_stale",
-                "La generación está desactualizada.",
-            ));
+            return Err(ApiError::coded("design_stale", "The generation is stale."));
         };
         allowed.push(version.artifact().as_str().to_string());
         sources.push(vid);
@@ -646,13 +643,13 @@ pub fn accept_design(
             if known.artifact_type() != artifact_type {
                 return Err(ApiError::coded(
                     "design_type_mismatch",
-                    format!("{} no es del tipo {}", target, generation.kind),
+                    format!("{} is not of kind {}", target, generation.kind),
                 ));
             }
             let Some(expected_raw) = &input.expected_version_id else {
                 return Err(ApiError::coded(
                     "missing_expected",
-                    "Versionar exige la versión esperada.",
+                    "Versioning requires the expected version.",
                 ));
             };
             let expected = VersionId::new(expected_raw.clone())?;
@@ -690,7 +687,7 @@ pub fn accept_design(
     )
 }
 
-/// Descarta una propuesta de diseño pendiente. Idempotente.
+/// Discards a pending design proposal. Idempotent.
 pub fn discard_design(
     log: &mut DesignLog,
     db: &DbActor,
@@ -699,7 +696,7 @@ pub fn discard_design(
     if log.design(&input.generation_id).is_none() {
         return Err(ApiError::coded(
             "design_not_found",
-            format!("generación desconocida: {}", input.generation_id),
+            format!("unknown generation: {}", input.generation_id),
         ));
     }
     db.discard_design(&input.generation_id)
@@ -709,9 +706,9 @@ pub fn discard_design(
     Ok(())
 }
 
-/// Aprueba la versión actual de un diseño: exige artefacto de diseño,
-/// contenido válido del tipo y delega vigencia, versión actual y humanidad
-/// en el núcleo. Nada se decide por flags de React.
+/// Approves a design's current version: requires a design artifact,
+/// valid content of the kind, and delegates currency, current version
+/// and humanness to the core. Nothing is decided by React flags.
 pub fn approve_design_version(
     store: &mut Store,
     input: ApproveVersionInput,
@@ -730,46 +727,41 @@ pub fn approve_design_version(
         ArtifactType::Requirement => {
             return Err(ApiError::coded(
                 "not_a_design",
-                "Este comando solo aprueba versiones de diseño.",
+                "This command only approves design versions.",
             ));
         }
     };
     let Some(current) = store.current_version(&artifact) else {
-        return Err(ApiError::internal("el diseño no tiene versiones"));
+        return Err(ApiError::internal("the design has no versions"));
     };
-    let spec: serde_json::Value =
-        serde_json::from_str(current.content().as_str()).map_err(|_| {
-            ApiError::coded(
-                "design_invalid",
-                "El contenido no es JSON de diseño válido.",
-            )
-        })?;
+    let spec: serde_json::Value = serde_json::from_str(current.content().as_str())
+        .map_err(|_| ApiError::coded("design_invalid", "The content is not valid design JSON."))?;
     validate_spec(kind, &spec, None)
-        .map_err(|_| ApiError::coded("design_invalid", "El contenido no es un diseño válido."))?;
+        .map_err(|_| ApiError::coded("design_invalid", "The content is not a valid design."))?;
     approve_version(store, input, now)
 }
 
-/// Entradas máximas de una disposición (muy por encima del subconjunto).
+/// Maximum layout entries (far above the subset).
 pub const MAX_LAYOUT_ENTRIES: usize = 128;
-/// Longitud máxima de la clave de un elemento dispuesto.
+/// Maximum key length of a placed element.
 pub const MAX_LAYOUT_KEY_CHARS: usize = 64;
-/// Coordenada absoluta máxima admitida.
+/// Maximum admitted absolute coordinate.
 pub const MAX_LAYOUT_COORD: f64 = 100_000.0;
 
-/// Tamaño máximo admitido en una disposición (ancho/alto de mockups).
+/// Maximum admitted layout size (mockup width/height).
 pub const MAX_LAYOUT_SIZE: f64 = 100_000.0;
 
-/// Higieniza una disposición candidata `{ elemento: { x, y, w?, h? } }` para
-/// persistirla. Una no-objeto es un error del llamante; un objeto conserva
-/// solo entradas bien formadas, en orden de clave (determinista). `w`/`h`
-/// son opcionales (los usan los mockups redimensionables; los diagramas los
-/// ignoran) y se conservan solo si son finitos y positivos. Vacía tras
-/// higienizar equivale a "sin disposición" y no bloquea el guardado.
+/// Sanitizes a candidate layout `{ element: { x, y, w?, h? } }` for
+/// persisting it. A non-object is a caller error; an object keeps
+/// only well-formed entries, in key order (deterministic). `w`/`h`
+/// are optional (resizable mockups use them; diagrams ignore them)
+/// and persist only when finite and positive. Empty after sanitizing
+/// equals "no layout" and never blocks saving.
 pub fn sanitize_layout(value: &serde_json::Value) -> Result<Option<String>, ApiError> {
     let Some(object) = value.as_object() else {
         return Err(ApiError::coded(
             "design_layout_invalid",
-            "La disposición no es un objeto de posiciones.",
+            "The layout is not a positions object.",
         ));
     };
     let mut entries: Vec<(&String, f64, f64, Option<f64>, Option<f64>)> = Vec::new();
@@ -816,12 +808,12 @@ pub fn sanitize_layout(value: &serde_json::Value) -> Result<Option<String>, ApiE
     }
     serde_json::to_string(&map)
         .map(Some)
-        .map_err(|_| ApiError::internal("la disposición higienizada no serializa"))
+        .map_err(|_| ApiError::internal("the sanitized layout does not serialize"))
 }
 
-/// Disposición guardada para una versión. Lectura tolerante: fila ausente o
-/// ilegible equivale a "sin disposición" (el editor usa su trazado
-/// automático); la presentación nunca rompe una consulta.
+/// Saved layout for a version. Tolerant read: a missing or illegible row
+/// equals "no layout" (the editor uses its automatic placement);
+/// presentation never breaks a query.
 pub fn design_layout(layouts: &LayoutLog, input: GetDesignLayoutInput) -> DesignLayoutDto {
     let layout = layouts
         .get(&input.artifact_id, &input.version_id)
@@ -830,10 +822,10 @@ pub fn design_layout(layouts: &LayoutLog, input: GetDesignLayoutInput) -> Design
     DesignLayoutDto { layout }
 }
 
-/// Guarda solo la disposición de una versión existente, sin crear versión
-/// nueva ni tocar el dominio. La versión debe existir; la disposición se
-/// higieniza igual que en el guardado completo. No crea versiones vacías
-/// cuando solo se reordena el lienzo.
+/// Saves only an existing version's layout, without creating a new
+/// version or touching the domain. The version must exist; the layout
+/// sanitizes as in the full save. It creates no empty versions
+/// when only rearranging the canvas.
 pub fn save_design_layout_only(
     store: &Store,
     layouts: &mut LayoutLog,
@@ -844,14 +836,14 @@ pub fn save_design_layout_only(
     let Some(version) = store.version(&version_id) else {
         return Err(ApiError::coded(
             "version_not_found",
-            format!("La versión {} no existe.", input.version_id),
+            format!("Version {} does not exist.", input.version_id),
         ));
     };
     if version.artifact().as_str() != input.artifact_id {
         return Err(ApiError::coded(
             "version_not_found",
             format!(
-                "La versión {} no es de {}.",
+                "Version {} does not belong to {}.",
                 input.version_id, input.artifact_id
             ),
         ));
@@ -865,15 +857,14 @@ pub fn save_design_layout_only(
     Ok(())
 }
 
-/// Guarda una revisión manual del editor visual como versión nueva del MISMO
-/// artefacto, con procedencia humana y sin heredar aprobación. Revalida en
-/// Rust: tipo de diseño, especificación (dentro del conjunto declarado),
-/// fuentes declaradas existentes y vigentes, y versión esperada. Las fuentes
-/// obsoletas bloquean con sus nombres: nadie las actualiza en silencio; la
-/// persona adopta explícitamente las actuales y reintenta. La disposición
-/// viaja en la misma transacción. Atómica: ante cualquier fallo, memoria,
-/// disco e identificadores quedan intactos y el borrador se conserva en la
-/// interfaz.
+/// Saves a manual visual-editor review as a new version of the SAME
+/// artifact, with human provenance and no inherited approval. Revalidates
+/// in Rust: design kind, spec (inside the declared set), existing and
+/// current declared sources, and expected version. Stale sources block
+/// with their names: nobody updates them silently; the person explicitly
+/// adopts the current ones and retries. The layout travels in the
+/// same transaction. Atomic: on any failure, memory, disk and identifiers
+/// stay intact and the draft stays in the UI.
 pub fn save_design_version(
     store: &mut Store,
     ids: &mut IdGen,
@@ -892,23 +883,23 @@ pub fn save_design_version(
         ArtifactType::Mockup => {
             return Err(ApiError::coded(
                 "not_a_design",
-                "Este comando solo guarda flujos y modelos; los mockups se guardan con su propio comando.",
+                "This command only saves flows and models; mockups save with their own command.",
             ));
         }
         ArtifactType::Requirement => {
             return Err(ApiError::coded(
                 "not_a_design",
-                "Este comando solo guarda versiones de diseño.",
+                "This command only saves design versions.",
             ));
         }
     };
     if input.source_version_ids.is_empty() {
         return Err(ApiError::coded(
             "design_no_sources",
-            "El diseño debe declarar sus fuentes exactas.",
+            "The design must declare its exact sources.",
         ));
     }
-    // Fuentes declaradas: deben existir y ser las actuales de su artefacto.
+    // Declared sources: must exist and be their artifact's current ones.
     let mut sources = Vec::with_capacity(input.source_version_ids.len());
     let mut allowed = Vec::with_capacity(input.source_version_ids.len());
     let mut stale = Vec::new();
@@ -917,7 +908,7 @@ pub fn save_design_version(
         let Some(version) = store.version(&vid) else {
             return Err(ApiError::coded(
                 "design_source_missing",
-                format!("La fuente {raw} no existe."),
+                format!("Source {raw} does not exist."),
             ));
         };
         let source_artifact = version.artifact().clone();
@@ -937,7 +928,7 @@ pub fn save_design_version(
         return Err(ApiError::coded(
             "design_stale_sources",
             format!(
-                "Fuentes obsoletas ({}): revisa sus versiones actuales y guarda de nuevo.",
+                "Stale sources ({}): review their current versions and save again.",
                 stale.join(", ")
             ),
         ));

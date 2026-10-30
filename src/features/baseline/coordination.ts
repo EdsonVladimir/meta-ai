@@ -1,20 +1,20 @@
-// Coordinación pura del diálogo de entregas: frescura de respuestas,
-// nombre del ZIP y formato de tamaños. Sin React ni Tauri.
+// Pure delivery-dialog coordination: response freshness, ZIP naming and
+// size formatting. No React, no Tauri.
 
-/** Una respuesta tardía nunca sobrescribe una consulta más reciente. */
+/** A late response never overwrites a newer query. */
 export function isStaleBaselineResponse(currentKey: string, responseKey: string): boolean {
   return currentKey !== responseKey;
 }
 
-/** Clave de una consulta de preparación: proyecto + módulo + selección. */
+/** A preparation query key: project + module + selection. */
 export function prepareKey(projectId: string, moduleId: string, artifactIds: string[]): string {
   return [projectId, moduleId, ...[...artifactIds].sort()].join("\u0000");
 }
 
 /**
- * Nombre de archivo sugerido para el ZIP, derivado del nombre humano y del
- * ID de la baseline. Solo minúsculas, dígitos y guiones; nunca títulos libres
- * tal cual (podrían llevar separadores de ruta).
+ * Suggested file name for the ZIP, derived from the human name and the
+ * baseline ID. Lowercase, digits and dashes only; never raw free titles
+ * (they could carry path separators).
  */
 export function defaultZipName(name: string, baselineId: string): string {
   const slug =
@@ -24,14 +24,14 @@ export function defaultZipName(name: string, baselineId: string): string {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 48) || "entrega";
+      .slice(0, 48) || "delivery";
   const safeId =
     baselineId.replace(/[^a-zA-Z0-9-_]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) ||
     "baseline";
   return `${slug}-${safeId}.zip`;
 }
 
-/** Tamaño legible para la vista previa del paquete. */
+/** Readable size for the package preview. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -43,11 +43,11 @@ export function formatBytes(bytes: number): string {
 export function kindLabel(kind: string): string {
   switch (kind) {
     case "requirement":
-      return "requisito";
+      return "requirement";
     case "flow":
-      return "flujo";
+      return "flow";
     case "data_model":
-      return "modelo ER";
+      return "ER model";
     case "mockup":
       return "mockup";
     default:
@@ -55,19 +55,19 @@ export function kindLabel(kind: string): string {
   }
 }
 
-/** Explicación legible de un código de bloqueo de la preparación. */
+/** Readable explanation of a preparation blocker code. */
 export function blockerTitle(code: string): string {
   switch (code) {
     case "draft":
-      return "Sin aprobar";
+      return "Unapproved";
     case "stale_sources":
-      return "Fuentes desactualizadas";
+      return "Stale sources";
     case "stale_expected":
-      return "Versión obsoleta";
+      return "Stale version";
     case "missing_sources":
-      return "Fuentes fuera del alcance";
+      return "Sources out of scope";
     case "not_in_scope":
-      return "Fuera del alcance";
+      return "Out of scope";
     default:
       return code;
   }

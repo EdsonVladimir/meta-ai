@@ -1,6 +1,6 @@
-// Trazado determinista del grafo de impacto: capas por profundidad desde
-// el origen, nodos sin duplicar y truncado explícito. Puro y probado; el
-// componente SVG solo dibuja estas coordenadas.
+// Deterministic impact-graph layout: layers by depth from the origin,
+// deduplicated nodes and explicit truncation. Pure and tested; the SVG
+// component only draws these coordinates.
 import { MAX_GRAPH_NODES } from "./coordination";
 
 export type ImpactNodeStatus = "origin" | "pending" | "awaiting" | "updated";
@@ -8,7 +8,7 @@ export type ImpactNodeStatus = "origin" | "pending" | "awaiting" | "updated";
 export interface ImpactGraphNode {
   id: string;
   kind: string;
-  /** Título vigente, solo presentación (la identidad es el ID). */
+  /** Live title, presentation only (identity is the ID). */
   title: string | null;
   status: ImpactNodeStatus;
   depth: number;
@@ -40,7 +40,7 @@ export interface LayoutInput {
   originId: string;
   originKind: string;
   originTitle: string | null;
-  /** Afectados con su estado calculado por el núcleo. */
+  /** Affected items with their core-computed state. */
   affected: {
     id: string;
     kind: string;
@@ -48,7 +48,7 @@ export interface LayoutInput {
     awaitingApproval?: boolean;
     title: string | null;
   }[];
-  /** Caminos de artefactos desde el origen hasta cada afectado. */
+  /** Artifact paths from the origin to each affected item. */
   paths: string[][];
 }
 
@@ -61,7 +61,7 @@ export function layoutImpactGraph(input: LayoutInput): ImpactGraphLayout {
     if (!state.has(item.id)) state.set(item.id, item);
   }
 
-  // Aristas deduplicadas en dirección del impacto (fuente → dependiente).
+  // Deduplicated edges in impact direction (source → dependent).
   const edgeKeys = new Set<string>();
   const edges: ImpactGraphEdge[] = [];
   for (const path of input.paths) {
@@ -82,8 +82,8 @@ export function layoutImpactGraph(input: LayoutInput): ImpactGraphLayout {
   }
   for (const list of successors.values()) list.sort();
 
-  // Profundidad por BFS desde el origen; los inalcanzables (no debería
-  // haberlos: todo afectado llega por un camino) van a la última capa.
+  // BFS depth from the origin; the unreachable (there should be none:
+  // every affected item arrives through a path) go to the last layer.
   const depth = new Map<string, number>([[input.originId, 0]]);
   const queue: string[] = [input.originId];
   while (queue.length > 0) {
@@ -102,7 +102,7 @@ export function layoutImpactGraph(input: LayoutInput): ImpactGraphLayout {
   const allIds = new Set<string>([input.originId]);
   for (const item of input.affected) allIds.add(item.id);
   for (const path of input.paths) for (const id of path) allIds.add(id);
-  // Orden BFS estable: origen primero, luego por (profundidad, id).
+  // Stable BFS order: origin first, then by (depth, id).
   const ordered = [...allIds].sort((a, b) => {
     const da = depth.get(a) ?? maxDepth + 1;
     const db = depth.get(b) ?? maxDepth + 1;

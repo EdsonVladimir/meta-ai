@@ -1,6 +1,6 @@
-// Cliente de terminal: comandos Tauri y suscripciones a eventos.
-// La salida fluye por eventos a xterm directamente, sin pasar por stores
-// de React: ningún fragmento re-renderiza nada.
+// Terminal client: Tauri commands and event subscriptions. Output
+// flows over events straight into xterm, bypassing React stores: no
+// chunk re-renders anything.
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauriEnvironment } from "../../lib/env";
@@ -17,7 +17,7 @@ export { isTauriEnvironment };
 function notDesktop(): TerminalError {
   return {
     kind: "not_tauri",
-    message: "La terminal integrada requiere Ruth IDE de escritorio.",
+    message: "The integrated terminal needs the Ruth IDE desktop app.",
   };
 }
 
@@ -26,11 +26,11 @@ export function normalizeTerminalError(raw: unknown): TerminalError {
     const record = raw as Record<string, unknown>;
     const kind = typeof record.kind === "string" ? record.kind : "unknown";
     const message =
-      typeof record.message === "string" ? record.message : "Error desconocido de terminal.";
+      typeof record.message === "string" ? record.message : "Unknown terminal error.";
     return { kind, message };
   }
   if (typeof raw === "string") return { kind: "unknown", message: raw };
-  return { kind: "unknown", message: "Error desconocido de terminal." };
+  return { kind: "unknown", message: "Unknown terminal error." };
 }
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -62,7 +62,7 @@ export function closeTerminal(id: string): Promise<void> {
   return call("term_close", { input: { id } });
 }
 
-/** Salida confirmada: mata las sesiones y termina la app. */
+/** Confirmed quit: kills the sessions and ends the app. */
 export function quitAppWithTerminals(): Promise<void> {
   return call("term_quit_app");
 }

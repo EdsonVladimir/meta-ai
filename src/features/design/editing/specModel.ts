@@ -1,16 +1,15 @@
-// Modelo semántico del editor visual de diseños. Puro: sin React, sin
-// Tauri. El JSON estructurado sigue siendo autoritativo; este módulo lo
-// parsea, lo transforma con operaciones totales y lo serializa en forma
-// canónica. Las posiciones visuales NO viven aquí (ver Layout): mover un
-// elemento jamás toca la semántica.
-//
-// Refleja el subconjunto de `src-tauri/crates/meta/src/design.rs`:
-// - Flujo: nodos start|step|decision|end con id/etiqueta/citas, aristas con
-//   origen/destino/etiqueta opcional. Los ciclos son válidos.
-// - ER: entidades con nombre/atributos (nombre + marca de clave, SIN tipos:
-//   fuera del subconjunto) y citas; relaciones con extremos, etiqueta
-//   opcional y cardinalidades 1|0..1|N|0..N.
-// Las referencias a requisitos son identificadores de ARTEFACTO estables.
+// Semantic model of the visual design editor. Pure: no React, no Tauri.
+// The structured JSON stays authoritative; this module parses it,
+// transforms it with total operations and serializes it canonically.
+// Visual positions do NOT live here (see Layout): moving an element
+// never touches semantics. Mirrors the
+// `src-tauri/crates/meta/src/design.rs` subset:
+// - Flow: start|step|decision|end nodes with id/label/citations, edges
+//   with origin/target/optional label. Cycles are valid.
+// - ER: entities with name/attributes (name + key mark, NO types:
+//   outside the subset) and citations; relations with ends, optional
+//   label and 1|0..1|N|0..N cardinalities.
+// Requirement references are stable ARTIFACT identifiers.
 
 export type FlowNodeKind = "start" | "step" | "decision" | "end";
 export type Cardinality = "1" | "0..1" | "N" | "0..N";
@@ -20,6 +19,8 @@ export interface FlowNode {
   kind: FlowNodeKind;
   label: string;
   requirements: string[];
+  /** Citations to `mockup/component` motivating the node (informational). */
+  mockups: string[];
 }
 
 export interface FlowEdge {
@@ -42,6 +43,8 @@ export interface ErEntity {
   name: string;
   attributes: ErAttribute[];
   requirements: string[];
+  /** Citations to `mockup/component` motivating the entity (informational). */
+  mockups: string[];
 }
 
 export interface ErRelation {
@@ -64,13 +67,13 @@ export interface DesignMeta {
 }
 
 /**
- * Disposición visual: posiciones (y tamaño opcional) por identificador de
- * elemento. `w`/`h` solo los usan los mockups redimensionables; los
- * diagramas guardan posición y los ignoran.
+ * Visual layout: positions (and optional size) per element identifier.
+ * `w`/`h` are only used by resizable mockups; diagrams save position
+ * and ignore them.
  */
 export type Layout = Record<string, { x: number; y: number; w?: number; h?: number }>;
 
-/** Nodo listo para el lienzo: semántica + posición resuelta. */
+/** Canvas-ready node: semantics + resolved position. */
 export interface CanvasNode<T> {
   id: string;
   x: number;
@@ -79,7 +82,7 @@ export interface CanvasNode<T> {
 }
 
 export interface CanvasEdge {
-  /** Identidad posicional (`e0`, `e1`…): las aristas no tienen id propio. */
+  /** Positional identity (`e0`, `e1`…): edges have no id of their own. */
   id: string;
   from: string;
   to: string;
@@ -98,7 +101,7 @@ function stringList(value: unknown): string[] | null {
 
 const FLOW_KINDS: FlowNodeKind[] = ["start", "step", "decision", "end"];
 
-/** Parsea un flujo guardado (contenido canónico). Null ante forma ajena. */
+/** Parses a saved flow (canonical content). Null on foreign shape. */
 export function parseFlowSpec(value: unknown): { spec: FlowSpec; meta: DesignMeta } | null {
   if (!isRecord(value)) return null;
   const meta = parseMeta(value);
@@ -112,7 +115,10 @@ export function parseFlowSpec(value: unknown): { spec: FlowSpec; meta: DesignMet
     if (typeof raw.label !== "string") return null;
     const requirements = stringList(raw.requirements);
     if (requirements === null) return null;
-    nodes.push({ id: raw.id, kind: raw.kind as FlowNodeKind, label: raw.label, requirements });
+    // Optional and missing in older designs: tolerate.
+    const mockups = raw.mockups === undefined || raw.mockups === null ? [] : stringList(raw.mockups);
+    if (mockups === null) return null;
+    nodes.push({ id: raw.id, kind: raw.kind as FlowNodeKind, label: raw.label, requirements, mockups });
   }
   const edges: FlowEdge[] = [];
   for (const raw of value.edges) {
@@ -130,7 +136,7 @@ export function parseFlowSpec(value: unknown): { spec: FlowSpec; meta: DesignMet
 
 const CARDS: Cardinality[] = ["1", "0..1", "N", "0..N"];
 
-/** Parsea un modelo ER guardado (contenido canónico). Null ante forma ajena. */
+/** Parses a saved ER model (canonical content). Null on foreign shape. */
 export function parseErSpec(value: unknown): { spec: ErSpec; meta: DesignMeta } | null {
   if (!isRecord(value)) return null;
   const meta = parseMeta(value);
@@ -143,6 +149,8 @@ export function parseErSpec(value: unknown): { spec: ErSpec; meta: DesignMeta } 
     if (!Array.isArray(raw.attributes)) return null;
     const requirements = stringList(raw.requirements);
     if (requirements === null) return null;
+    const mockups = raw.mockups === undefined || raw.mockups === null ? [] : stringList(raw.mockups);
+    if (mockups === null) return null;
     const attributes: ErAttribute[] = [];
     for (const attr of raw.attributes) {
       if (!isRecord(attr)) return null;
@@ -150,7 +158,7 @@ export function parseErSpec(value: unknown): { spec: ErSpec; meta: DesignMeta } 
       if (attr.key !== undefined && typeof attr.key !== "boolean") return null;
       attributes.push({ name: attr.name, key: attr.key === true });
     }
-    entities.push({ name: raw.name, attributes, requirements });
+    entities.push({ name: raw.name, attributes, requirements, mockups });
   }
   const relations: ErRelation[] = [];
   for (const raw of value.relations) {
@@ -182,7 +190,7 @@ function parseMeta(value: Record<string, unknown>): DesignMeta | null {
   return { title: value.title, explanation: value.explanation, questions };
 }
 
-/** Serialización canónica: mismo orden de claves que Rust (`title`, `kind`, …). */
+/** Canonical serialization: same key order as Rust (`title`, `kind`, …). */
 export function serializeFlowSpec(spec: FlowSpec, meta: DesignMeta): string {
   return JSON.stringify({
     title: meta.title,
@@ -192,6 +200,7 @@ export function serializeFlowSpec(spec: FlowSpec, meta: DesignMeta): string {
       kind: n.kind,
       label: n.label,
       requirements: n.requirements,
+      ...(n.mockups.length > 0 ? { mockups: n.mockups } : {}),
     })),
     edges: spec.edges.map((e) => (e.label === undefined ? { from: e.from, to: e.to } : e)),
     explanation: meta.explanation,
@@ -199,7 +208,7 @@ export function serializeFlowSpec(spec: FlowSpec, meta: DesignMeta): string {
   });
 }
 
-/** Serialización canónica del modelo ER. */
+/** Canonical serialization of the ER model. */
 export function serializeErSpec(spec: ErSpec, meta: DesignMeta): string {
   return JSON.stringify({
     title: meta.title,
@@ -208,6 +217,7 @@ export function serializeErSpec(spec: ErSpec, meta: DesignMeta): string {
       name: e.name,
       attributes: e.attributes.map((a) => ({ name: a.name, key: a.key })),
       requirements: e.requirements,
+      ...(e.mockups.length > 0 ? { mockups: e.mockups } : {}),
     })),
     relations: spec.relations.map((r) => ({
       from: r.from,
@@ -221,7 +231,7 @@ export function serializeErSpec(spec: ErSpec, meta: DesignMeta): string {
   });
 }
 
-/** Interpreta una disposición guardada con tolerancia: solo entradas válidas. */
+/** Interprets a saved layout tolerantly: only valid entries. */
 export function parseLayout(value: unknown): Layout {
   const layout: Layout = {};
   if (!isRecord(value)) return layout;
@@ -240,7 +250,7 @@ export function parseLayout(value: unknown): Layout {
 }
 
 // ---------------------------------------------------------------------------
-// Trazado automático determinista (solo cuando no hay disposición guardada).
+// Deterministic auto layout (only without a saved layout).
 // ---------------------------------------------------------------------------
 
 const FLOW_DX = 240;
@@ -249,8 +259,8 @@ const ER_DX = 300;
 const ER_DY = 230;
 
 /**
- * Capas por anchura desde las raíces (sin entrantes), estable en el orden
- * de la especificación. Seguro ante ciclos: lo no alcanzado cae al final.
+ * Breadth layers from the roots (no incoming edges), stable in spec
+ * order. Cycle-safe: unreachable nodes fall to the end.
  */
 function flowLayers(spec: FlowSpec): Map<string, number> {
   const layers = new Map<string, number>();
@@ -269,7 +279,7 @@ function flowLayers(spec: FlowSpec): Map<string, number> {
     }
   }
   if (queue.length === 0 && spec.nodes.length > 0) {
-    // Todo en ciclos: se empieza por el primero sin romper determinismo.
+    // All in cycles: start from the first without breaking determinism.
     layers.set(spec.nodes[0].id, 0);
     queue.push(spec.nodes[0].id);
   }
@@ -297,7 +307,7 @@ function flowLayers(spec: FlowSpec): Map<string, number> {
   return layers;
 }
 
-/** Flujo → lienzo: la disposición manda; lo demás usa trazado automático. */
+/** Flow → canvas: the layout wins; the rest uses auto layout. */
 export function flowToGraph(
   spec: FlowSpec,
   layout: Layout,
@@ -322,11 +332,10 @@ export function flowToGraph(
 }
 
 /**
- * Vértice de salida para cada arista cuyo origen es una decisión (solo
- * presentación: los ids corresponden a los handles del rombo). Regla
- * determinista en el orden de la especificación: una sola rama sale por
- * abajo; con dos o más, la primera por la derecha, la segunda por la
- * izquierda y el resto por abajo. `null` = handle por defecto.
+ * Exit vertex for each edge from a decision (presentation only: ids
+ * match the diamond handles). Deterministic rule in spec order: a
+ * single branch exits at the bottom; with two or more, the first goes
+ * right, the second left and the rest bottom. `null` = default handle.
  */
 export function decisionBranchHandles(spec: FlowSpec): (string | null)[] {
   const kinds = new Map(spec.nodes.map((node) => [node.id, node.kind]));
@@ -349,7 +358,7 @@ export function decisionBranchHandles(spec: FlowSpec): (string | null)[] {
   });
 }
 
-/** ER → lienzo: rejilla estable en el orden de la especificación. */
+/** ER → canvas: stable grid in spec order. */
 export function erToGraph(
   spec: ErSpec,
   layout: Layout,
@@ -371,7 +380,7 @@ export function erToGraph(
   return { nodes, edges };
 }
 
-/** Al renombrar un elemento, su posición guardada lo acompaña. */
+/** On element rename, its saved position follows. */
 export function remapLayout(layout: Layout, oldId: string, newId: string): Layout {
   if (oldId === newId || layout[oldId] === undefined) return layout;
   const next = { ...layout };
@@ -381,10 +390,10 @@ export function remapLayout(layout: Layout, oldId: string, newId: string): Layou
 }
 
 /**
- * Detecta un renombrado único entre dos especificaciones ([viejo, nuevo]).
- * El editor lo usa para acompañar la posición guardada. Null si hubo
- * altas/bajas o varios cambios (la disposición parcial se conserva igual:
- * lo desconocido cae al trazado automático).
+ * Detects a single rename between two specs ([old, new]). The editor
+ * uses it to carry the saved position. Null on additions/removals or
+ * several changes (partial layout is kept anyway: unknown falls back
+ * to auto layout).
  */
 export function detectRename(
   kind: "flow" | "data_model",
@@ -407,9 +416,9 @@ export function detectRename(
 }
 
 /**
- * Artefacto de un identificador de versión (`req-1-v2` → `req-1`). Los
- * identificadores los genera Rust como `{artefacto}-v{número}`; si la forma
- * no coincide, null (el llamante usa otra fuente, nunca inventa).
+ * Artifact of a version identifier (`req-1-v2` → `req-1`). Rust
+ * generates identifiers as `{artifact}-v{number}`; on shape mismatch,
+ * null (the caller uses another source, never invents).
  */
 export function artifactOfVersion(versionId: string): string | null {
   const match = /^(.*)-v\d+$/.exec(versionId.trim());
@@ -418,12 +427,12 @@ export function artifactOfVersion(versionId: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Operaciones semánticas (todas devuelven una especificación nueva).
+// Semantic operations (all return a new spec).
 // ---------------------------------------------------------------------------
 
-/** Identificador libre a partir de una base (`paso`, `paso_2`, …). */
+/** Free identifier from a base (`step`, `step_2`, …). */
 export function suggestId(base: string, taken: ReadonlySet<string>): string {
-  const clean = base.trim() === "" ? "elemento" : base;
+  const clean = base.trim() === "" ? "element" : base;
   if (!taken.has(clean)) return clean;
   let n = 2;
   while (taken.has(`${clean}_${n}`)) n += 1;
@@ -431,13 +440,13 @@ export function suggestId(base: string, taken: ReadonlySet<string>): string {
 }
 
 const FLOW_LABELS: Record<FlowNodeKind, { id: string; label: string }> = {
-  start: { id: "inicio", label: "Inicio" },
-  step: { id: "paso", label: "Nuevo paso" },
-  decision: { id: "decision", label: "Nueva decisión" },
-  end: { id: "fin", label: "Fin" },
+  start: { id: "start", label: "Start" },
+  step: { id: "step", label: "New step" },
+  decision: { id: "decision", label: "New decision" },
+  end: { id: "end", label: "End" },
 };
 
-/** Añade un nodo con identidad libre. No toca aristas ni disposición. */
+/** Adds a node with a free identity. Touches neither edges nor layout. */
 export function addFlowNode(spec: FlowSpec, kind: FlowNodeKind): { spec: FlowSpec; id: string } {
   const taken = new Set(spec.nodes.map((n) => n.id));
   const id = suggestId(FLOW_LABELS[kind].id, taken);
@@ -446,7 +455,7 @@ export function addFlowNode(spec: FlowSpec, kind: FlowNodeKind): { spec: FlowSpe
       ...spec,
       nodes: [
         ...spec.nodes,
-        { id, kind, label: FLOW_LABELS[kind].label, requirements: [] },
+        { id, kind, label: FLOW_LABELS[kind].label, requirements: [], mockups: [] },
       ],
     },
     id,
@@ -457,9 +466,10 @@ export interface FlowNodePatch {
   label?: string;
   kind?: FlowNodeKind;
   requirements?: string[];
+  mockups?: string[];
 }
 
-/** Edita etiqueta, tipo o citas de un nodo. Identidad intacta. */
+/** Edits a node label, kind or citations. Identity intact. */
 export function updateFlowNode(spec: FlowSpec, id: string, patch: FlowNodePatch): FlowSpec {
   return {
     ...spec,
@@ -470,6 +480,7 @@ export function updateFlowNode(spec: FlowSpec, id: string, patch: FlowNodePatch)
             ...(patch.label !== undefined ? { label: patch.label } : {}),
             ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
             ...(patch.requirements !== undefined ? { requirements: patch.requirements } : {}),
+            ...(patch.mockups !== undefined ? { mockups: patch.mockups } : {}),
           }
         : node,
     ),
@@ -483,18 +494,18 @@ export interface RenameResult<T> {
 }
 
 function checkNewId(newId: string, taken: ReadonlySet<string>): string | null {
-  if (newId.trim() === "") return "El identificador no puede estar vacío.";
+  if (newId.trim() === "") return "The identifier cannot be empty.";
   if (!/^[A-Za-z0-9_]+$/.test(newId)) {
-    return "Solo letras, dígitos y subrayado.";
+    return "Only letters, digits and underscore.";
   }
-  if (newId.length > 64) return "Máximo 64 caracteres.";
-  if (taken.has(newId)) return "Ese identificador ya existe.";
+  if (newId.length > 64) return "At most 64 characters.";
+  if (taken.has(newId)) return "That identifier already exists.";
   return null;
 }
 
 /**
- * Renombra la identidad de un nodo y reescribe las aristas que lo citan.
- * Rechaza (sin cambiar nada) identificadores inválidos o duplicados.
+ * Renames a node identity and rewrites the edges citing it. Rejects
+ * (changing nothing) invalid or duplicate identifiers.
  */
 export function renameFlowNodeId(
   spec: FlowSpec,
@@ -520,7 +531,7 @@ export function renameFlowNodeId(
   };
 }
 
-/** Elimina un nodo y las aristas que lo tocan. Informa cuántas cayeron. */
+/** Removes a node and the edges touching it. Reports how many fell. */
 export function removeFlowNode(spec: FlowSpec, id: string): { spec: FlowSpec; removedEdges: number } {
   const edges = spec.edges.filter((e) => e.from !== id && e.to !== id);
   return {
@@ -529,7 +540,7 @@ export function removeFlowNode(spec: FlowSpec, id: string): { spec: FlowSpec; re
   };
 }
 
-/** Crea una conexión. Los ciclos son válidos en el subconjunto. */
+/** Creates a connection. Cycles are valid in the subset. */
 export function addFlowEdge(spec: FlowSpec, from: string, to: string): { spec: FlowSpec; index: number } {
   return {
     spec: { ...spec, edges: [...spec.edges, { from, to }] },
@@ -537,7 +548,7 @@ export function addFlowEdge(spec: FlowSpec, from: string, to: string): { spec: F
   };
 }
 
-/** Edita la etiqueta de una conexión (`null` la quita). */
+/** Edits a connection label (`null` removes it). */
 export function updateFlowEdge(
   spec: FlowSpec,
   index: number,
@@ -555,16 +566,16 @@ export function updateFlowEdge(
   };
 }
 
-/** Elimina una conexión por su posición. */
+/** Removes a connection by position. */
 export function removeFlowEdge(spec: FlowSpec, index: number): FlowSpec {
   return { ...spec, edges: spec.edges.filter((_, i) => i !== index) };
 }
 
-/** Añade una entidad con un atributo inicial (el subconjunto exige ≥1). */
+/** Adds an entity with an initial attribute (the subset requires ≥1). */
 export function addEntity(spec: ErSpec, name?: string): { spec: ErSpec; name: string } {
   const taken = new Set(spec.entities.map((e) => e.name));
-  const base = name?.trim() === "" || name === undefined ? "Entidad" : (name as string);
-  const clean = /^[A-Za-z0-9_]+$/.test(base) ? base : "Entidad";
+  const base = name?.trim() === "" || name === undefined ? "Entity" : (name as string);
+  const clean = /^[A-Za-z0-9_]+$/.test(base) ? base : "Entity";
   const finalName = suggestId(clean, taken);
   const attrTaken = new Set<string>();
   return {
@@ -576,6 +587,7 @@ export function addEntity(spec: ErSpec, name?: string): { spec: ErSpec; name: st
           name: finalName,
           attributes: [{ name: suggestId("id", attrTaken), key: true }],
           requirements: [],
+          mockups: [],
         },
       ],
     },
@@ -584,8 +596,8 @@ export function addEntity(spec: ErSpec, name?: string): { spec: ErSpec; name: st
 }
 
 /**
- * Renombra una entidad y reescribe las relaciones que la citan. Rechaza
- * (sin cambiar nada) nombres inválidos o duplicados.
+ * Renames an entity and rewrites the relations citing it. Rejects
+ * (changing nothing) invalid or duplicate names.
  */
 export function renameEntity(spec: ErSpec, oldName: string, newName: string): RenameResult<ErSpec> {
   if (oldName === newName) return { spec, ok: true };
@@ -609,7 +621,7 @@ export function renameEntity(spec: ErSpec, oldName: string, newName: string): Re
   };
 }
 
-/** Elimina una entidad con sus atributos y relaciones. Informa las caídas. */
+/** Removes an entity with its attributes and relations. Reports the falls. */
 export function removeEntity(
   spec: ErSpec,
   name: string,
@@ -626,7 +638,7 @@ export function removeEntity(
   };
 }
 
-/** Edita las citas a requisitos de una entidad. */
+/** Edits an entity requirement citations. */
 export function setEntityRequirements(
   spec: ErSpec,
   name: string,
@@ -640,7 +652,17 @@ export function setEntityRequirements(
   };
 }
 
-/** Añade un atributo a una entidad. */
+/** Edits an entity mockup citations (`mockup/component`). */
+export function setEntityMockups(spec: ErSpec, name: string, mockups: string[]): ErSpec {
+  return {
+    ...spec,
+    entities: spec.entities.map((entity) =>
+      entity.name === name ? { ...entity, mockups } : entity,
+    ),
+  };
+}
+
+/** Adds an attribute to an entity. */
 export function addAttribute(
   spec: ErSpec,
   entity: string,
@@ -648,8 +670,8 @@ export function addAttribute(
 ): { spec: ErSpec; name: string | null } {
   const target = spec.entities.find((e) => e.name === entity);
   if (target === undefined) return { spec, name: null };
-  const base = name?.trim() === "" || name === undefined ? "atributo" : (name as string);
-  const clean = /^[A-Za-z0-9_]+$/.test(base) ? base : "atributo";
+  const base = name?.trim() === "" || name === undefined ? "attribute" : (name as string);
+  const clean = /^[A-Za-z0-9_]+$/.test(base) ? base : "attribute";
   const attrName = suggestId(clean, new Set(target.attributes.map((a) => a.name)));
   return {
     spec: {
@@ -664,7 +686,7 @@ export function addAttribute(
   };
 }
 
-/** Renombra un atributo dentro de su entidad. */
+/** Renames an attribute inside its entity. */
 export function renameAttribute(
   spec: ErSpec,
   entity: string,
@@ -673,7 +695,7 @@ export function renameAttribute(
 ): RenameResult<ErSpec> {
   if (oldName === newName) return { spec, ok: true };
   const target = spec.entities.find((e) => e.name === entity);
-  if (target === undefined) return { spec, ok: false, reason: "La entidad no existe." };
+  if (target === undefined) return { spec, ok: false, reason: "The entity does not exist." };
   const problem = checkNewId(
     newName,
     new Set(target.attributes.map((a) => a.name).filter((name) => name !== oldName)),
@@ -697,7 +719,7 @@ export function renameAttribute(
   };
 }
 
-/** Marca o desmarca un atributo como clave (PK). */
+/** Marks or unmarks an attribute as key (PK). */
 export function setAttributeKey(
   spec: ErSpec,
   entity: string,
@@ -717,7 +739,7 @@ export function setAttributeKey(
   };
 }
 
-/** Elimina un atributo de su entidad. */
+/** Removes an attribute from its entity. */
 export function removeAttribute(spec: ErSpec, entity: string, name: string): ErSpec {
   return {
     ...spec,
@@ -728,8 +750,8 @@ export function removeAttribute(spec: ErSpec, entity: string, name: string): ErS
 }
 
 /**
- * Crea una relación con cardinalidades permisivas por defecto (N:N);
- * el inspector las ajusta. Una autorrelación también es válida en ER.
+ * Creates a relation with permissive default cardinalities (N:N); the
+ * inspector adjusts them. A self-relation is also valid in ER.
  */
 export function addRelation(
   spec: ErSpec,
@@ -751,7 +773,7 @@ export interface RelationPatch {
   toCard?: Cardinality;
 }
 
-/** Edita etiqueta (`null` la quita) o cardinalidades de una relación. */
+/** Edits a relation label (`null` removes it) or cardinalities. */
 export function updateRelation(spec: ErSpec, index: number, patch: RelationPatch): ErSpec {
   return {
     ...spec,
@@ -769,41 +791,41 @@ export function updateRelation(spec: ErSpec, index: number, patch: RelationPatch
   };
 }
 
-/** Elimina una relación por su posición. */
+/** Removes a relation by position. */
 export function removeRelation(spec: ErSpec, index: number): ErSpec {
   return { ...spec, relations: spec.relations.filter((_, i) => i !== index) };
 }
 
-/** Edita título, explicación o preguntas del diseño. */
+/** Edits the design title, explanation or questions. */
 export function updateMeta(meta: DesignMeta, patch: Partial<DesignMeta>): DesignMeta {
   return { ...meta, ...patch };
 }
 
-/** Consecuencias legibles de eliminar un nodo de flujo. */
+/** Readable consequences of deleting a flow node. */
 export function flowDeleteConsequences(spec: FlowSpec, id: string): string[] {
   const edges = spec.edges.filter((e) => e.from === id || e.to === id).length;
-  const out = [`Elimina el nodo «${id}».`];
-  if (edges === 1) out.push("Elimina 1 conexión que lo toca.");
-  else if (edges > 1) out.push(`Elimina ${edges} conexiones que lo tocan.`);
+  const out = [`Deletes node "${id}".`];
+  if (edges === 1) out.push("Deletes 1 connection touching it.");
+  else if (edges > 1) out.push(`Deletes ${edges} connections touching it.`);
   const node = spec.nodes.find((n) => n.id === id);
-  if (node !== undefined && node.requirements.length > 0) {
-    out.push("Sus citas a requisitos desaparecen con él (los requisitos no cambian).");
+  if (node !== undefined && (node.requirements.length > 0 || node.mockups.length > 0)) {
+    out.push("Its citations disappear with it (requirements and mockups unchanged).");
   }
   return out;
 }
 
-/** Consecuencias legibles de eliminar una entidad. */
+/** Readable consequences of deleting an entity. */
 export function erDeleteConsequences(spec: ErSpec, name: string): string[] {
   const entity = spec.entities.find((e) => e.name === name);
   const relations = spec.relations.filter((r) => r.from === name || r.to === name).length;
-  const out = [`Elimina la entidad «${name}».`];
+  const out = [`Deletes entity "${name}".`];
   const attrs = entity?.attributes.length ?? 0;
-  if (attrs === 1) out.push("Elimina 1 atributo.");
-  else if (attrs > 1) out.push(`Elimina ${attrs} atributos.`);
-  if (relations === 1) out.push("Elimina 1 relación que la toca.");
-  else if (relations > 1) out.push(`Elimina ${relations} relaciones que la tocan.`);
-  if (entity !== undefined && entity.requirements.length > 0) {
-    out.push("Sus citas a requisitos desaparecen con ella (los requisitos no cambian).");
+  if (attrs === 1) out.push("Deletes 1 attribute.");
+  else if (attrs > 1) out.push(`Deletes ${attrs} attributes.`);
+  if (relations === 1) out.push("Deletes 1 relation touching it.");
+  else if (relations > 1) out.push(`Deletes ${relations} relations touching it.`);
+  if (entity !== undefined && (entity.requirements.length > 0 || entity.mockups.length > 0)) {
+    out.push("Its citations disappear with it (requirements and mockups unchanged).");
   }
   return out;
 }

@@ -1,6 +1,6 @@
-// Pestaña Impacto (centro): encabezado con cambio, comparación Antes/Ahora,
-// mapa de dependencias y tabla de artefactos. Presenta el informe de Rust;
-// todo estado de consulta vive arriba para conservar el contexto al volver.
+// Impact tab (center): header with the change, Before/Now comparison,
+// dependency map and artifact table. Presents the Rust report; all query
+// state lives above to keep context when coming back.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getRequirement } from "../requirements/client";
 import {
@@ -17,20 +17,20 @@ const PAGE_SIZE = 8;
 
 export function StatusBadge({ item }: { item: ImpactedDto }) {
   const status = impactStatus(item);
-  if (status === "pending") return <span className="badge warn">! Requiere revisión</span>;
+  if (status === "pending") return <span className="badge warn">! Needs review</span>;
   if (status === "awaiting_approval")
-    return <span className="badge awaiting">◷ Fuentes al día, revisión pendiente</span>;
-  return <span className="badge ok">✓ Al día</span>;
+    return <span className="badge awaiting">◷ Sources current, review pending</span>;
+  return <span className="badge ok">✓ Current</span>;
 }
 
 export function kindName(kind: string): string {
   switch (kind) {
     case "requirement":
-      return "Requisito";
+      return "Requirement";
     case "flow":
-      return "Flujo";
+      return "Flow";
     case "data_model":
-      return "Modelo ER";
+      return "ER model";
     case "mockup":
       return "Mockup";
     default:
@@ -48,7 +48,7 @@ interface Props {
   busy: boolean;
   error: string | null;
   selectedId: string | null;
-  /** Cada incremento desplaza la vista a la comparación. */
+  /** Each increment scrolls the view to the comparison. */
   diffSignal: number;
   onOriginChange: (id: string) => void;
   onFromChange: (id: string | null) => void;
@@ -63,7 +63,7 @@ export function ImpactTab(props: Props) {
   const diffRef = useRef<HTMLDivElement>(null);
   const firstSignal = useRef(props.diffSignal);
 
-  // Versiones del origen para elegir la base de la comparación.
+  // Origin versions to pick the comparison base.
   useEffect(() => {
     if (originId === null) {
       setOriginDetail(null);
@@ -119,14 +119,14 @@ export function ImpactTab(props: Props) {
     <div className="impact-tab">
       <header className="impact-head">
         <div className="field">
-          <label htmlFor="impact-origin">Requisito</label>
+          <label htmlFor="impact-origin">Requirement</label>
           <select
             id="impact-origin"
             value={originId ?? ""}
             disabled={props.busy || props.requirements.length === 0}
             onChange={(e) => props.onOriginChange(e.target.value)}
           >
-            {props.requirements.length === 0 && <option value="">Sin requisitos</option>}
+            {props.requirements.length === 0 && <option value="">No requirements</option>}
             {props.requirements.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.id}
@@ -135,7 +135,7 @@ export function ImpactTab(props: Props) {
           </select>
         </div>
         <div className="field">
-          <label htmlFor="impact-from">Comparar desde</label>
+          <label htmlFor="impact-from">Compare from</label>
           <select
             id="impact-from"
             value={props.fromVersionId ?? ""}
@@ -144,7 +144,7 @@ export function ImpactTab(props: Props) {
               props.onFromChange(e.target.value === "" ? null : e.target.value)
             }
           >
-            <option value="">Anterior a la actual (automático)</option>
+            <option value="">Before current (automatic)</option>
             {(originDetail?.versions ?? []).map((v) => (
               <option key={v.id} value={v.id}>
                 v{v.number} · {v.id}
@@ -154,13 +154,13 @@ export function ImpactTab(props: Props) {
         </div>
         {report !== null && (
           <p className="pending-badge" role="status">
-            <strong>{pending}</strong> pendiente{pending === 1 ? "" : "s"} de{" "}
-            {report.affected.length} relacionado{report.affected.length === 1 ? "" : "s"}
+            <strong>{pending}</strong> pending of{" "}
+            {report.affected.length} related
           </p>
         )}
       </header>
 
-      {props.busy && report === null && <p className="hint">Calculando impacto…</p>}
+      {props.busy && report === null && <p className="hint">Computing impact…</p>}
       {props.error !== null && (
         <p className="error" role="alert">
           {props.error}
@@ -174,15 +174,15 @@ export function ImpactTab(props: Props) {
             className={props.diffSignal > firstSignal.current ? "diff-flash" : undefined}
           >
             <div className="before-after">
-              <section aria-label="Antes">
+              <section aria-label="Before">
                 <h4>
-                  Antes · v{report.origin.fromVersion.number} ({report.origin.fromVersion.id})
+                  Before · v{report.origin.fromVersion.number} ({report.origin.fromVersion.id})
                 </h4>
                 <pre className="readonly-box">{report.origin.fromVersion.content}</pre>
               </section>
-              <section aria-label="Ahora">
+              <section aria-label="Now">
                 <h4>
-                  Ahora · v{report.origin.currentVersion.number} (
+                  Now · v{report.origin.currentVersion.number} (
                   {report.origin.currentVersion.id})
                 </h4>
                 <pre className="readonly-box">{report.origin.currentVersion.content}</pre>
@@ -190,15 +190,15 @@ export function ImpactTab(props: Props) {
             </div>
             {report.origin.fromVersion.id === report.origin.currentVersion.id && (
               <p className="hint">
-                El requisito tiene una sola versión: no hay cambio que comparar todavía.
+                The requirement has a single version: nothing to compare yet.
               </p>
             )}
           </div>
 
           {report.affected.length === 0 ? (
             <p className="notice">
-              Sin dependientes: ningún artefacto deriva de este requisito, así que el cambio no
-              alcanza a nadie.
+              No dependents: no artifact derives from this requirement, so the change
+              reaches nobody.
             </p>
           ) : (
             <>
@@ -211,22 +211,22 @@ export function ImpactTab(props: Props) {
               )}
               {layout?.truncated === true && (
                 <p className="notice stale" role="note">
-                  Mapa truncado: muestra {layout.shown} de {layout.total} artefactos. La tabla
-                  inferior conserva el listado completo.
+                  Truncated map: showing {layout.shown} of {layout.total} artifacts. The table
+                  below keeps the full list.
                 </p>
               )}
               <table className="impact-table">
-                <caption>Artefactos relacionados y pendientes</caption>
+                <caption>Related artifacts and pending items</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Artefacto</th>
-                    <th scope="col">Tipo</th>
-                    <th scope="col">Versión actual</th>
-                    <th scope="col">Estado</th>
-                    <th scope="col">Aprobación</th>
-                    <th scope="col">Fuentes al día</th>
+                    <th scope="col">Artifact</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Current version</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Approval</th>
+                    <th scope="col">Sources current</th>
                     <th scope="col">
-                      <span className="visually-hidden">Acciones</span>
+                      <span className="visually-hidden">Actions</span>
                     </th>
                   </tr>
                 </thead>
@@ -256,9 +256,9 @@ export function ImpactTab(props: Props) {
                         </td>
                         <td>
                           {item.approvals.length > 0
-                            ? `✓ ${item.approvals.map((a) => `${a.versionId} por ${a.approvedBy}`).join(", ")}`
+                            ? `✓ ${item.approvals.map((a) => `${a.versionId} by ${a.approvedBy}`).join(", ")}`
                             : item.approvedBefore
-                              ? "Histórica (versión anterior)"
+                              ? "Historical (earlier version)"
                               : "—"}
                         </td>
                         <td>
@@ -274,7 +274,7 @@ export function ImpactTab(props: Props) {
                               props.onOpenArtifact(item.artifact.id, item.artifact.kind)
                             }
                           >
-                            Abrir
+                            Open
                           </button>
                         </td>
                       </tr>
@@ -283,18 +283,18 @@ export function ImpactTab(props: Props) {
                 </tbody>
               </table>
               {slice !== null && slice.pages > 1 && (
-                <div className="button-row" role="navigation" aria-label="Páginas de la tabla">
+                <div className="button-row" role="navigation" aria-label="Table pages">
                   <button
                     type="button"
                     className="secondary small"
                     disabled={slice.page === 0}
                     onClick={() => setPage(slice.page - 1)}
                   >
-                    Anterior
+                    Previous
                   </button>
                   <span className="hint" aria-live="polite">
-                    Página {slice.page + 1} de {slice.pages} · {report.affected.length}{" "}
-                    artefactos
+                    Page {slice.page + 1} of {slice.pages} · {report.affected.length}{" "}
+                    artifacts
                   </span>
                   <button
                     type="button"
@@ -302,7 +302,7 @@ export function ImpactTab(props: Props) {
                     disabled={slice.page >= slice.pages - 1}
                     onClick={() => setPage(slice.page + 1)}
                   >
-                    Siguiente
+                    Next
                   </button>
                 </div>
               )}

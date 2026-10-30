@@ -1,8 +1,8 @@
-//! Informe de impacto: traduce el análisis del núcleo a DTOs.
+//! Impact report: translates the core analysis into DTOs.
 //!
-//! Consulta pura sobre `&Store`: no muta, no persiste, no genera nada. La
-//! vigencia, los afectados y los caminos los calcula `ruth-core`; aquí solo
-//! se resuelven versiones actuales frente a fijadas y se empaquetan.
+//! Pure query over `&Store`: mutates, persists and generates nothing. Currency,
+//! affected items and paths are computed by `ruth-core`; here current
+//! versions resolve against pinned ones and get packaged.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{ArtifactId, ArtifactType, CoreError, ProjectId, Version, VersionId};
@@ -51,8 +51,8 @@ fn approval_dto(approval: &ruth_core::domain::Approval) -> ApprovalDto {
     }
 }
 
-/// Fuentes fijadas por una versión frente a las actuales de sus artefactos.
-/// Compartido con el snapshot de actualización (mismo significado).
+/// Sources pinned by a version versus their artifacts' current ones.
+/// Shared with the update snapshot (same meaning).
 pub(crate) fn source_pins(
     store: &Store,
     current_version: &Version,
@@ -78,16 +78,16 @@ pub(crate) fn source_pins(
             used_version_id: used.as_str().to_string(),
             source_artifact_id,
             current_version_id,
-            // Desconocida también cuenta como no vigente, como en el núcleo.
+            // Unknown also counts as stale, as in the core.
             stale: stale || unknown,
         });
     }
     pins
 }
 
-/// Informe de impacto desde un artefacto cambiado, con comparación de
-/// versiones del origen y detalle por afectado. Determinista: mismo estado,
-/// mismo informe.
+/// Impact report from a changed artifact, with version comparison of
+/// the origin and per-affected detail. Deterministic: same state,
+/// same report.
 pub fn impact_report(store: &Store, input: ImpactQueryInput) -> Result<ImpactReportDto, ApiError> {
     let project = ProjectId::new(input.project_id)?;
     let origin_id = ArtifactId::new(input.artifact_id)?;
@@ -109,7 +109,7 @@ pub fn impact_report(store: &Store, input: ImpactQueryInput) -> Result<ImpactRep
 
     let versions = store.versions_of(&origin_id);
     let current = versions.last().ok_or_else(|| CoreError::VersionNotFound {
-        version: VersionId::new("actual").expect("id literal"),
+        version: VersionId::new("current").expect("literal id"),
     })?;
     let from = match input.from_version_id {
         None => versions

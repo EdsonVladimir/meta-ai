@@ -1,7 +1,7 @@
-//! Ejemplo verificable de Ventas (sin llamar a Meta).
+//! Verifiable Sales example (without calling Meta).
 //!
-//! Requisito → flujo y modelo de datos derivados → aprobación → baseline →
-//! cambio de regla → impacto → revisión → segunda baseline.
+//! Requirement → derived flow and data model → approval → baseline →
+//! rule change → impact → review → second baseline.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{
@@ -22,7 +22,7 @@ fn human() -> Author {
 }
 
 fn date(day: &str) -> Date {
-    Date::new(day).expect("fecha")
+    Date::new(day).expect("date")
 }
 
 fn setup() -> Result<
@@ -51,11 +51,11 @@ fn setup() -> Result<
 }
 
 #[test]
-fn ventas_end_to_end() -> Result<(), CoreError> {
+fn sales_end_to_end() -> Result<(), CoreError> {
     let (mut store, project, _, req, flow, data) = setup()?;
     let author = human();
 
-    // 1. Requisito v1 + derivados que dependen de él.
+    // 1. Requirement v1 + derivatives depending on it.
     let req_v1 = VersionId::new("req-venta-v1")?;
     let flow_v1 = VersionId::new("flujo-venta-v1")?;
     let data_v1 = VersionId::new("datos-venta-v1")?;
@@ -87,7 +87,7 @@ fn ventas_end_to_end() -> Result<(), CoreError> {
         std::slice::from_ref(&req_v1),
     )?;
 
-    // 2. Aprobar las tres versiones y crear la baseline.
+    // 2. Approve the three versions and create the baseline.
     for (artifact, version) in [(&req, &req_v1), (&flow, &flow_v1), (&data, &data_v1)] {
         store.approve(&project, artifact, version, &author, date("2026-10-20"))?;
     }
@@ -104,7 +104,7 @@ fn ventas_end_to_end() -> Result<(), CoreError> {
     )?;
     let base_1_snapshot = store.baseline(&base_1).expect("base-1").clone();
 
-    // 3. Requisito v2: permitir reservas antes de confirmar.
+    // 3. Requirement v2: allow reservations before confirming.
     let req_v2 = VersionId::new("req-venta-v2")?;
     store.create_version(
         &project,
@@ -116,7 +116,7 @@ fn ventas_end_to_end() -> Result<(), CoreError> {
         &[],
     )?;
 
-    // 4. Flujo y datos requieren revisión, con caminos explicativos.
+    // 4. Flow and data require review, with explanatory paths.
     let review = store.requires_review(&project)?;
     assert_eq!(review, vec![data.clone(), flow.clone()]);
     let report = store.impact(&project, std::slice::from_ref(&req))?;
@@ -134,7 +134,7 @@ fn ventas_end_to_end() -> Result<(), CoreError> {
         assert_eq!(path[path.len() - 1], item.artifact.as_str());
     }
 
-    // 5. La baseline y las aprobaciones anteriores se conservan.
+    // 5. The baseline and earlier approvals are preserved.
     assert_eq!(store.baseline(&base_1), Some(&base_1_snapshot));
     assert_eq!(store.approvals_of(&req_v1).len(), 1);
     assert_eq!(store.approvals_of(&flow_v1).len(), 1);
@@ -143,8 +143,8 @@ fn ventas_end_to_end() -> Result<(), CoreError> {
         "Confirmar una venta descuenta stock."
     );
 
-    // 6. No basta con volver a aprobar el derivado desactualizado, ni cabe en
-    // una baseline nueva.
+    // 6. Re-approving the stale derivative is not enough, nor does it fit
+    // in a new baseline.
     store.approve(&project, &req, &req_v2, &author, date("2026-10-22"))?;
     let stale = store.approve(&project, &flow, &flow_v1, &author, date("2026-10-22"));
     assert!(
@@ -169,7 +169,7 @@ fn ventas_end_to_end() -> Result<(), CoreError> {
         .baseline(&BaselineId::new("base-2-intento")?)
         .is_none());
 
-    // 7. Versiones revisadas con fuentes actuales, aprobación y baseline 2.
+    // 7. Reviewed versions with current sources, approval and baseline 2.
     let flow_v2 = VersionId::new("flujo-venta-v2")?;
     let data_v2 = VersionId::new("datos-venta-v2")?;
     store.create_version(
@@ -205,7 +205,7 @@ fn ventas_end_to_end() -> Result<(), CoreError> {
         date("2026-10-24"),
     )?;
 
-    // 8. La baseline histórica sigue intacta y reproducible.
+    // 8. The historic baseline stays intact and reproducible.
     assert_eq!(store.baseline(&base_1), Some(&base_1_snapshot));
     let entries_1: Vec<(&str, &str)> = store
         .baseline(&base_1)

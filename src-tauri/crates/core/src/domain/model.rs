@@ -1,9 +1,9 @@
-//! Entidades del dominio con sus invariantes locales.
+//! Domain entities with their local invariants.
 //!
-//! Las invariantes que abarcan varias entidades (ciclos, vigencia, coherencia
-//! de baselines) viven en [`analysis`](crate::domain::analysis) y se aplican
-//! desde los casos de uso. Los campos son privados: nadie puede mutar una
-//! entidad saltándose sus constructores.
+//! Invariants spanning several entities (cycles, freshness, baseline
+//! coherence) live in [`analysis`](crate::domain::analysis) and apply
+//! from the use cases. Fields are private: nobody can mutate an
+//! entity skipping its constructors.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -12,8 +12,8 @@ use crate::domain::{
     AgentId, ArtifactId, BaselineId, CoreError, DeliveryId, HumanId, ModuleId, ProjectId, VersionId,
 };
 
-/// Contenido textual no vacío de una versión. En este hito no hay parsers de
-/// UML, Mermaid ni modelos de base de datos: solo texto.
+/// Non-empty textual content of a version. In this milestone there are no
+/// UML, Mermaid or database-model parsers: only text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Content(String);
 
@@ -31,8 +31,8 @@ impl Content {
     }
 }
 
-/// Fecha suministrada como entrada. El dominio no lee el reloj: quien llama
-/// aporta la fecha (la frontera decidirá su formato exacto).
+/// Date supplied as input. The domain reads no clock: the caller
+/// provides the date (the boundary will decide its exact format).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Date(String);
 
@@ -56,7 +56,7 @@ impl fmt::Display for Date {
     }
 }
 
-/// Tipo de artefacto con identidad estable.
+/// Artifact kind with a stable identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArtifactType {
     Requirement,
@@ -68,25 +68,25 @@ pub enum ArtifactType {
 impl fmt::Display for ArtifactType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Requirement => f.write_str("requisito"),
-            Self::Flow => f.write_str("flujo"),
-            Self::DataModel => f.write_str("modelo de datos"),
+            Self::Requirement => f.write_str("requirement"),
+            Self::Flow => f.write_str("flow"),
+            Self::DataModel => f.write_str("data model"),
             Self::Mockup => f.write_str("mockup"),
         }
     }
 }
 
-/// Quién realiza una acción: una persona o un agente de IA.
+/// Who performs an action: a person or an AI agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Author {
     Human(HumanId),
     Agent(AgentId),
 }
 
-/// Origen de una versión: autoría humana o propuesta de IA.
+/// Origin of a version: human authorship or AI proposal.
 ///
-/// Tener procedencia humana es un dato del dominio, no autenticación: el
-/// control de identidad se implementará en la frontera correspondiente.
+/// Having human provenance is domain data, not authentication:
+/// identity control will be implemented at the corresponding boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Provenance {
     Human(HumanId),
@@ -104,9 +104,9 @@ impl Provenance {
     }
 }
 
-/// Nombre organizativo o título: texto libre no vacío de hasta 120
-/// caracteres. Se guarda sin espacios extremos. Los duplicados se permiten:
-/// la identidad es el ID, nunca el nombre.
+/// Organizational name or title: non-empty free text up to 120
+/// chars. Stored without edge spaces. Duplicates are allowed:
+/// identity is the ID, never the name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Name {
     value: String,
@@ -137,8 +137,8 @@ impl Name {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     id: ProjectId,
-    /// Nombre organizativo editable. Al crear, el ID; renombrar no toca
-    /// la identidad ni nada que cuelgue de ella.
+    /// Editable organizational name. On creation, the ID; renaming touches
+    /// neither identity nor anything hanging from it.
     name: String,
 }
 
@@ -156,8 +156,8 @@ impl Project {
         &self.name
     }
 
-    /// Solo lo llaman los casos de uso (`rename_*` del `Store`, que validan
-    /// pertenencia, archivado y concurrencia) y la reconstitución.
+    /// Only called by the use cases (`Store::rename_*`, which validate
+    /// membership, archiving and concurrency) and reconstitution.
     pub fn set_name(&mut self, name: Name) {
         self.name = name.value;
     }
@@ -167,10 +167,10 @@ impl Project {
 pub struct Module {
     id: ModuleId,
     project: ProjectId,
-    /// Nombre organizativo editable. Al crear, el ID.
+    /// Editable organizational name. On creation, the ID.
     name: String,
-    /// Archivado reversible: oculta el contenido por contexto sin tocar el
-    /// estado individual de sus artefactos. Solo lo cambian los casos de uso.
+    /// Reversible archiving: hides content by context without touching
+    /// the individual state of its artifacts. Only the use cases change it.
     archived: bool,
 }
 
@@ -197,8 +197,8 @@ impl Module {
         &self.name
     }
 
-    /// Solo lo llaman los casos de uso (`rename_*` del `Store`, que validan
-    /// pertenencia, archivado y concurrencia) y la reconstitución.
+    /// Only called by the use cases (`Store::rename_*`, which validate
+    /// membership, archiving and concurrency) and reconstitution.
     pub fn set_name(&mut self, name: Name) {
         self.name = name.value;
     }
@@ -207,9 +207,9 @@ impl Module {
         self.archived
     }
 
-    /// Reconstitución desde persistencia (cualquier valor es válido: el
-    /// archivado no tiene invariantes propias). Las operaciones normales
-    /// usan los casos de uso (`set_*_archived` del `Store`).
+    /// Reconstitution from persistence (any value is valid: archiving
+    /// has no own invariants). Normal operations use the use cases
+    /// (`Store::set_*_archived`).
     pub fn set_archived(&mut self, archived: bool) {
         self.archived = archived;
     }
@@ -221,12 +221,12 @@ pub struct Artifact {
     project: ProjectId,
     module: ModuleId,
     artifact_type: ArtifactType,
-    /// Título editable como metadato, separado del contenido semántico.
-    /// `None` = sin título propio (la presentación deriva uno legible sin
-    /// tocar el dominio). Renombrar no crea versiones ni toca aprobaciones.
+    /// Editable title as metadata, separate from semantic content.
+    /// `None` = no own title (presentation derives a readable one without
+    /// touching the domain). Renaming creates no versions and touches no approvals.
     title: Option<String>,
-    /// Archivado individual reversible. El archivado efectivo de un artefacto
-    /// es este flag o el de su módulo (se calcula, no se almacena).
+    /// Individually reversible archiving. The effective archiving of an artifact
+    /// is this flag or its module one (computed, not stored).
     archived: bool,
 }
 
@@ -267,8 +267,8 @@ impl Artifact {
         self.title.as_deref()
     }
 
-    /// Solo lo llaman los casos de uso (`rename_artifact` del `Store`, que
-    /// valida pertenencia, archivado y concurrencia) y la reconstitución.
+    /// Only called by the use cases (`Store::rename_artifact`, which
+    /// validates membership, archiving and concurrency) and reconstitution.
     pub fn set_title(&mut self, title: Option<Name>) {
         self.title = title.map(|name| name.value);
     }
@@ -277,16 +277,16 @@ impl Artifact {
         self.archived
     }
 
-    /// Reconstitución desde persistencia (cualquier valor es válido: el
-    /// archivado no tiene invariantes propias). Las operaciones normales
-    /// usan los casos de uso (`set_*_archived` del `Store`).
+    /// Reconstitution from persistence (any value is valid: archiving
+    /// has no own invariants). Normal operations use the use cases
+    /// (`Store::set_*_archived`).
     pub fn set_archived(&mut self, archived: bool) {
         self.archived = archived;
     }
 }
 
-/// Versión inmutable: identidad, número, contenido y procedencia. Una edición
-/// crea una versión nueva; el historial nunca cambia.
+/// Immutable version: identity, number, content and provenance. An edit
+/// creates a new version; history never changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
     id: VersionId,
@@ -294,7 +294,7 @@ pub struct Version {
     number: u32,
     content: Content,
     provenance: Provenance,
-    /// Versiones fuente exactas de las que deriva; nunca "latest".
+    /// Exact source versions it derives from; never "latest".
     sources: Vec<VersionId>,
 }
 
@@ -342,9 +342,9 @@ impl Version {
     }
 }
 
-/// Aprobación de una versión exacta por una persona en una fecha dada. El
-/// historial de aprobaciones nunca se borra y una versión nueva no hereda
-/// aprobaciones (cada aprobación apunta a una versión exacta).
+/// Approval of an exact version by a person on a given date. The
+/// approval history is never deleted and a new version inherits no
+/// approvals (each approval points at an exact version).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Approval {
     version: VersionId,
@@ -374,8 +374,8 @@ impl Approval {
     }
 }
 
-/// Cambio de título registrado: metadato versionado del artefacto, separado
-/// del contenido semántico. No crea versiones ni toca aprobaciones.
+/// Recorded title change: versioned artifact metadata, separate from
+/// semantic content. It creates no versions and touches no approvals.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TitleChange {
     artifact: ArtifactId,
@@ -411,19 +411,19 @@ impl TitleChange {
     }
 }
 
-/// Conjunto coherente de versiones aprobadas para exportación futura.
-/// Inmutable y reproducible: guarda versiones exactas ordenadas de forma
-/// determinista, así que no le afectan cambios posteriores del proyecto.
-/// También fija el título vigente de cada entrada: exportar la baseline
-/// histórica jamás consulta títulos actuales.
+/// Coherent set of approved versions for future export. Immutable and
+/// reproducible: it stores exact versions sorted deterministically, so
+/// later project changes do not affect it. It also pins the current
+/// title of each entry: exporting the historic baseline never consults
+/// current titles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Baseline {
     id: BaselineId,
     project: ProjectId,
     entries: Vec<(ArtifactId, VersionId)>,
-    /// Título vigente de cada entrada al crear la baseline (`None` = sin
-    /// título propio entonces). Fijo para siempre: la baseline histórica
-    /// conserva sus nombres originales.
+    /// Current title of each entry when creating the baseline (`None` = no
+    /// own title then). Fixed forever: the historic baseline keeps its
+    /// original names.
     titles: HashMap<ArtifactId, Option<String>>,
     at: Date,
 }
@@ -458,8 +458,8 @@ impl Baseline {
         &self.entries
     }
 
-    /// Título fijado de una entrada (`None` externo = la entrada no existe;
-    /// `None` interno = existía pero sin título propio).
+    /// Pinned title of an entry (outer `None` = the entry does not exist;
+    /// inner `None` = it existed but had no own title).
     pub fn title_of(&self, artifact: &ArtifactId) -> Option<Option<&str>> {
         self.titles.get(artifact).map(|t| t.as_deref())
     }
@@ -469,12 +469,12 @@ impl Baseline {
     }
 }
 
-/// Entrega de trabajo/borrador: foto de versiones guardadas para compartir
-/// o exportar trabajo en curso, SIN exigir aprobación. Separada de
-/// [`Baseline`]: sus invariantes no relajan las de la baseline aprobada.
-/// Las entradas deben ser actuales, del proyecto, no archivadas y cerradas
-/// bajo fuentes; las revisiones y desactualizaciones se identifican al
-/// leer, no se prohíben al crear. Inmutable una vez creada.
+/// Work/draft delivery: a snapshot of saved versions to share or
+/// export work in progress, WITHOUT requiring approval. Separate from
+/// [`Baseline`]: its invariants do not relax the approved-baseline ones.
+/// Entries must be current, from the project, unarchived and closed
+/// under sources; reviews and staleness are identified on read, not
+/// forbidden on creation. Immutable once created.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkDelivery {
     id: DeliveryId,
@@ -483,8 +483,8 @@ pub struct WorkDelivery {
     description: Option<String>,
     scope_module: Option<ModuleId>,
     entries: Vec<(ArtifactId, VersionId)>,
-    /// Título vigente de cada entrada al crear la entrega, fijo para
-    /// siempre (igual que en la baseline).
+    /// Current title of each entry when creating the delivery, fixed
+    /// forever (same as in the baseline).
     titles: HashMap<ArtifactId, Option<String>>,
     at: Date,
 }
@@ -538,8 +538,8 @@ impl WorkDelivery {
         &self.entries
     }
 
-    /// Título fijado de una entrada (`None` externo = la entrada no existe;
-    /// `None` interno = existía pero sin título propio).
+    /// Pinned title of an entry (outer `None` = the entry does not exist;
+    /// inner `None` = it existed but had no own title).
     pub fn title_of(&self, artifact: &ArtifactId) -> Option<Option<&str>> {
         self.titles.get(artifact).map(|t| t.as_deref())
     }

@@ -15,7 +15,7 @@
       "content": [
         {
           "type": "output_text",
-          "text": "{\"proposals\": [{\"temp_id\": \"p1\", \"title\": \"Confirmar venta descuenta stock\", \"description\": \"Al confirmar una venta, el stock de cada producto se reduce en la cantidad vendida.\", \"acceptance\": [\"Confirmar con stock suficiente reduce el stock\", \"Confirmar sin stock suficiente se rechaza con aviso\"], \"assumptions\": [\"El stock se gestiona por producto, sin lotes\"]}, {\"temp_id\": \"p2\", \"title\": \"Reservar antes de confirmar\", \"description\": \"Una venta puede reservar stock antes de confirmarse y liberar la reserva al cancelarse.\", \"acceptance\": [\"Reservar bloquea las unidades\", \"Cancelar libera la reserva\"], \"assumptions\": []}], \"questions\": [\"¿Las reservas caducan solas tras un tiempo?\"]}",
+          "text": "{\"proposals\": [{\"temp_id\": \"p1\", \"title\": \"Confirming a sale discounts stock\", \"description\": \"When a sale is confirmed, each product stock is reduced by the quantity sold.\", \"acceptance\": [\"Confirming with enough stock reduces stock\", \"Confirming without enough stock is rejected with a warning\"], \"assumptions\": [\"Stock is managed per product, without batches\"]}, {\"temp_id\": \"p2\", \"title\": \"Reserve before confirming\", \"description\": \"A sale may reserve stock before confirmation and release the reservation on cancellation.\", \"acceptance\": [\"Reserving locks the units\", \"Cancelling releases the reservation\"], \"assumptions\": []}], \"questions\": [\"Do reservations expire on their own after a while?\"]}",
           "annotations": []
         }
       ]

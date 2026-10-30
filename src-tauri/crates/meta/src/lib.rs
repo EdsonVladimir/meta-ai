@@ -1,11 +1,12 @@
-//! Adaptador mínimo de Meta Model API detrás de un contrato pequeño.
+//! Minimal Meta Model API adapter behind a small contract.
 //!
-//! - La clave se lee SOLO de `META_API_KEY` del entorno del proceso.
-//! - El modelo se elige con `META_MODEL` (por defecto `muse-spark-1.3`).
-//! - La clave jamás se registra, se serializa ni sale hacia el frontend.
+//! - The key is read ONLY from the process `META_API_KEY` environment.
+//! - The model is chosen with `META_MODEL` (default `muse-spark-1.3`).
+//! - The key is never logged, serialized or sent to the frontend.
 //!
-//! Este crate no depende de Tauri ni de React: es dominio + adaptador puros.
+//! This crate does not depend on Tauri or React: pure domain + adapter.
 
+pub mod code;
 pub mod design;
 pub mod error;
 pub mod generation;
@@ -25,12 +26,12 @@ use crate::protocol::{
 
 pub use crate::error::{sanitize, truncate, MetaError, MetaErrorKind};
 
-/// Nombre de la variable de entorno con la clave de Meta.
+/// Name of the environment variable holding the Meta key.
 pub const API_KEY_ENV: &str = "META_API_KEY";
-/// Nombre de la variable de entorno con el modelo.
+/// Name of the environment variable holding the model.
 pub const MODEL_ENV: &str = "META_MODEL";
 
-/// Clave que no se muestra ni en depuración ni en registros.
+/// Key that never shows in debug output or logs.
 #[derive(Clone)]
 pub struct SecretString(String);
 
@@ -50,8 +51,8 @@ impl fmt::Debug for SecretString {
     }
 }
 
-/// Configuración resuelta desde el entorno del proceso.
-/// Seguro para `Debug`: la clave se muestra redactada.
+/// Configuration resolved from the process environment.
+/// `Debug`-safe: the key shows redacted.
 #[derive(Debug)]
 pub struct MetaConfig {
     pub api_key: SecretString,
@@ -59,8 +60,8 @@ pub struct MetaConfig {
 }
 
 impl MetaConfig {
-    /// Lee `META_API_KEY` y `META_MODEL`. Sin clave no hay petición posible:
-    /// devuelve `MissingKey` antes de cualquier red.
+    /// Reads `META_API_KEY` and `META_MODEL`. Without a key no request is
+    /// possible: returns `MissingKey` before any network.
     pub fn from_env() -> Result<Self, MetaError> {
         let api_key = read_env(API_KEY_ENV)
             .filter(|v| !v.trim().is_empty())
@@ -73,12 +74,12 @@ impl MetaConfig {
     }
 }
 
-/// ¿Hay clave no vacía en el entorno? No hace red; solo presencia.
+/// Is there a non-empty key in the environment? No network; presence only.
 pub fn api_key_present() -> bool {
     read_env(API_KEY_ENV).is_some_and(|v| !v.trim().is_empty())
 }
 
-/// Modelo elegido por `META_MODEL` o el documentado por defecto.
+/// Model chosen by `META_MODEL` or the documented default.
 pub fn resolve_model() -> String {
     read_env(MODEL_ENV)
         .filter(|v| !v.trim().is_empty())
@@ -89,8 +90,8 @@ fn read_env(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
-/// Resultado serializable hacia el frontend. Sin costos inventados: solo lo
-/// que la API proporciona (texto, modelo y uso de tokens).
+/// Serializable result for the frontend. No invented costs: only what
+/// the API provides (text, model and token usage).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionSuccess {
@@ -100,7 +101,7 @@ pub struct ConnectionSuccess {
     pub usage: Option<TokenUsage>,
 }
 
-/// Ejecuta la prueba mínima: un único POST sin reintentos.
+/// Runs the minimal test: a single POST without retries.
 pub async fn test_connection(config: &MetaConfig) -> Result<ConnectionSuccess, MetaError> {
     let secret = config.api_key.expose();
     let client = reqwest::Client::builder()
@@ -144,8 +145,8 @@ pub async fn test_connection(config: &MetaConfig) -> Result<ConnectionSuccess, M
 mod tests {
     use super::*;
 
-    // Único test que toca el entorno: configura, comprueba y restaura en
-    // secuencia dentro de sí mismo para no interferir con otros tests.
+    // Only test touching the environment: it sets up, checks and restores
+    // in sequence within itself to avoid interfering with other tests.
     #[test]
     fn env_config_reports_missing_key_and_honors_model() {
         let saved_key = std::env::var(API_KEY_ENV).ok();
@@ -155,7 +156,7 @@ mod tests {
         std::env::remove_var(MODEL_ENV);
         assert!(!api_key_present());
         assert_eq!(resolve_model(), DEFAULT_MODEL);
-        let err = MetaConfig::from_env().expect_err("sin clave no hay config");
+        let err = MetaConfig::from_env().expect_err("no key means no config");
         assert_eq!(err.kind, MetaErrorKind::MissingKey);
 
         std::env::set_var(API_KEY_ENV, "  ");
@@ -163,13 +164,13 @@ mod tests {
         assert!(MetaConfig::from_env().is_err());
 
         std::env::set_var(API_KEY_ENV, "sk-test");
-        std::env::set_var(MODEL_ENV, "otro-modelo");
+        std::env::set_var(MODEL_ENV, "other-model");
         assert!(api_key_present());
-        let config = MetaConfig::from_env().expect("con clave hay config");
+        let config = MetaConfig::from_env().expect("key means config");
         assert_eq!(config.api_key.expose(), "sk-test");
-        assert_eq!(config.model, "otro-modelo");
+        assert_eq!(config.model, "other-model");
 
-        // Restaurar el entorno previo.
+        // Restore the previous environment.
         match saved_key {
             Some(v) => std::env::set_var(API_KEY_ENV, v),
             None => std::env::remove_var(API_KEY_ENV),
@@ -182,7 +183,7 @@ mod tests {
 
     #[test]
     fn secret_is_never_debug_printed() {
-        let secret = SecretString::new("sk-super-secreta".to_string());
+        let secret = SecretString::new("sk-test".to_string());
         assert_eq!(format!("{secret:?}"), "[redacted]");
     }
 

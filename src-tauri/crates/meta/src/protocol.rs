@@ -1,29 +1,29 @@
-//! Protocolo de Meta Model API (Responses API) para la prueba mínima.
+//! Meta Model API protocol (Responses API) for the minimal test.
 //!
-//! Valores comprobados en la documentación oficial (`https://dev.meta.ai/docs`):
-//! endpoint `POST /v1/responses`, modelo `muse-spark-1.3`, cuerpo con
-//! `model` + `input`, `max_output_tokens` con mínimo 16 y envolvente de
-//! error `{ "error": { "message", "type", "code", ... } }`.
+//! Values verified against the official docs (`https://dev.meta.ai/docs`):
+//! `POST /v1/responses` endpoint, `muse-spark-1.3` model, body with
+//! `model` + `input`, `max_output_tokens` with a 16 minimum and the error
+//! envelope `{ "error": { "message", "type", "code", ... } }`.
 //!
-//! Todo es puro (sin red): se verifica con fixtures, sin consumo real.
+//! All pure (no network): verified with fixtures, no real usage.
 
 use serde::Serialize;
 
 use crate::error::{redact, sanitize, truncate, MetaError, MetaErrorKind};
 
-/// Base oficial de Meta Model API (ver quickstart en dev.meta.ai/docs).
+/// Official Meta Model API base (see quickstart at dev.meta.ai/docs).
 pub const RESPONSES_URL: &str = "https://api.meta.ai/v1/responses";
-/// Modelo por defecto: el recomendado en la documentación para trabajo nuevo.
+/// Default model: the one recommended by the docs for new work.
 pub const DEFAULT_MODEL: &str = "muse-spark-1.3";
-/// Petición exacta de la prueba mínima.
+/// Exact minimal-test request. Kept in Spanish per the milestone-1 spec.
 pub const PROMPT: &str = "Responde solo: Ruth IDE listo";
-/// Límite de salida: cubre razonamiento + texto visible juntos (ver
-/// `dev.meta.ai/docs/reasoning`). 256 da margen al razonamiento mínimo sin
-/// dejar de ser una prueba diminuta (mínimo documentado: 16).
+/// Output limit: covers reasoning + visible text together (see
+/// `dev.meta.ai/docs/reasoning`). 256 leaves room for minimal reasoning
+/// while staying a tiny test (documented minimum: 16).
 pub const MAX_OUTPUT_TOKENS: u32 = 256;
-/// Tiempo máximo de la petición.
+/// Maximum request time.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
-/// Tope de texto devuelto al frontend (la respuesta esperada es diminuta).
+/// Cap on text returned to the frontend (the expected reply is tiny).
 const MAX_TEXT_CHARS: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -42,7 +42,7 @@ pub struct ParsedResponse {
     pub usage: Option<TokenUsage>,
 }
 
-/// Cuerpo de la petición de prueba. Solo contiene la frase fijada.
+/// Test request body. Contains only the pinned sentence.
 pub fn build_request_body(model: &str) -> serde_json::Value {
     serde_json::json!({
         "model": model,
@@ -53,13 +53,13 @@ pub fn build_request_body(model: &str) -> serde_json::Value {
     })
 }
 
-/// Interpreta una respuesta HTTP 2xx. `secret` se usa solo para redactar.
+/// Interprets an HTTP 2xx response. `secret` is only used for redacting.
 pub fn parse_success(status: u16, body: &str, secret: &str) -> Result<ParsedResponse, MetaError> {
     parse_success_capped(status, body, secret, MAX_TEXT_CHARS)
 }
 
-/// Variante con tope de texto propio: la generación estructurada necesita
-/// mucho más que los 500 caracteres de la prueba mínima.
+/// Variant with its own text cap: structured generation needs far more
+/// than the minimal test's 500 characters.
 pub fn parse_success_capped(
     status: u16,
     body: &str,
@@ -69,7 +69,7 @@ pub fn parse_success_capped(
     if !(200..300).contains(&status) {
         return Err(MetaError::new(
             MetaErrorKind::InvalidResponse,
-            format!("La API devolvió un estado inesperado: HTTP {status}."),
+            format!("The API returned an unexpected status: HTTP {status}."),
             false,
         )
         .with_status(status));
@@ -77,7 +77,7 @@ pub fn parse_success_capped(
     let json: serde_json::Value = serde_json::from_str(body).map_err(|_| {
         MetaError::new(
             MetaErrorKind::InvalidResponse,
-            "La API devolvió una respuesta que no es JSON válido.",
+            "The API returned a response that is not valid JSON.",
             false,
         )
         .with_status(status)
@@ -87,7 +87,7 @@ pub fn parse_success_capped(
     if matches!(api_status, "failed" | "cancelled") {
         return Err(MetaError::new(
             MetaErrorKind::InvalidResponse,
-            format!("La API no completó la respuesta (estado: {api_status})."),
+            format!("The API did not complete the response (status: {api_status})."),
             false,
         )
         .with_status(status));
@@ -110,7 +110,7 @@ pub fn parse_success_capped(
         });
     }
 
-    // Sin texto visible: distinguir rechazo, incompleta y formato inesperado.
+    // No visible text: tell refusal, incomplete and unexpected shape apart.
     if let Some(refusal) = extract_refusal(&json, secret) {
         return Err(MetaError::new(MetaErrorKind::Refusal, refusal, false).with_status(status));
     }
@@ -119,14 +119,14 @@ pub fn parse_success_capped(
     }
     Err(MetaError::new(
         MetaErrorKind::InvalidResponse,
-        "La API devolvió una respuesta sin texto utilizable.",
+        "The API returned a response without usable text.",
         false,
     )
     .with_status(status))
 }
 
-/// Rechazo del modelo: parte `refusal` dentro de un mensaje. Solo metadatos
-/// seguros: el texto del rechazo, saneado y redactado.
+/// Model refusal: a `refusal` part inside a message. Only safe metadata:
+/// the refusal text, sanitized and redacted.
 fn extract_refusal(json: &serde_json::Value, secret: &str) -> Option<String> {
     let output = json.get("output")?.as_array()?;
     for item in output {
@@ -142,8 +142,8 @@ fn extract_refusal(json: &serde_json::Value, secret: &str) -> Option<String> {
                     .map(|t| sanitize(redact(t, secret)))
                     .filter(|t| !t.is_empty());
                 return Some(match text {
-                    Some(t) => format!("El modelo rechazó responder: {t}"),
-                    None => "El modelo rechazó responder.".to_string(),
+                    Some(t) => format!("The model refused to answer: {t}"),
+                    None => "The model refused to answer.".to_string(),
                 });
             }
         }
@@ -151,8 +151,8 @@ fn extract_refusal(json: &serde_json::Value, secret: &str) -> Option<String> {
     None
 }
 
-/// Respuesta `incomplete` sin texto visible. Usa `incomplete_details.reason`
-/// y los tokens de salida: nunca el cuerpo completo.
+/// `incomplete` response without visible text. Uses
+/// `incomplete_details.reason` and the output tokens: never the full body.
 fn incomplete_error(json: &serde_json::Value, status: u16) -> MetaError {
     let reason = json
         .get("incomplete_details")
@@ -161,20 +161,20 @@ fn incomplete_error(json: &serde_json::Value, status: u16) -> MetaError {
     let message = match reason {
         Some("max_output_tokens") => {
             let used = output_tokens_used(json)
-                .map(|n| format!("salida: {n}"))
-                .unwrap_or_else(|| "salida desconocida".to_string());
+                .map(|n| format!("output: {n}"))
+                .unwrap_or_else(|| "unknown output".to_string());
             format!(
-                "La API no completó la respuesta: se agotó el límite de salida de la prueba \
-                 ({MAX_OUTPUT_TOKENS} tokens; {used}) antes de producir texto visible. \
-                 La conexión funciona."
+                "The API did not complete the response: the test output limit \
+                 ({MAX_OUTPUT_TOKENS} tokens; {used}) ran out before producing visible text. \
+                 The connection works."
             )
         }
         Some("content_filter") => {
-            "La API detuvo la respuesta por el filtro de contenido antes de producir texto visible."
+            "The API stopped the response on the content filter before producing visible text."
                 .to_string()
         }
-        Some(other) => format!("La API no completó la respuesta (motivo: {other})."),
-        None => "La API no completó la respuesta (estado: incomplete).".to_string(),
+        Some(other) => format!("The API did not complete the response (reason: {other})."),
+        None => "The API did not complete the response (status: incomplete).".to_string(),
     };
     MetaError::new(MetaErrorKind::Incomplete, message, false).with_status(status)
 }
@@ -183,8 +183,8 @@ fn output_tokens_used(json: &serde_json::Value) -> Option<u64> {
     json.get("usage")?.get("output_tokens")?.as_u64()
 }
 
-/// Extrae el texto visible: recorre `output[]` buscando partes `output_text`
-/// y acepta además un `output_text` directo en la raíz.
+/// Extracts the visible text: walks `output[]` looking for `output_text`
+/// parts and also accepts a direct root-level `output_text`.
 fn extract_output_text(json: &serde_json::Value) -> Option<String> {
     if let Some(direct) = json.get("output_text").and_then(|v| v.as_str()) {
         return Some(direct.to_string());
@@ -220,55 +220,55 @@ fn extract_usage(json: &serde_json::Value) -> Option<TokenUsage> {
     })
 }
 
-/// Clasifica un estado HTTP de error según la tabla oficial de errores
-/// (401 autenticación, 402 facturación, 429 rate limit, 5xx servidor...).
-/// `retry_after` es el valor crudo de la cabecera `Retry-After`, si existe.
+/// Classifies an HTTP error status per the official error table (401
+/// authentication, 402 billing, 429 rate limit, 5xx server...).
+/// `retry_after` is the raw `Retry-After` header value, if any.
 pub fn parse_error(status: u16, body: &str, retry_after: Option<&str>, secret: &str) -> MetaError {
     let detail = api_error_detail(body, secret);
     let (kind, base, retryable) = match status {
         401 => (
             MetaErrorKind::Auth,
-            "La clave fue rechazada por Meta. Revisa META_API_KEY.",
+            "The key was rejected by Meta. Check META_API_KEY.",
             false,
         ),
         402 => (
             MetaErrorKind::Billing,
-            "Meta devolvió un problema de facturación o saldo.",
+            "Meta returned a billing or balance problem.",
             false,
         ),
         403 => (
             MetaErrorKind::Forbidden,
-            "La clave no tiene permiso para este modelo o recurso.",
+            "The key has no permission for this model or resource.",
             false,
         ),
         404 => (
             MetaErrorKind::ModelNotFound,
-            "El modelo o el recurso no existe en Meta.",
+            "The model or resource does not exist at Meta.",
             false,
         ),
         429 => (
             MetaErrorKind::RateLimit,
-            "Meta limitó el ritmo de peticiones (rate limit).",
+            "Meta rate-limited the requests (rate limit).",
             true,
         ),
         400 => (
             MetaErrorKind::BadRequest,
-            "Meta rechazó la petición por parámetros inválidos.",
+            "Meta rejected the request over invalid parameters.",
             false,
         ),
         500..=599 => (
             MetaErrorKind::Server,
-            "Meta devolvió un error interno de servidor.",
+            "Meta returned an internal server error.",
             true,
         ),
         _ => (
             MetaErrorKind::Unexpected,
-            "Meta devolvió un estado inesperado.",
+            "Meta returned an unexpected status.",
             false,
         ),
     };
     let message = match detail {
-        Some(d) => format!("{base} Detalle: {d}"),
+        Some(d) => format!("{base} Detail: {d}"),
         None => format!("{base} (HTTP {status})"),
     };
     let mut err = MetaError::new(kind, message, retryable).with_status(status);
@@ -280,8 +280,9 @@ pub fn parse_error(status: u16, body: &str, retry_after: Option<&str>, secret: &
     err
 }
 
-/// Extrae `error.message` de la envolvente oficial, saneado y redactado.
-/// Devuelve `None` si el cuerpo está vacío o no es JSON (p. ej. 404 sin cuerpo).
+/// Extracts `error.message` from the official envelope, sanitized and
+/// redacted. Returns `None` when the body is empty or not JSON (e.g. a
+/// bodiless 404).
 fn api_error_detail(body: &str, secret: &str) -> Option<String> {
     let json: serde_json::Value = serde_json::from_str(body.trim()).ok()?;
     let message = json.get("error")?.get("message")?.as_str()?;
@@ -295,13 +296,13 @@ fn parse_retry_after(value: &str) -> Option<u64> {
     value.trim().parse::<u64>().ok()
 }
 
-/// Clasifica un fallo de transporte de `reqwest` (sin respuesta HTTP).
+/// Classifies a `reqwest` transport failure (no HTTP response).
 pub fn classify_transport(err: &reqwest::Error, secret: &str) -> MetaError {
     if err.is_timeout() {
         return MetaError::timeout();
     }
     if err.is_connect() {
-        return MetaError::network("no se pudo establecer la conexión");
+        return MetaError::network("could not establish the connection");
     }
     MetaError::network(&sanitize(redact(&err.to_string(), secret)))
 }
@@ -310,7 +311,7 @@ pub fn classify_transport(err: &reqwest::Error, secret: &str) -> MetaError {
 mod tests {
     use super::*;
 
-    const SECRET: &str = "sk-prueba";
+    const SECRET: &str = "sk-test";
 
     #[test]
     fn request_body_matches_documented_shape() {
@@ -355,18 +356,18 @@ mod tests {
     #[test]
     fn incomplete_max_tokens_reports_exhausted_budget() {
         let body = include_str!("../tests/fixtures/success_incomplete_max_tokens.json");
-        let err = parse_success(200, body, SECRET).expect_err("sin texto es error");
+        let err = parse_success(200, body, SECRET).expect_err("no text is an error");
         assert_eq!(err.kind, MetaErrorKind::Incomplete);
         assert!(!err.retryable);
         assert_eq!(err.status, Some(200));
         assert!(
-            err.message.contains("límite de salida"),
-            "mensaje: {}",
+            err.message.contains("output limit"),
+            "message: {}",
             err.message
         );
         assert!(
             err.message.contains(&MAX_OUTPUT_TOKENS.to_string()),
-            "mensaje: {}",
+            "message: {}",
             err.message
         );
     }
@@ -374,12 +375,12 @@ mod tests {
     #[test]
     fn incomplete_content_filter_reports_filter() {
         let body = include_str!("../tests/fixtures/success_incomplete_content_filter.json");
-        let err = parse_success(200, body, SECRET).expect_err("sin texto es error");
+        let err = parse_success(200, body, SECRET).expect_err("no text is an error");
         assert_eq!(err.kind, MetaErrorKind::Incomplete);
         assert!(!err.retryable);
         assert!(
-            err.message.contains("filtro de contenido"),
-            "mensaje: {}",
+            err.message.contains("content filter"),
+            "message: {}",
             err.message
         );
     }
@@ -387,14 +388,14 @@ mod tests {
     #[test]
     fn refusal_reports_model_refusal() {
         let body = include_str!("../tests/fixtures/success_refusal.json");
-        let err = parse_success(200, body, SECRET).expect_err("rechazo es error");
+        let err = parse_success(200, body, SECRET).expect_err("refusal is an error");
         assert_eq!(err.kind, MetaErrorKind::Refusal);
         assert!(!err.retryable);
         assert_eq!(err.status, Some(200));
-        assert!(err.message.contains("rechazó"), "mensaje: {}", err.message);
+        assert!(err.message.contains("refused"), "message: {}", err.message);
         assert!(
-            err.message.contains("No puedo ayudar"),
-            "mensaje: {}",
+            err.message.contains("I cannot help"),
+            "message: {}",
             err.message
         );
     }
@@ -450,7 +451,7 @@ mod tests {
     #[test]
     fn api_detail_is_sanitized_and_redacted() {
         let body = format!(
-            r#"{{"error":{{"message":"  fallo\ncon {SECRET} dentro  ","type":"server_error"}}}}"#
+            r#"{{"error":{{"message":"  failure\nwith {SECRET} inside  ","type":"server_error"}}}}"#
         );
         let err = parse_error(500, &body, None, SECRET);
         assert!(!err.message.contains(SECRET));

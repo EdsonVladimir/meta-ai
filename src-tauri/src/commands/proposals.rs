@@ -1,11 +1,11 @@
-//! Comandos de generación asistida (hito 5).
+//! Assisted-generation commands (milestone 5).
 //!
-//! - `core_generation_context`: vista previa del contexto (sin red).
-//! - `core_propose_requirements`: genera con Meta y registra. La red ocurre
-//!   SIN bloqueos: foto del contexto, suelta, red, y registro posterior. Una
-//!   sola generación simultánea por módulo.
+//! - `core_generation_context`: context preview (no network).
+//! - `core_propose_requirements`: generates with Meta and records. Network
+//!   happens lock-FREE: context snapshot, release, network, then recording. One
+//!   simultaneous generation per module.
 //! - `core_list_generations`, `core_accept_proposal`, `core_discard_proposal`:
-//!   envoltorios finos sobre `ruth-api`, con bloqueos cortos.
+//!   thin wrappers over `ruth-api`, with short locks.
 
 use tauri::State;
 
@@ -71,7 +71,7 @@ pub async fn core_propose_requirements(
     input: ProposeInput,
 ) -> Result<GenerationDto, ApiError> {
     let description = ruth_api::validate_description(&input.description)?;
-    // Bloqueo corto: foto del contexto y marca de generación en curso.
+    // Short lock: context snapshot and in-flight generation mark.
     let context = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
@@ -81,14 +81,14 @@ pub async fn core_propose_requirements(
     };
     let _guard = InflightGuard::hold(&state.inflight, input.module_id.clone());
 
-    // Sin bloqueos durante la red: ni SQLite ni el estado del proyecto.
+    // No locks during network: neither SQLite nor the project state.
     let config = ruth_meta::MetaConfig::from_env().map_err(ApiError::from_meta)?;
     let prompt = ruth_meta::generation::build_generation_input(&description, &context);
     let result = ruth_meta::generation::generate(&config, &prompt)
         .await
         .map_err(ApiError::from_meta)?;
 
-    // Bloqueo corto: registrar lo validado (o nada, si la red falló).
+    // Short lock: record the validated (or nothing, when the network failed).
     let mut guard = lock(&state.inner)?;
     let ready = ready(&mut guard)?;
     let (input_tokens, output_tokens, total_tokens) = match &result.usage {

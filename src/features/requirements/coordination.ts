@@ -1,6 +1,7 @@
-// Coordinación pura del espacio de requisitos: qué respuesta aplicar, cuándo
-// pedir confirmación por borrador sin guardar y cuándo se puede aprobar.
-// Sin React ni Tauri: se prueba con vitest sin DOM.
+// Pure requirements-space coordination: which response to apply, when to
+// ask for confirmation over an unsaved draft, and when approval is allowed.
+// No React, no Tauri: tested with vitest without DOM.
+import type { CenterView } from "./uiStore";
 
 export interface ResponseMeta {
   key: string;
@@ -8,9 +9,9 @@ export interface ResponseMeta {
 }
 
 /**
- * Una respuesta solo se aplica si sigue siendo la última pedida para la
- * selección actual. Así una respuesta tardía jamás reemplaza la selección
- * o el contenido de otro requisito.
+ * A response only applies while it is still the latest one requested for
+ * the current selection. That way a late response never replaces another
+ * requirement's selection or content.
  */
 export function shouldApplyResponse(
   current: ResponseMeta,
@@ -19,7 +20,7 @@ export function shouldApplyResponse(
   return incoming.key === current.key && incoming.epoch === current.epoch;
 }
 
-/** ¿Hay que ofrecer guardar/descartar/cancelar antes de cambiar de objetivo? */
+/** Offer save/discard/cancel before switching targets? */
 export function needsConfirm(
   dirty: boolean,
   currentRequirementId: string | null,
@@ -32,9 +33,9 @@ export function needsConfirm(
 export interface DraftState {
   requirementId: string | null;
   content: string;
-  /** Contenido guardado contra el que se compara: re-escribirlo limpia. */
+  /** Saved content to compare against: rewriting it clears. */
   base: string;
-  /** Generación de edición: un `saved` tardío solo vale para su `rev`. */
+  /** Edit generation: a late `saved` only counts for its own `rev`. */
   rev: number;
   dirty: boolean;
 }
@@ -60,7 +61,7 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
     case "edit":
       return { ...state, content: action.content, rev: state.rev + 1, dirty: action.content !== state.base };
     case "snapshot":
-      // Un refresco nunca sobrescribe un borrador con cambios sin guardar.
+      // A refresh never overwrites a draft with unsaved changes.
       if (state.dirty) return state;
       return {
         requirementId: action.requirementId,
@@ -70,9 +71,9 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
         dirty: false,
       };
     case "saved":
-      // Solo el resultado de ESTA petición limpia: si se editó durante el
-      // guardado (rev distinto) o el borrador es de otro requisito, el
-      // contenido nuevo se conserva sucio y guardará como otra versión.
+      // Only THIS request's result clears: if edits happened during the
+      // save (different rev) or the draft belongs to another requirement,
+      // the new content stays dirty and will save as another version.
       if (action.rev !== state.rev || action.requirementId !== state.requirementId) {
         return state;
       }
@@ -84,10 +85,10 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
         dirty: false,
       };
     case "saveFailed":
-      // Un error (p. ej. concurrencia) conserva el borrador intacto.
+      // An error (e.g. concurrency) keeps the draft intact.
       return state;
     case "discard":
-      // Descarte explícito de la persona: resincroniza sin condiciones.
+      // The person's explicit discard: resyncs unconditionally.
       return {
         requirementId: action.requirementId,
         content: action.content,
@@ -120,8 +121,8 @@ export function reviewReducer(_state: ReviewState, action: ReviewAction): Review
 }
 
 /**
- * Estado de guardado visible: borrador local, guardando, guardado o error.
- * Sin requisito seleccionado no hay nada que guardar (`idle`).
+ * Visible save state: local draft, saving, saved or error. With no
+ * requirement selected there is nothing to save (`idle`).
  */
 export type SaveState = "idle" | "draft" | "saving" | "saved" | "error";
 
@@ -147,8 +148,8 @@ export interface ApprovalGate {
 }
 
 /**
- * La interfaz solo facilita la operación: exige confirmación de esa versión
- * concreta, borrador limpio y autor. Rust vuelve a validar las invariantes.
+ * The UI only eases the operation: it requires confirmation of that exact
+ * version, a clean draft and an author. Rust revalidates the invariants.
  */
 export function canApprove(gate: ApprovalGate): boolean {
   if (gate.busy || gate.dirty) return false;
@@ -156,16 +157,16 @@ export function canApprove(gate: ApprovalGate): boolean {
   return gate.reviewedVersionId === gate.currentVersionId;
 }
 
-/** Documento al que Ctrl+S debe dirigirse, o ninguno. */
+/** Document Ctrl+S should target, or none. */
 export type SaveTarget = "requirement" | "design" | "mockup";
 
 /**
- * Resuelve el objetivo de Guardar (Ctrl+S o botón) desde la vista activa,
- * la selección y qué borradores tienen cambios semánticos. Puro y
- * probado: sin cambios no hay guardado (nunca versiones idénticas).
+ * Resolves the Save target (Ctrl+S or button) from the active view, the
+ * selection and which drafts hold semantic changes. Pure and tested: no
+ * changes, no save (never identical versions).
  */
 export function resolveSaveTarget(input: {
-  centerView: "requirements" | "design" | "impact" | "mockups";
+  centerView: CenterView;
   requirementId: string | null;
   designId: string | null;
   mockupId: string | null;

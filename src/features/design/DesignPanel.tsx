@@ -1,12 +1,11 @@
-// Panel de diseño del módulo: seleccionar requisitos guardados, generar
-// una propuesta de flujo o ER con Meta, revisarla (diagrama, fuente,
-// explicación, preguntas), editar su JSON con validación y aceptarla como
-// borrador (artefacto nuevo o nueva versión). Aceptar no aprueba; la
-// revisión es opcional y se muestra como información (diseño vivo).
-//
-// Borradores (selección, JSON, objetivo) en estado local: un fallo conserva
-// todo. Las generaciones son instantáneas de Rust. Se monta con `key` por
-// módulo, así que una respuesta tardía jamás toca otro módulo.
+// Module design panel: select saved requirements, generate a flow or ER
+// proposal with Meta, review it (diagram, source, explanation,
+// questions), edit its JSON with validation and accept it as a draft
+// (new artifact or new version). Accepting does not approve; review is
+// optional and shows as information (living design). Drafts (selection,
+// JSON, target) in local state: a failure keeps everything. Generations
+// are Rust snapshots. Mounted with a per-module `key`, so a late
+// response never touches another module.
 import { useEffect, useRef, useState } from "react";
 import { getRequirement } from "../requirements/client";
 import {
@@ -46,13 +45,13 @@ interface DesignPanelProps {
   moduleId: string;
   artifacts: ArtifactDto[];
   /**
-   * Requisitos premarcados como fuentes (p. ej. el requisito en contexto).
-   * Solo preselecciona: nunca genera automáticamente.
+   * Requirements preselected as sources (e.g. the requirement in context).
+   * It only preselects: it never generates automatically.
    */
   preselectedRequirementIds?: string[] | null;
   /**
-   * Mockups premarcados como fuentes (p. ej. el mockup en contexto).
-   * `null`/`undefined` = ninguno premarcado (se eligen a mano).
+   * Mockups preselected as sources (e.g. the mockup in context).
+   * `null`/`undefined` = none preselected (picked by hand).
    */
   preselectedMockupIds?: string[] | null;
   onAccepted: (detail: RequirementDetail) => void;
@@ -95,9 +94,9 @@ export function DesignPanel({
         if (cancelledRef.current) return;
         setContext(preview.requirements);
         setMockups(preview.mockups);
-        // Preselección: requisitos indicados (o todos los guardados) y
-        // mockups indicados (o ninguno: se añaden a mano). La persona
-        // ajusta. Sin veto por revisión (diseño vivo).
+        // Preselection: the given requirements (or every saved one) and
+        // the given mockups (or none: added by hand). The person adjusts.
+        // No review veto (living design).
         const initial: Record<string, boolean> = {};
         for (const item of preview.requirements) {
           initial[item.artifactId] =
@@ -199,7 +198,7 @@ export function DesignPanel({
         generationId: generation.id,
       });
       if (cancelledRef.current) return;
-      // Solo el resultado válido sustituye al anterior.
+      // Only the valid result replaces the previous one.
       setValidated((prev) => ({ ...prev, [generation.id]: result }));
     } catch (raw) {
       if (cancelledRef.current) return;
@@ -221,8 +220,8 @@ export function DesignPanel({
     setActing(generation.id);
     setActionError(null);
     try {
-      // Las actualizaciones aceptan sobre el objetivo y la versión del
-      // snapshot (fijados); las creaciones leen la esperada en fresco.
+      // Updates accept onto the snapshot target and version (fixed);
+      // creations read the expected one fresh.
       const updating = isUpdateGeneration(generation);
       const target = updating
         ? (generation.targetArtifactId ?? "")
@@ -274,21 +273,21 @@ export function DesignPanel({
   const busy = generating !== null || acting !== null;
 
   return (
-    <section className="editor design" aria-label="Diseño vinculado a requisitos">
+    <section className="editor design" aria-label="Requirement-linked design">
       <div className="editor-head">
-        <h3>Diseño del módulo</h3>
+        <h3>Module design</h3>
       </div>
 
       <div className="context-preview">
-        <h4>Fuentes: requisitos guardados</h4>
+        <h4>Sources: saved requirements</h4>
         {contextError !== null ? (
           <p className="error" role="alert">
             {contextError}
           </p>
         ) : context === null ? (
-          <p className="hint">Cargando requisitos…</p>
+          <p className="hint">Loading requirements…</p>
         ) : context.length === 0 ? (
-          <p className="hint">El módulo aún no tiene requisitos.</p>
+          <p className="hint">The module has no requirements yet.</p>
         ) : (
           <ul className="pick-list">
             {context.map((item) => (
@@ -316,9 +315,9 @@ export function DesignPanel({
                     ) : (
                       <span
                         className="pill"
-                        title="Se generará desde su versión guardada; la revisión es opcional"
+                        title="It will generate from its saved version; review is optional"
                       >
-                        sin revisar{" "}
+                        unreviewed{" "}
                       </span>
                     )}
                     <span className="hint">{item.excerpt}</span>
@@ -328,11 +327,11 @@ export function DesignPanel({
             ))}
           </ul>
         )}
-        <h4>Fuentes: mockups guardados (opcional)</h4>
+        <h4>Sources: saved mockups (optional)</h4>
         {mockups === null ? (
-          <p className="hint">Cargando mockups…</p>
+          <p className="hint">Loading mockups…</p>
         ) : mockups.length === 0 ? (
-          <p className="hint">El módulo aún no tiene mockups: dibújalos en la vista Mockups.</p>
+          <p className="hint">The module has no mockups yet: draw them in the Mockups view.</p>
         ) : (
           <ul className="pick-list">
             {mockups.map((item) => (
@@ -358,9 +357,9 @@ export function DesignPanel({
                     {!item.approved && (
                       <span
                         className="pill"
-                        title="Se generará desde su versión guardada; la revisión es opcional"
+                        title="It will generate from its saved version; review is optional"
                       >
-                        sin revisar{" "}
+                        unreviewed{" "}
                       </span>
                     )}
                     <span className="hint">{item.excerpt}</span>
@@ -371,13 +370,13 @@ export function DesignPanel({
           </ul>
         )}
         <p className="notice">
-          Solo viajan a Meta las fuentes guardadas seleccionadas ({chosenCount}{" "}
-          {chosenCount === 1 ? "requisito" : "requisitos"}
+          Only the selected saved sources travel to Meta ({chosenCount}{" "}
+          {chosenCount === 1 ? "requirement" : "requirements"}
           {chosenMockups.length > 0 &&
-            ` y ${chosenMockups.length} ${chosenMockups.length === 1 ? "mockup" : "mockups"}`}
-          ). Los mockups viajan como resumen legible, sin posiciones. No se envían archivos,
-          secretos ni otros proyectos. La clave vive solo en Rust y no se llama
-          sin pulsar un botón de generación.
+            ` and ${chosenMockups.length} ${chosenMockups.length === 1 ? "mockup" : "mockups"}`}
+          ). Mockups travel as a readable summary, without positions. No files,
+          secrets or other projects are sent. The key lives only in Rust and
+          no call happens without pressing a generate button.
         </p>
       </div>
 
@@ -389,9 +388,9 @@ export function DesignPanel({
             className="primary"
             onClick={() => void handleGenerate(kind)}
             disabled={busy || totalChosen === 0}
-            title={totalChosen === 0 ? "Selecciona al menos una fuente guardada" : undefined}
+            title={totalChosen === 0 ? "Select at least one saved source" : undefined}
           >
-            {generating === kind ? "Generando…" : `Generar ${DESIGN_KIND_LABELS[kind]}`}
+            {generating === kind ? "Generating…" : `Generate ${DESIGN_KIND_LABELS[kind]}`}
           </button>
         ))}
       </div>
@@ -408,7 +407,7 @@ export function DesignPanel({
 
       {generations.length > 0 && (
         <div className="generations">
-          <h4>Generaciones guardadas</h4>
+          <h4>Saved generations</h4>
           {generations.map((generation) => {
             const actionable = isDesignActionable(
               generation.proposal,
@@ -417,8 +416,8 @@ export function DesignPanel({
             );
             const busyThis = acting === generation.id;
             const options = designTargets(artifacts, generation.kind);
-            // ¿El contexto incluye mockups? El tipo se deriva del artefacto
-            // (versión `{artefacto}-vN`): sin inventar, solo para mostrar.
+            // Does the context include mockups? The kind derives from the
+            // (version `{artifact}-vN`): no inventing, display only.
             const kindsByArtifact = new Map(artifacts.map((a) => [a.id, a.kind]));
             const mockupsInContext = generation.contextVersionIds.filter(
               (versionId) =>
@@ -428,10 +427,10 @@ export function DesignPanel({
               <article key={generation.id} className="generation-card">
                 <header>
                   <code>{generation.id}</code> · {DESIGN_KIND_LABELS[generation.kind]} ·{" "}
-                  {generation.model} · plantilla v{generation.templateVersion}
+                  {generation.model} · template v{generation.templateVersion}
                   {mockupsInContext > 0 && (
                     <span>
-                      {" "}· desde {mockupsInContext}{" "}
+                      {" "}· from {mockupsInContext}{" "}
                       {mockupsInContext === 1 ? "mockup" : "mockups"}
                     </span>
                   )}
@@ -447,21 +446,21 @@ export function DesignPanel({
                 </header>
                 {generation.stale ? (
                   <p className="notice stale" role="note">
-                    Desactualizada: cambió una fuente usada como contexto. La
-                    propuesta sigue vinculada a su contexto original y no puede
-                    aceptarse. Genera de nuevo con el contexto actual.
+                    Stale: a source used as context changed. The proposal
+                    stays bound to its original context and cannot be
+                    accepted. Generate again with the current context.
                   </p>
                 ) : (
                   <p className="hint">
-                    Contexto: {generation.contextVersionIds.join(", ") || "sin fuentes"}.
+                    Context: {generation.contextVersionIds.join(", ") || "no sources"}.
                   </p>
                 )}
                 <h5>{generation.proposal.title}</h5>
                 {isUpdateGeneration(generation) && (
                   <p className="hint">
-                    Propuesta de actualización de <code>{generation.targetArtifactId}</code>{" "}
-                    (sobre <code>{generation.targetVersionId}</code>): el objetivo está fijado
-                    y no puede cambiarse aquí.
+                    Update proposal for <code>{generation.targetArtifactId}</code>{" "}
+                    (on <code>{generation.targetVersionId}</code>): the target is fixed
+                    and cannot be changed here.
                   </p>
                 )}
                 <MermaidDiagram
@@ -469,13 +468,13 @@ export function DesignPanel({
                   diagramId={`gen-${generation.id}`}
                 />
                 <details>
-                  <summary>Fuente Mermaid (solo lectura)</summary>
+                  <summary>Mermaid source (read-only)</summary>
                   <pre className="readonly-box">{mermaidFor(generation)}</pre>
                 </details>
                 <p>{generation.proposal.explanation}</p>
                 {generation.questions.length > 0 && (
-                  <section className="questions" aria-label="Preguntas pendientes">
-                    <h5>Preguntas pendientes</h5>
+                  <section className="questions" aria-label="Open questions">
+                    <h5>Open questions</h5>
                     <ul>
                       {generation.questions.map((question, i) => (
                         <li key={i}>{question}</li>
@@ -484,13 +483,13 @@ export function DesignPanel({
                   </section>
                 )}
                 <p className="hint">
-                  Sintaxis válida no garantiza corrección del diseño: revísalo
-                  como experta antes de aceptarlo.
+                  Valid syntax does not guarantee design correctness: review
+                  it as an expert before accepting.
                 </p>
                 {generation.proposal.state === "pending" ? (
                   <>
                     <label className="field">
-                      <span>Especificación JSON (autoritativa)</span>
+                      <span>JSON spec (authoritative)</span>
                       <textarea
                         className="json-editor"
                         value={jsonFor(generation)}
@@ -504,17 +503,17 @@ export function DesignPanel({
                     </label>
                     {validateError[generation.id] && (
                       <p className="error" role="alert">
-                        {validateError[generation.id]} Se conserva el último resultado válido.
+                        {validateError[generation.id]} The last valid result is kept.
                       </p>
                     )}
                     {isUpdateGeneration(generation) ? (
                       <p className="hint">
-                        Al aceptar crea una versión de <code>{generation.targetArtifactId}</code>{" "}
-                        con las fuentes del snapshot. La aprobación sigue siendo un paso posterior.
+                        Accepting creates a version of <code>{generation.targetArtifactId}</code>{" "}
+                        with the snapshot sources. Approval remains a later step.
                       </p>
                     ) : (
                       <label className="field">
-                        <span>Aceptar como</span>
+                        <span>Accept as</span>
                         <select
                           value={targets[generation.id] ?? ""}
                           onChange={(e) =>
@@ -522,10 +521,10 @@ export function DesignPanel({
                           }
                           disabled={!actionable}
                         >
-                          <option value="">Artefacto nuevo</option>
+                          <option value="">New artifact</option>
                           {options.map((a) => (
                             <option key={a.id} value={a.id}>
-                              Nueva versión de {a.id}
+                              New version of {a.id}
                             </option>
                           ))}
                         </select>
@@ -538,7 +537,7 @@ export function DesignPanel({
                         onClick={() => void handleValidate(generation)}
                         disabled={!actionable}
                       >
-                        Validar y previsualizar
+                        Validate and preview
                       </button>
                       <button
                         type="button"
@@ -547,11 +546,11 @@ export function DesignPanel({
                         disabled={!actionable}
                         title={
                           generation.stale
-                            ? "Desactualizada: genera de nuevo"
-                            : "Crea un borrador sin aprobar"
+                            ? "Stale: generate again"
+                            : "Creates an unapproved draft"
                         }
                       >
-                        {busyThis ? "Aceptando…" : "Aceptar como borrador"}
+                        {busyThis ? "Accepting…" : "Accept as draft"}
                       </button>
                       <button
                         type="button"
@@ -559,7 +558,7 @@ export function DesignPanel({
                         onClick={() => void handleDiscard(generation)}
                         disabled={!actionable}
                       >
-                        Descartar
+                        Discard
                       </button>
                     </div>
                   </>
@@ -576,7 +575,7 @@ export function DesignPanel({
                             onOpenDesign(generation.proposal.artifactId)
                           }
                         >
-                          Abrir {generation.proposal.artifactId}
+                          Open {generation.proposal.artifactId}
                         </button>
                       )}
                   </p>

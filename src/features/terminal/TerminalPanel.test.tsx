@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// Aceptación de pestañas/paralelo con DOM real: estructura, visibilidad,
-// no-remontajes, salida única y controles por sesión. xterm y Tauri son
-// dobles locales (la lógica bajo prueba es el cableado React, no ellos).
+// Tabs/side-by-side acceptance with a real DOM: structure, visibility,
+// no remounts, single output and per-session controls. xterm and Tauri
+// are local doubles (the logic under test is the React wiring, not them).
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -174,7 +174,7 @@ function terminalFor(id: string): FakeTerminalShape {
   const found = liveTerminals().find((t) =>
     t.marker?.closest(".terminal-view")?.getAttribute("aria-label")?.includes(id),
   );
-  if (!found) throw new Error(`sin vista viva para ${id}`);
+  if (!found) throw new Error(`no live view for ${id}`);
   return found;
 }
 
@@ -208,6 +208,7 @@ vi.stubGlobal("requestAnimationFrame", (cb: () => void) => {
 vi.stubGlobal("cancelAnimationFrame", () => {});
 
 import { TerminalPanel } from "./TerminalPanel";
+import { useRequirementsUi } from "../requirements/uiStore";
 
 beforeEach(() => {
   backend.sessions = [];
@@ -219,6 +220,7 @@ beforeEach(() => {
   observers.length = 0;
   xtermDims.cols = 80;
   xtermDims.rows = 24;
+  useRequirementsUi.getState().setTerminalMaximized(false);
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
 });
 
@@ -231,40 +233,40 @@ function renderPanel(onHide = vi.fn()) {
 }
 
 async function createSession(expected: number) {
-  fireEvent.click(screen.getByRole("button", { name: "Nueva terminal" }));
+  fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(expected));
   await waitFor(() => expect(liveTerminals()).toHaveLength(expected));
 }
 
-describe("terminales: pestañas y paralelo", () => {
-  it("monta una sola suscripción por evento aunque dev monte dos veces", async () => {
+describe("terminals: tabs and side by side", () => {
+  it("mounts a single subscription per event even when dev mounts twice", async () => {
     renderPanel();
-    // `listen` se invoca en cada montaje (6), pero el colector da de baja
-    // el primer juego: queda exactamente un vivo por evento.
+    // `listen` runs on every mount (6), but the collector unsubscribes the
+    // first set: exactly one live listener per event remains.
     await waitFor(() => expect(events.listens).toBe(6));
     expect(events.handlers.get("ruth-terminal-output")?.size).toBe(1);
     expect(events.handlers.get("ruth-terminal-exit")?.size).toBe(1);
     expect(events.handlers.get("ruth-terminal-close-requested")?.size).toBe(1);
   });
 
-  it("crea dos sesiones con una sola tira y un solo viewport", async () => {
+  it("creates two sessions with a single strip and a single viewport", async () => {
     const { container } = renderPanel();
     await createSession(1);
     await createSession(2);
     expect(screen.getAllByRole("tab")).toHaveLength(2);
-    // Sin cabeceras de panel duplicadas en modo pestañas.
+    // No duplicated pane headers in tabs mode.
     expect(container.querySelectorAll(".terminal-pane > .terminal-tab")).toHaveLength(0);
-    // Un envoltorio visible a ancho completo y otro oculto.
+    // One wrapper visible at full width and one hidden.
     const wraps = Array.from(container.querySelectorAll(".terminal-pane-wrap"));
     expect(wraps).toHaveLength(2);
     expect(wraps.filter((w) => (w as HTMLElement).hidden)).toHaveLength(1);
     const shown = wraps.find((w) => !(w as HTMLElement).hidden) as HTMLElement;
     expect(shown.style.flex).toBe("1 1 auto");
-    // Dos vistas vivas (una oculta): nada se desmonta.
+    // Two live views (one hidden): nothing unmounts.
     expect(liveTerminals()).toHaveLength(2);
   });
 
-  it("cambia de pestaña con salida independiente y única", async () => {
+  it("switches tabs with independent, single output", async () => {
     renderPanel();
     await createSession(1);
     await createSession(2);
@@ -281,54 +283,54 @@ describe("terminales: pestañas y paralelo", () => {
     expect(terminalFor("term-2").text).toBe("BBB");
   });
 
-  it("alterna a paralelo y de vuelta sin remontar ni duplicar", async () => {
+  it("toggles to side by side and back without remounting or duplicating", async () => {
     const { container } = renderPanel();
     await createSession(1);
     await createSession(2);
     emit("ruth-terminal-output", { id: "term-1", data: "AAA" });
     const mounts = fakeXterm.instances.length;
-    const toggle = screen.getByRole("button", { name: "Ver en paralelo" });
+    const toggle = screen.getByRole("button", { name: "View side by side" });
     for (let round = 0; round < 3; round += 1) {
-      fireEvent.click(screen.getByRole("button", { name: "Ver en paralelo" }));
+      fireEvent.click(screen.getByRole("button", { name: "View side by side" }));
       expect(container.querySelectorAll(".terminal-sep")).toHaveLength(1);
       expect(container.querySelectorAll(".terminal-pane > .terminal-tab")).toHaveLength(2);
       expect(container.querySelectorAll(".terminal-pane-wrap[hidden]")).toHaveLength(0);
-      fireEvent.click(screen.getByRole("button", { name: "Ver en pestañas" }));
+      fireEvent.click(screen.getByRole("button", { name: "View as tabs" }));
       expect(container.querySelectorAll(".terminal-sep")).toHaveLength(0);
       expect(container.querySelectorAll(".terminal-pane > .terminal-tab")).toHaveLength(0);
       expect(container.querySelectorAll(".terminal-pane-wrap[hidden]")).toHaveLength(1);
     }
     expect(toggle).toBeDefined();
-    // Sin remontajes: mismas instancias, mismo texto una sola vez.
+    // No remounts: same instances, same text exactly once.
     expect(fakeXterm.instances.length).toBe(mounts);
     expect(liveTerminals()).toHaveLength(2);
     expect(terminalFor("term-1").text).toBe("AAA");
-    // Alternar no crea PTYs ni re-suscribe (siguen los 6 del montaje
-    // doble inicial, con un solo vivo por evento).
+    // Toggling creates no PTYs and resubscribes nothing (the initial
+    // double mount's 6 remain, with a single live listener per event).
     expect(backend.calls.filter((c) => c.cmd === "term_create")).toHaveLength(2);
     expect(events.listens).toBe(6);
     expect(events.handlers.get("ruth-terminal-output")?.size).toBe(1);
   });
 
-  it("limpia una sesión sin tocar la otra ni el PTY", async () => {
+  it("clears one session without touching the other or the PTY", async () => {
     renderPanel();
     await createSession(1);
     await createSession(2);
     emit("ruth-terminal-output", { id: "term-1", data: "AAA" });
     emit("ruth-terminal-output", { id: "term-2", data: "BBB" });
-    fireEvent.click(screen.getByRole("button", { name: "Limpiar vista de term-1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear term-1 view" }));
     expect(terminalFor("term-1").text).toBe("");
     expect(terminalFor("term-2").text).toBe("BBB");
     expect(backend.calls.some((c) => c.cmd === "term_write")).toBe(false);
   });
 
-  it("redimensiona cada PTY a su tamaño real, nunca cero", async () => {
+  it("resizes every PTY to its real size, never zero", async () => {
     renderPanel();
     await createSession(1);
     xtermDims.cols = 100;
     xtermDims.rows = 30;
     for (const ro of observers) ro.cb();
-    // Tras el antirrebote, el último aviso lleva el tamaño medido.
+    // After the debounce, the last notice carries the measured size.
     await waitFor(() => {
       const sizes = backend.calls
         .filter((c) => c.cmd === "term_resize")
@@ -342,7 +344,7 @@ describe("terminales: pestañas y paralelo", () => {
     });
   });
 
-  it("Ctrl+C viaja al PTY tal cual", async () => {
+  it("Ctrl+C travels to the PTY untouched", async () => {
     renderPanel();
     await createSession(1);
     terminalFor("term-1").onDataCb?.("\x03");
@@ -357,31 +359,98 @@ describe("terminales: pestañas y paralelo", () => {
     });
   });
 
-  it("cierra con confirmación y conserva la otra sesión", async () => {
+  it("closes with confirmation and keeps the other session", async () => {
     renderPanel();
     await createSession(1);
     await createSession(2);
-    fireEvent.click(screen.getByRole("button", { name: "Cerrar term-1" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Cerrar term-1" });
-    // Cancelar no cierra.
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close term-1" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Close term-1" });
+    // Cancelling does not close.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.getAllByRole("tab")).toHaveLength(2);
-    // Confirmar cierra y activa la que queda.
-    fireEvent.click(screen.getByRole("button", { name: "Cerrar term-1" }));
-    const dialog2 = await screen.findByRole("alertdialog", { name: "Cerrar term-1" });
-    fireEvent.click(within(dialog2).getByRole("button", { name: "Cerrar sesión" }));
+    // Confirming closes and activates the remaining one.
+    fireEvent.click(screen.getByRole("button", { name: "Close term-1" }));
+    const dialog2 = await screen.findByRole("alertdialog", { name: "Close term-1" });
+    fireEvent.click(within(dialog2).getByRole("button", { name: "Close session" }));
     await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(1));
     expect(backend.calls.some((c) => c.cmd === "term_close")).toBe(true);
     expect(screen.getByRole("tab", { name: /term-2/ }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("ocultar avisa al contenedor sin cerrar sesiones", async () => {
+  it("hiding notifies the container without closing sessions", async () => {
     const onHide = vi.fn();
     renderPanel(onHide);
     await createSession(1);
-    fireEvent.click(screen.getByRole("button", { name: "Ocultar panel de terminal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide terminal panel" }));
     expect(onHide).toHaveBeenCalledTimes(1);
     expect(backend.calls.some((c) => c.cmd === "term_close")).toBe(false);
+  });
+});
+
+describe("terminal: keyboard resizing", () => {
+  it("arrows adjust the height and Home restores the default", async () => {
+    useRequirementsUi.setState({ terminalHeight: null });
+    renderPanel();
+    await createSession(1);
+    const handle = screen.getByRole("separator", { name: "Terminal panel height" });
+    fireEvent.keyDown(handle, { key: "ArrowUp" });
+    expect(useRequirementsUi.getState().terminalHeight).toBe(276);
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+    expect(useRequirementsUi.getState().terminalHeight).toBe(260);
+    fireEvent.keyDown(handle, { key: "Home" });
+    expect(useRequirementsUi.getState().terminalHeight).toBeNull();
+    useRequirementsUi.setState({ terminalHeight: null });
+  });
+
+  it("arrows split side-by-side panes and Home evens them", async () => {
+    useRequirementsUi.setState({ terminalPaneWidths: null });
+    const { container } = renderPanel();
+    await createSession(1);
+    await createSession(2);
+    fireEvent.click(screen.getByRole("button", { name: "View side by side" }));
+    const sep = await screen.findByRole("separator", { name: /Width between term-1 and term-2/ });
+    // jsdom computes no widths: the container is faked.
+    const panes = container.querySelector(".terminal-panes") as HTMLElement;
+    Object.defineProperty(panes, "getBoundingClientRect", {
+      value: () => ({ width: 1000, height: 400, top: 0, left: 0, right: 1000, bottom: 400 }),
+      configurable: true,
+    });
+    fireEvent.keyDown(sep, { key: "ArrowRight" });
+    const widths = useRequirementsUi.getState().terminalPaneWidths;
+    expect(widths).not.toBeNull();
+    expect(widths?.[0]).toBeGreaterThan(0.5);
+    fireEvent.keyDown(sep, { key: "Home" });
+    expect(useRequirementsUi.getState().terminalPaneWidths).toBeNull();
+  });
+});
+
+describe("terminal: maximize and restore", () => {
+  it("maximizes with the button and restores with it", () => {
+    const { container } = renderPanel();
+    const panel = container.querySelector(".terminal-panel") as HTMLElement;
+    expect(panel.classList.contains("maximized")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Maximize terminal panel" }));
+    expect(useRequirementsUi.getState().terminalMaximized).toBe(true);
+    expect(panel.classList.contains("maximized")).toBe(true);
+    // Maximized, flex rules: no inline height.
+    expect(panel.getAttribute("style") ?? "").not.toContain("height");
+    fireEvent.click(screen.getByRole("button", { name: "Restore terminal panel" }));
+    expect(useRequirementsUi.getState().terminalMaximized).toBe(false);
+    expect(panel.classList.contains("maximized")).toBe(false);
+    // Restoring brings the height back (viewport-clamped).
+    expect(panel.getAttribute("style") ?? "").toContain("min(");
+  });
+
+  it("hiding exits maximized without touching sessions", async () => {
+    const onHide = vi.fn();
+    renderPanel(onHide);
+    await createSession(1);
+    fireEvent.click(screen.getByRole("button", { name: "Maximize terminal panel" }));
+    expect(useRequirementsUi.getState().terminalMaximized).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Hide terminal panel" }));
+    expect(useRequirementsUi.getState().terminalMaximized).toBe(false);
+    expect(onHide).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
   });
 });

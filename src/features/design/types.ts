@@ -1,5 +1,5 @@
-// Tipos de diseño vinculado a requisitos. Reflejan los DTOs de `ruth-api`
-// (camelCase). Puros: sin React, sin Tauri. El adaptador vive en client.ts.
+// Requirement-linked design types. They mirror the `ruth-api` DTOs
+// (camelCase). Pure: no React, no Tauri. The adapter lives in client.ts.
 import type { ArtifactDto } from "../requirements/types";
 
 export type DesignKind = "flow" | "data_model";
@@ -14,9 +14,9 @@ export type DesignProposalState = "pending" | "accepted" | "discarded";
 
 export interface DesignProposalDto {
   title: string;
-  /** Especificación JSON autoritativa. */
+  /** Authoritative JSON spec. */
   spec: unknown;
-  /** Mermaid derivado en Rust (solo lectura). */
+  /** Rust-derived Mermaid (read-only). */
   mermaid: string;
   explanation: string;
   state: DesignProposalState;
@@ -36,7 +36,7 @@ export interface DesignGenerationDto {
   stale: boolean;
   questions: string[];
   proposal: DesignProposalDto;
-  /** Objetivo fijado (solo propuestas de actualización). */
+  /** Fixed target (update proposals only). */
   targetArtifactId?: string | null;
   targetVersionId?: string | null;
 }
@@ -55,34 +55,34 @@ export interface ValidatedDesignDto {
   mermaid: string;
 }
 
-/** La generación de diseño caducó: cambió el contexto. */
+/** The design generation expired: the context changed. */
 export const DESIGN_STALE = "design_stale";
 
-/** La propuesta de diseño está descartada. */
+/** The design proposal is discarded. */
 export const DESIGN_DISCARDED = "design_discarded";
 
-/** Sin fuentes guardadas seleccionadas. */
+/** No saved sources selected. */
 export const EMPTY_SELECTION = "empty_selection";
 
-/** La actualización está bloqueada: hay que revisar algo primero. */
+/** The update is blocked: something must be reviewed first. */
 export const UPDATE_BLOCKED = "update_blocked";
 
-/** La propuesta de actualización caducó: objetivo o fuentes se movieron. */
+/** The update proposal expired: target or sources moved. */
 export const UPDATE_STALE = "update_stale";
 
-/** La propuesta actualiza otro artefacto: no puede aceptarse aquí. */
+/** The proposal updates another artifact: it cannot be accepted here. */
 export const UPDATE_WRONG_TARGET = "update_wrong_target";
 
-/** Fuentes declaradas obsoletas al guardar una revisión manual. */
+/** Declared sources stale when saving a manual review. */
 export const DESIGN_STALE_SOURCES = "design_stale_sources";
 
-/** Revisión manual sin fuentes declaradas. */
+/** Manual review without declared sources. */
 export const DESIGN_NO_SOURCES = "design_no_sources";
 
-/** Fuente declarada inexistente al guardar. */
+/** Declared source missing on save. */
 export const DESIGN_SOURCE_MISSING = "design_source_missing";
 
-/** Disposición visual malformada. */
+/** Malformed visual layout. */
 export const DESIGN_LAYOUT_INVALID = "design_layout_invalid";
 
 export interface UpdateBlockerDto {
@@ -136,8 +136,8 @@ export interface DesignDiffDto {
   modified: DiffItemDto[];
 }
 
-/** Etiquetas legibles para los tipos de diseño. */
+/** Readable labels for design kinds. */
 export const DESIGN_KIND_LABELS: Record<DesignKind, string> = {
-  flow: "Flujo de operación",
-  data_model: "Modelo entidad-relación",
+  flow: "Operation flow",
+  data_model: "Entity-relationship model",
 };

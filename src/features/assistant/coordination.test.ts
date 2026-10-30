@@ -39,8 +39,8 @@ function designGeneration(partial: Partial<DesignGenerationDto> = {}): DesignGen
   };
 }
 
-describe("historial del asistente", () => {
-  it("combina, ordena por fecha y acota", () => {
+describe("assistant history", () => {
+  it("merges, sorts by date and bounds", () => {
     const entries = mergeAssistantHistory(
       [reqGeneration({ id: "gen-1" })],
       [
@@ -55,10 +55,10 @@ describe("historial del asistente", () => {
     );
     expect(entries.map((e) => e.id)).toEqual(["upd-1", "des-1", "gen-1"]);
     expect(entries[0]).toMatchObject({ kind: "update", tokens: "5+5 = 10", openCount: 1 });
-    expect(entries[2]).toMatchObject({ kind: "requirements", title: "0 propuestas" });
+    expect(entries[2]).toMatchObject({ kind: "requirements", title: "0 proposals" });
   });
 
-  it("marca desactualizadas y cuenta pendientes", () => {
+  it("marks stale ones and counts pending", () => {
     const entries = mergeAssistantHistory(
       [
         reqGeneration({
@@ -71,12 +71,12 @@ describe("historial del asistente", () => {
       ],
       [],
     );
-    expect(entries[0]).toMatchObject({ stale: true, openCount: 1, title: "2 propuestas" });
+    expect(entries[0]).toMatchObject({ stale: true, openCount: 1, title: "2 proposals" });
   });
 });
 
-describe("envío explícito", () => {
-  it("exige acción y texto; el texto solo alimenta requisitos", () => {
+describe("explicit sending", () => {
+  it("requires action and text; text only feeds requirements", () => {
     expect(resolveSend(null, "hola")).toEqual({ ok: false, reason: "no_action" });
     expect(resolveSend("design", "   ")).toEqual({ ok: false, reason: "empty" });
     expect(resolveSend("requirements", "ventas")).toEqual({

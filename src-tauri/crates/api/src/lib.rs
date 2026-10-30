@@ -1,13 +1,15 @@
-//! Frontera del núcleo: DTOs serializables, errores estables, identificadores
-//! y fechas generados fuera del dominio, y lógica de comandos sin Tauri.
+//! Core boundary: serializable DTOs, stable errors, identifiers
+//! and dates generated outside the domain, and Tauri-free command logic.
 //!
-//! Los comandos Tauri (`ruth-ide`) son envoltorios finos sobre [`logic`]: aquí
-//! vive todo lo testeable sin tiempo de ejecución nativo. Las mutaciones
-//! pasan siempre por los casos de uso de `ruth-core`; esta capa no duplica
-//! sus reglas.
+//! The Tauri commands (`ruth-ide`) are thin wrappers over [`logic`]: everything
+//! testable without native runtime lives here. Mutations always go
+//! through the `ruth-core` use cases; this layer duplicates none of
+//! their rules.
 
 pub mod archive;
 pub mod baseline;
+pub mod code_links;
+pub mod codegen;
 pub mod delivery;
 pub mod design;
 mod dto;
@@ -19,14 +21,31 @@ mod logic;
 pub mod mockup;
 mod persist;
 pub mod proposals;
+pub mod recents;
 pub mod rename;
+pub mod replicate;
 pub mod update;
 
 pub use archive::{
     archive_module, archive_preview, archive_requirement, delete_module_checked,
-    delete_requirement_checked, restore_module, restore_requirement,
+    delete_project_checked, delete_requirement_checked, restore_module, restore_requirement,
 };
 pub use baseline::{create_baseline, get_baseline, list_baselines, prepare_baseline};
+pub use code_links::{
+    build_module_link, build_symbol_link, check_artifact_deletable, check_module_deletable,
+    check_root_removable, export_portable, links_for_project, parse_portable_export,
+    resolve_existing, root_by_id, snapshot_file_status, validate_snapshot, AddModuleLinkInput,
+    AddSymbolLinkInput, CodeLinkDto, CurrentFile, PortableExport, SaveSnapshotInput,
+    SnapshotFileDto, SnapshotFileStatus, SnapshotMetaDto, SnapshotVerifyFileDto, SymbolInput,
+    SymbolRefDto, ValidatedSnapshot, PORTABILITY_VERSION,
+};
+pub use codegen::{
+    build_stored_codegen, check_accept, context_requirement, context_screen, discard_code_file,
+    generation_freshness, list_mockup_screens, record_code_generation, snapshot_code_context,
+    snapshot_code_context_from_screen, AcceptCheck, AcceptReady, CodeGenContext, CodeGenFreshness,
+    CodeScopeRead, CodeScreenContext, CodeScreenSourceItem, MockupScreenEntry, MockupScreens,
+    RecordCodeGenInput, ScopeChange, ScopeFileInput, ScreenSourceChange,
+};
 pub use delivery::{
     create_work_delivery, get_work_delivery, list_work_deliveries, prepare_work_delivery,
 };
@@ -37,24 +56,26 @@ pub use design::{
     validate_spec, RecordDesignInput, UpdateTarget,
 };
 pub use dto::{
-    AcceptDesignInput, AcceptProposalInput, ApprovalDto, ApproveVersionInput, ArchiveBaselineDto,
-    ArchiveBlockerDto, ArchiveDependentDto, ArchiveGenerationDto, ArchiveModuleInput,
-    ArchivePreviewDto, ArchivePreviewInput, ArchiveRequirementInput, ArtifactDto,
-    BaselineBlockerDto, BaselineCreateInput, BaselineDto, BaselineEntryDto, BaselineEntryInput,
+    AcceptDesignInput, AcceptMockupScreenInput, AcceptProposalInput, ApprovalDto,
+    ApproveVersionInput, ArchiveBaselineDto, ArchiveBlockerDto, ArchiveCodeLinkDto,
+    ArchiveDependentDto, ArchiveGenerationDto, ArchiveModuleInput, ArchivePreviewDto,
+    ArchivePreviewInput, ArchiveRequirementInput, ArtifactDto, BaselineBlockerDto,
+    BaselineCreateInput, BaselineDto, BaselineEntryDto, BaselineEntryInput,
     BaselineEntryPreviewDto, BaselineGetInput, BaselineListInput, BaselineOutOfScopeDto,
     BaselinePrepareInput, BaselinePreviewDto, BaselineSummaryDto, CreateMockupInput,
-    CreateModuleInput, CreateRequirementInput, DeleteModuleInput, DeleteRequirementInput,
-    DeliveryCreateInput, DeliveryDto, DeliveryEntryDto, DeliveryEntryPreviewDto,
-    DeliveryExportPreviewDto, DeliveryExportPreviewInput, DeliveryExportSaveDto,
-    DeliveryExportSaveInput, DeliveryGetInput, DeliveryListInput, DeliveryPrepareInput,
-    DeliveryPreviewDto, DeliverySummaryDto, DesignContextInput, DesignContextPreview,
-    DesignDiffDto, DesignDiffInput, DesignGenerationDto, DesignLayoutDto, DesignProposalDto,
-    DiffItemDto, DiscardDesignInput, DiscardProposalInput, ExportFileDto, ExportPreviewDto,
-    ExportPreviewInput, ExportSaveDto, ExportSaveInput, GenerationContextInput,
-    GenerationContextPreview, GenerationDto, GetDesignLayoutInput, GetRequirementInput,
-    ImpactOriginDto, ImpactQueryInput, ImpactReportDto, ImpactVersionDto, ImpactedDto,
-    ListArtifactsInput, ListDesignsInput, ListGenerationsInput, ListModulesInput,
-    ListRequirementsInput, MockupContextPreview, ModuleDto, ModuleScopeDto, ProjectDto,
+    CreateModuleInput, CreateRequirementInput, DeleteModuleInput, DeleteProjectInput,
+    DeleteRequirementInput, DeliveryCreateInput, DeliveryDto, DeliveryEntryDto,
+    DeliveryEntryPreviewDto, DeliveryExportPreviewDto, DeliveryExportPreviewInput,
+    DeliveryExportSaveDto, DeliveryExportSaveInput, DeliveryGetInput, DeliveryListInput,
+    DeliveryPrepareInput, DeliveryPreviewDto, DeliverySummaryDto, DesignContextInput,
+    DesignContextPreview, DesignDiffDto, DesignDiffInput, DesignGenerationDto, DesignLayoutDto,
+    DesignProposalDto, DiffItemDto, DiscardDesignInput, DiscardMockupScreenInput,
+    DiscardProposalInput, ExportFileDto, ExportPreviewDto, ExportPreviewInput, ExportSaveDto,
+    ExportSaveInput, GenerationContextInput, GenerationContextPreview, GenerationDto,
+    GetDesignLayoutInput, GetRequirementInput, ImpactOriginDto, ImpactQueryInput, ImpactReportDto,
+    ImpactVersionDto, ImpactedDto, ListArtifactsInput, ListDesignsInput, ListGenerationsInput,
+    ListMockupGenerationsInput, ListModulesInput, ListRequirementsInput, MockupContextPreview,
+    MockupGenerationDto, MockupScreenProposalDto, ModuleDto, ModuleScopeDto, ProjectDto,
     ProposalDto, RenameArtifactInput, RenameModuleInput, RenameProjectInput, RequirementDetail,
     SaveDesignLayoutInput, SaveDesignVersionInput, SaveMockupVersionInput, SaveVersionInput,
     SourcePinDto, UpdateBlockerDto, UpdateContextInput, UpdateContextPreview, UpdateOriginDto,
@@ -73,9 +94,11 @@ pub use logic::{
     list_artifacts, list_modules, list_projects, list_requirements, save_version,
 };
 pub use mockup::{
-    approve_mockup_version, create_mockup, mockup_cited_refs, mockup_context_preview,
-    mockup_sources, save_mockup_version, snapshot_mockup_context, validate_mockup_spec,
-    validate_mockup_stored, MockupSnapshot,
+    accept_mockup_screen, approve_mockup_version, create_mockup, discard_mockup_screen,
+    list_mockup_generations, mockup_cited_refs, mockup_context_preview, mockup_generation_is_stale,
+    mockup_sources, record_mockup_generation, save_mockup_version, snapshot_mockup_context,
+    snapshot_screen_context, validate_mockup_spec, validate_mockup_stored, MockupSnapshot,
+    RecordMockupInput,
 };
 pub use persist::transact;
 pub use proposals::{
@@ -84,4 +107,10 @@ pub use proposals::{
     RecordInput,
 };
 pub use rename::{rename_design, rename_module, rename_project, rename_requirement};
+pub use replicate::{
+    apply_replication, build_replication_links, is_excluded_dir, plan_replication,
+    preview_replication, suggest_base, AppliedModule, AppliedReplication, PlannedModule,
+    ReplicateEntry, ReplicateInput, ReplicatePlan, ReplicatePreview, ReplicateTarget,
+    MAX_REPLICATE_MODULES,
+};
 pub use update::{design_diff, snapshot_update_context, update_context_preview, UpdateSnapshot};

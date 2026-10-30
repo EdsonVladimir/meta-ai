@@ -1,13 +1,13 @@
-// Coordinación pura de la vista de impacto: frescura de respuestas,
-// conteo derivado de pendientes y paginación. Sin React ni Tauri.
+// Pure impact-view coordination: response freshness, derived pending
+// counts and pagination. No React, no Tauri.
 import type { ImpactReportDto, ImpactedDto } from "./types";
 
-/** Una respuesta tardía nunca sobrescribe una consulta más reciente. */
+/** A late response never overwrites a newer query. */
 export function isStaleImpactResponse(currentKey: string, responseKey: string): boolean {
   return currentKey !== responseKey;
 }
 
-/** Pendientes únicos derivados del informe (nunca hardcodeado). */
+/** Unique pending items derived from the report (never hardcoded). */
 export function countPendingUnique(report: ImpactReportDto): number {
   const seen = new Set<string>();
   let pending = 0;
@@ -26,7 +26,7 @@ export interface PageSlice {
   end: number;
 }
 
-/** Ventana de la tabla: el total completo siempre se conserva. */
+/** Table window: the full total is always kept. */
 export function paginate(total: number, page: number, pageSize: number): PageSlice {
   const size = Math.max(1, pageSize);
   const pages = Math.max(1, Math.ceil(total / size));
@@ -35,15 +35,15 @@ export function paginate(total: number, page: number, pageSize: number): PageSli
   return { page: current, pages, start, end: Math.min(total, start + size) };
 }
 
-/** Tope de nodos del grafo: más allá se avisa del truncado. */
+/** Graph node cap: beyond it the truncation is announced. */
 export const MAX_GRAPH_NODES = 60;
 
 export type ImpactDisplayStatus = "pending" | "awaiting_approval" | "ok";
 
 /**
- * Estado honesto de un afectado: pendiente de actualizar fuentes,
- * fuentes actualizadas pero pendiente de aprobación, o al día. Solo
- * reordena banderas calculadas por el núcleo; no recalcula vigencia.
+ * Honest status of an affected item: pending source updates, updated
+ * sources but pending approval, or current. Only reorders flags computed
+ * by the core; never recomputes liveness.
  */
 export function impactStatus(item: ImpactedDto): ImpactDisplayStatus {
   if (item.requiresReview) return "pending";

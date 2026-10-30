@@ -1,6 +1,6 @@
-//! Propuestas de actualización de diseños sin red: el "generador falso"
-//! valida especificaciones a mano con `ruth-meta`; la red solo existe en el
-//! comando. Reutiliza el ciclo de registro, aceptación y descarte de diseño.
+//! Design update proposals without network: the "fake generator"
+//! validates specs by hand with `ruth-meta`; network only exists in the
+//! command. Reuses the design record, accept and discard cycle.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -56,7 +56,7 @@ fn baby() -> Baby {
     let mut ids = IdGen::new();
     let project = ProjectId::new(
         ruth_api::create_project(&mut store, &mut ids)
-            .expect("proyecto")
+            .expect("project")
             .id,
     )
     .expect("id");
@@ -68,7 +68,7 @@ fn baby() -> Baby {
                 project_id: project.as_str().to_string(),
             },
         )
-        .expect("módulo")
+        .expect("module")
         .id,
     )
     .expect("id");
@@ -83,7 +83,7 @@ fn baby() -> Baby {
                 author: "ana".to_string(),
             },
         )
-        .expect("requisito")
+        .expect("requirement")
         .artifact
         .id,
     )
@@ -99,7 +99,7 @@ fn baby() -> Baby {
 }
 
 fn author() -> Author {
-    Author::Human(HumanId::new("ana").expect("autora"))
+    Author::Human(HumanId::new("ana").expect("author"))
 }
 
 fn save_with_sources(
@@ -121,11 +121,11 @@ fn save_with_sources(
             artifact,
             expected.as_ref(),
             id.clone(),
-            Content::new(content).expect("contenido"),
+            Content::new(content).expect("content"),
             &author(),
             sources,
         )
-        .expect("versión");
+        .expect("version");
     id
 }
 
@@ -138,7 +138,7 @@ fn design(baby: &mut Baby, kind: ArtifactType, content: &str, sources: &[Version
     };
     baby.store
         .create_artifact(&baby.project, &baby.module, id.clone(), kind)
-        .expect("artefacto");
+        .expect("artifact");
     save_with_sources(baby, &id, 1, content, sources);
     id
 }
@@ -154,7 +154,7 @@ fn approve(baby: &mut Baby, artifact: &ArtifactId, expected: &VersionId) {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("aprobar");
+    .expect("approve");
 }
 
 fn save_req_version(baby: &mut Baby, expected: &VersionId, content: &str) {
@@ -168,7 +168,7 @@ fn save_req_version(baby: &mut Baby, expected: &VersionId, content: &str) {
             author: "ana".to_string(),
         },
     )
-    .expect("nueva versión");
+    .expect("new version");
 }
 
 fn flow_v1(req: &str) -> String {
@@ -179,7 +179,7 @@ fn flow_v1(req: &str) -> String {
             {"id": "fin", "kind": "end", "label": "Venta confirmada", "requirements": []}
         ],
         "edges": [{"from": "inicio", "to": "fin"}],
-        "explanation": "Flujo mínimo.",
+        "explanation": "Minimal flow.",
         "questions": []
     })
     .to_string()
@@ -197,13 +197,13 @@ fn flow_v2(req: &str) -> String {
             {"from": "inicio", "to": "reserva"},
             {"from": "reserva", "to": "fin"}
         ],
-        "explanation": "Añade la reserva pedida.",
+        "explanation": "Adds the requested reservation.",
         "questions": []
     })
     .to_string()
 }
 
-/// Ventas con flujo pendiente: requisito v2 aprobada, flujo v1 con v1.
+/// Sales with a pending flow: requirement at approved v2, flow v1 on v1.
 fn sales_pending() -> (Baby, ArtifactId, VersionId) {
     let mut baby = baby();
     let req_v1 = IdGen::version(&baby.req, 1);
@@ -233,9 +233,9 @@ fn preview_input(baby: &Baby, artifact: &ArtifactId, with_origin: bool) -> Updat
     }
 }
 
-/// Generador falso: especificación validada de verdad, sin red.
+/// Fake generator: truly validated spec, no network.
 fn fake_update(req: &str) -> ValidatedDesign {
-    parse_design_output(&flow_v2(req), DesignKind::Flow, &[req.to_string()]).expect("válido")
+    parse_design_output(&flow_v2(req), DesignKind::Flow, &[req.to_string()]).expect("valid")
 }
 
 fn er_v1(req: &str) -> String {
@@ -245,7 +245,7 @@ fn er_v1(req: &str) -> String {
             {"name": "venta", "attributes": [{"name": "id", "key": true}], "requirements": [req]}
         ],
         "relations": [],
-        "explanation": "Mínimo.",
+        "explanation": "Minimal.",
         "questions": []
     })
     .to_string()
@@ -259,13 +259,13 @@ fn er_v2(req: &str) -> String {
             {"name": "reserva", "attributes": [{"name": "id", "key": true}], "requirements": [req]}
         ],
         "relations": [{"from": "venta", "to": "reserva", "from_card": "1", "to_card": "0..N"}],
-        "explanation": "Añade la reserva pedida.",
+        "explanation": "Adds the requested reservation.",
         "questions": []
     })
     .to_string()
 }
 
-/// Ventas con modelo pendiente: requisito v2 aprobada, mer v1 con v1.
+/// Sales with a pending model: requirement at approved v2, mer v1 on v1.
 fn sales_pending_er() -> (Baby, ArtifactId, VersionId) {
     let mut baby = baby();
     let req_v1 = IdGen::version(&baby.req, 1);
@@ -317,14 +317,14 @@ fn record_update(
             }),
         },
     )
-    .expect("registrar")
+    .expect("record")
 }
 
 #[test]
 fn preview_describes_snapshot_origin_and_paths() {
     let (baby, flow, _) = sales_pending();
     let preview = ruth_api::update_context_preview(&baby.store, preview_input(&baby, &flow, true))
-        .expect("vista previa");
+        .expect("preview");
     assert!(preview.can_generate);
     assert!(preview.blockers.is_empty());
     assert_eq!(preview.kind, "flow");
@@ -345,7 +345,7 @@ fn preview_describes_snapshot_origin_and_paths() {
     assert!(source.current_valid);
     assert!(source.used_content.contains("descuenta stock"));
     assert!(source.current_content.contains("Reservar"));
-    let origin = preview.origin.expect("origen");
+    let origin = preview.origin.expect("origin");
     assert_eq!(
         origin.from_version_id,
         IdGen::version(&baby.req, 1).as_str()
@@ -366,21 +366,21 @@ fn preview_describes_snapshot_origin_and_paths() {
 #[test]
 fn preview_reports_unreviewed_source_without_blocking() {
     let (mut baby, flow, _) = sales_pending();
-    // Tercera versión del requisito, sin revisar.
+    // Third version of the requirement, unreviewed.
     let req_v2 = IdGen::version(&baby.req, 2);
-    save_req_version(&mut baby, &req_v2, "Tercera redacción sin revisar.");
+    save_req_version(&mut baby, &req_v2, "Third wording, unreviewed.");
     let preview = ruth_api::update_context_preview(&baby.store, preview_input(&baby, &flow, false))
-        .expect("vista previa");
-    // Diseño vivo: la falta de revisión se informa, no bloquea.
+        .expect("preview");
+    // Living design: missing review is reported, never blocks.
     assert!(preview.can_generate);
     assert!(preview.blockers.is_empty());
     let source = preview
         .sources
         .iter()
         .find(|s| s.artifact_id == baby.req.as_str())
-        .expect("fuente");
+        .expect("source");
     assert!(!source.current_approved);
-    // El snapshot se toma igual: basta con fuentes guardadas y vigentes.
+    // The snapshot takes the same: saved, current sources suffice.
     let snapshot =
         ruth_api::snapshot_update_context(&baby.store, preview_input(&baby, &flow, false))
             .expect("snapshot");
@@ -393,7 +393,7 @@ fn preview_reports_unreviewed_source_without_blocking() {
 #[test]
 fn preview_blocks_stale_intermediate_first() {
     let (mut baby, flow, _) = sales_pending();
-    // El modelo deriva del flujo: cadena req → flujo → mer.
+    // The model derives from the flow: req → flow → mer chain.
     let flow_v1_id = IdGen::version(&flow, 1);
     let mer_content = serde_json::json!({
         "title": "Ventas",
@@ -401,7 +401,7 @@ fn preview_blocks_stale_intermediate_first() {
             {"name": "venta", "attributes": [{"name": "id", "key": true}], "requirements": [baby.req.as_str()]}
         ],
         "relations": [],
-        "explanation": "Mínimo.",
+        "explanation": "Minimal.",
         "questions": []
     })
     .to_string();
@@ -411,8 +411,8 @@ fn preview_blocks_stale_intermediate_first() {
         &mer_content,
         std::slice::from_ref(&flow_v1_id),
     );
-    // El flujo avanza manualmente y el requisito vuelve a cambiar: el modelo
-    // queda pendiente con su fuente intermedia también desactualizada.
+    // The flow advances manually and the requirement changes again: the model
+    // stays pending with its intermediate source stale too.
     let req_v2 = IdGen::version(&baby.req, 2);
     let req = baby.req.as_str().to_string();
     save_with_sources(
@@ -422,12 +422,12 @@ fn preview_blocks_stale_intermediate_first() {
         &flow_v2(&req),
         std::slice::from_ref(&req_v2),
     );
-    save_req_version(&mut baby, &req_v2, "Cuarta redacción.");
+    save_req_version(&mut baby, &req_v2, "Fourth wording.");
     let req_v3 = IdGen::version(&baby.req, 3);
     let req_id = baby.req.clone();
     approve(&mut baby, &req_id, &req_v3);
     let preview = ruth_api::update_context_preview(&baby.store, preview_input(&baby, &mer, false))
-        .expect("vista previa");
+        .expect("preview");
     assert!(!preview.can_generate);
     assert_eq!(preview.blockers.len(), 1);
     assert_eq!(preview.blockers[0].code, "source_stale");
@@ -441,7 +441,7 @@ fn preview_blocks_stale_intermediate_first() {
 #[test]
 fn preview_blocks_up_to_date_target() {
     let (mut baby, flow, _) = sales_pending();
-    // El flujo ya se revisó con la fuente actual.
+    // The flow already reviewed with the current source.
     let req_v2 = IdGen::version(&baby.req, 2);
     let req = baby.req.as_str().to_string();
     save_with_sources(
@@ -452,7 +452,7 @@ fn preview_blocks_up_to_date_target() {
         std::slice::from_ref(&req_v2),
     );
     let preview = ruth_api::update_context_preview(&baby.store, preview_input(&baby, &flow, false))
-        .expect("vista previa");
+        .expect("preview");
     assert!(!preview.can_generate);
     assert_eq!(preview.blockers.len(), 1);
     assert_eq!(preview.blockers[0].code, "target_up_to_date");
@@ -462,17 +462,16 @@ fn preview_blocks_up_to_date_target() {
 fn preview_rejects_non_designs() {
     let (baby, _, _) = sales_pending();
     let err = ruth_api::update_context_preview(&baby.store, preview_input(&baby, &baby.req, false))
-        .expect_err("no es diseño");
+        .expect_err("not a design");
     assert_eq!(err.kind, "not_a_design");
 }
 
 #[test]
 fn accept_update_creates_new_version_without_approval() {
-    let tmp = TempDb::new("aceptar-update");
+    let tmp = TempDb::new("accept-update");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
     assert_eq!(dto.target_artifact_id.as_deref(), Some(flow.as_str()));
@@ -490,15 +489,15 @@ fn accept_update_creates_new_version_without_approval() {
             expected_version_id: Some(flow_v1_id.as_str().to_string()),
         },
     )
-    .expect("aceptar");
+    .expect("accept");
     assert_eq!(detail.artifact.id, flow.as_str());
     assert_eq!(detail.versions.len(), 2);
-    let current = detail.versions.last().expect("actual");
+    let current = detail.versions.last().expect("current");
     assert_eq!(current.sources, vec![IdGen::version(&baby.req, 2).as_str()]);
     assert_eq!(current.provenance.kind, "ai");
     assert!(current.provenance.by.starts_with("ruth-gen/"));
     assert!(current.content.contains("reserva"));
-    // Sin aprobación heredada: la v1 sigue aprobada, la v2 no.
+    // No inherited approval: v1 stays approved, v2 does not.
     assert_eq!(detail.approvals.len(), 1);
     assert_eq!(detail.approvals[0].version_id, flow_v1_id.as_str());
     assert_eq!(detail.current_version_id, current.id);
@@ -507,11 +506,10 @@ fn accept_update_creates_new_version_without_approval() {
 
 #[test]
 fn accept_er_update_creates_new_version() {
-    let tmp = TempDb::new("aceptar-update-er");
+    let tmp = TempDb::new("accept-update-er");
     let (mut baby, mer, mer_v1_id) = sales_pending_er();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let snapshot =
         ruth_api::snapshot_update_context(&baby.store, preview_input(&baby, &mer, false))
@@ -522,7 +520,7 @@ fn accept_er_update_creates_new_version() {
         DesignKind::DataModel,
         std::slice::from_ref(&req),
     )
-    .expect("válido");
+    .expect("valid");
     let dto = ruth_api::record_design_generation(
         &baby.store,
         &mut baby.ids,
@@ -545,7 +543,7 @@ fn accept_er_update_creates_new_version() {
             }),
         },
     )
-    .expect("registrar");
+    .expect("record");
     let detail = ruth_api::accept_design(
         &mut baby.store,
         &mut baby.ids,
@@ -558,9 +556,9 @@ fn accept_er_update_creates_new_version() {
             expected_version_id: Some(mer_v1_id.as_str().to_string()),
         },
     )
-    .expect("aceptar");
+    .expect("accept");
     assert_eq!(detail.versions.len(), 2);
-    let current = detail.versions.last().expect("actual");
+    let current = detail.versions.last().expect("current");
     assert_eq!(current.sources, vec![IdGen::version(&baby.req, 2).as_str()]);
     assert_eq!(current.provenance.kind, "ai");
     assert!(detail
@@ -574,9 +572,8 @@ fn accept_er_update_creates_new_version() {
 fn accept_update_is_idempotent() {
     let tmp = TempDb::new("update-idempotente");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
     let input = AcceptDesignInput {
@@ -592,9 +589,9 @@ fn accept_update_is_idempotent() {
         &db,
         input.clone(),
     )
-    .expect("aceptar");
+    .expect("accept");
     let second = ruth_api::accept_design(&mut baby.store, &mut baby.ids, &mut baby.log, &db, input)
-        .expect("reintento");
+        .expect("retry");
     assert_eq!(first, second);
     assert_eq!(baby.store.versions_of(&flow).len(), 2);
     db.close();
@@ -604,12 +601,11 @@ fn accept_update_is_idempotent() {
 fn accept_update_blocked_when_target_moved() {
     let tmp = TempDb::new("objetivo-movido");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
-    // El diseño cambia durante la revisión (versión manual).
+    // The design changes during review (manual version).
     let req_v2 = IdGen::version(&baby.req, 2);
     save_with_sources(
         &mut baby,
@@ -631,12 +627,12 @@ fn accept_update_blocked_when_target_moved() {
             expected_version_id: Some(flow_v1_id.as_str().to_string()),
         },
     )
-    .expect_err("objetivo movido");
+    .expect_err("moved target");
     assert_eq!(err.kind, "update_stale");
     assert_eq!(baby.store, before_store);
-    // La propuesta sobrevive como pendiente (desactualizada al consultar).
+    // The proposal survives as pending (stale at query time).
     assert!(matches!(
-        baby.log.design(&dto.id).expect("sigue").proposal.state,
+        baby.log.design(&dto.id).expect("next").proposal.state,
         ruth_store::ProposalState::Pending
     ));
     db.close();
@@ -644,16 +640,15 @@ fn accept_update_blocked_when_target_moved() {
 
 #[test]
 fn accept_update_blocked_when_source_changed() {
-    let tmp = TempDb::new("fuente-cambiada");
+    let tmp = TempDb::new("changed-source");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
-    // Una fuente cambia durante la revisión.
+    // A source changes during review.
     let req_v2 = IdGen::version(&baby.req, 2);
-    save_req_version(&mut baby, &req_v2, "Cambio tardío.");
+    save_req_version(&mut baby, &req_v2, "Late change.");
     let err = ruth_api::accept_design(
         &mut baby.store,
         &mut baby.ids,
@@ -666,7 +661,7 @@ fn accept_update_blocked_when_source_changed() {
             expected_version_id: Some(flow_v1_id.as_str().to_string()),
         },
     )
-    .expect_err("fuente cambiada");
+    .expect_err("changed source");
     assert_eq!(err.kind, "update_stale");
     db.close();
 }
@@ -675,9 +670,8 @@ fn accept_update_blocked_when_source_changed() {
 fn accept_update_rejects_wrong_target() {
     let tmp = TempDb::new("objetivo-ajeno");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
     let err = ruth_api::accept_design(
@@ -692,7 +686,7 @@ fn accept_update_rejects_wrong_target() {
             expected_version_id: Some(flow_v1_id.as_str().to_string()),
         },
     )
-    .expect_err("objetivo ajeno");
+    .expect_err("foreign target");
     assert_eq!(err.kind, "update_wrong_target");
     db.close();
 }
@@ -701,9 +695,8 @@ fn accept_update_rejects_wrong_target() {
 fn discarded_update_cannot_be_accepted() {
     let tmp = TempDb::new("update-descartada");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
     ruth_api::discard_design(
@@ -713,7 +706,7 @@ fn discarded_update_cannot_be_accepted() {
             generation_id: dto.id.clone(),
         },
     )
-    .expect("descartar");
+    .expect("discard");
     let err = ruth_api::accept_design(
         &mut baby.store,
         &mut baby.ids,
@@ -726,18 +719,17 @@ fn discarded_update_cannot_be_accepted() {
             expected_version_id: Some(flow_v1_id.as_str().to_string()),
         },
     )
-    .expect_err("descartada");
+    .expect_err("discarded");
     assert_eq!(err.kind, "design_discarded");
     db.close();
 }
 
 #[test]
 fn update_persistence_failure_changes_nothing() {
-    let tmp = TempDb::new("update-fallo-disco");
+    let tmp = TempDb::new("update-disk-failure");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
     db.close();
@@ -747,9 +739,9 @@ fn update_persistence_failure_changes_nothing() {
             "UPDATE design_proposals SET state = 'discarded' WHERE generation_id = ?",
             [&dto.id],
         )
-        .expect("forzar");
+        .expect("force");
     }
-    let (db2, _) = DbActor::spawn(&tmp.path).expect("reabrir");
+    let (db2, _) = DbActor::spawn(&tmp.path).expect("reopen");
     let before_store = baby.store.clone();
     let before_log = baby.log.clone();
     let err = ruth_api::accept_design(
@@ -764,7 +756,7 @@ fn update_persistence_failure_changes_nothing() {
             expected_version_id: Some(flow_v1_id.as_str().to_string()),
         },
     )
-    .expect_err("el disco manda");
+    .expect_err("disk rules");
     assert_eq!(err.kind, "storage_error");
     assert_eq!(baby.store, before_store);
     assert_eq!(baby.log, before_log);
@@ -775,14 +767,13 @@ fn update_persistence_failure_changes_nothing() {
 fn update_roundtrips_across_reopen() {
     let tmp = TempDb::new("update-reabrir");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let req = baby.req.as_str().to_string();
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
     db.close();
-    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
-    let back = loaded.designs.design(&dto.id).expect("propuesta");
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reopen");
+    let back = loaded.designs.design(&dto.id).expect("proposal");
     assert_eq!(back.target_artifact_id.as_deref(), Some(flow.as_str()));
     assert_eq!(back.target_version_id.as_deref(), Some(flow_v1_id.as_str()));
     assert_eq!(
@@ -794,9 +785,9 @@ fn update_roundtrips_across_reopen() {
 
 #[test]
 fn impact_recalc_keeps_other_pending_after_update() {
-    let tmp = TempDb::new("recalculo");
+    let tmp = TempDb::new("recompute");
     let (mut baby, flow, flow_v1_id) = sales_pending();
-    // Segundo diseño pendiente del mismo requisito.
+    // Second pending design of the same requirement.
     let req_v1 = IdGen::version(&baby.req, 1);
     let req = baby.req.as_str().to_string();
     let mer_content = serde_json::json!({
@@ -805,7 +796,7 @@ fn impact_recalc_keeps_other_pending_after_update() {
             {"name": "venta", "attributes": [{"name": "id", "key": true}], "requirements": [req]}
         ],
         "relations": [],
-        "explanation": "Mínimo.",
+        "explanation": "Minimal.",
         "questions": []
     })
     .to_string();
@@ -815,9 +806,8 @@ fn impact_recalc_keeps_other_pending_after_update() {
         &mer_content,
         std::slice::from_ref(&req_v1),
     );
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let dto = record_update(&mut baby, &db, &flow, &flow_v1_id, fake_update(&req));
     ruth_api::accept_design(
         &mut baby.store,
@@ -831,7 +821,7 @@ fn impact_recalc_keeps_other_pending_after_update() {
             expected_version_id: Some(flow_v1_id.as_str().to_string()),
         },
     )
-    .expect("aceptar");
+    .expect("accept");
     let report = ruth_api::impact_report(
         &baby.store,
         ruth_api::ImpactQueryInput {
@@ -840,12 +830,12 @@ fn impact_recalc_keeps_other_pending_after_update() {
             from_version_id: None,
         },
     )
-    .expect("informe");
+    .expect("report");
     let flow_item = report
         .affected
         .iter()
         .find(|a| a.artifact.id == flow.as_str())
-        .expect("flujo");
+        .expect("flow");
     assert!(!flow_item.requires_review);
     assert!(flow_item.approved_before);
     assert!(flow_item.approvals.is_empty());
@@ -853,7 +843,7 @@ fn impact_recalc_keeps_other_pending_after_update() {
         .affected
         .iter()
         .find(|a| a.artifact.id == mer.as_str())
-        .expect("mer");
+        .expect("erm");
     assert!(mer_item.requires_review);
     db.close();
 }
@@ -875,7 +865,7 @@ fn design_diff_compares_flows_and_rejects_invalid() {
         old_spec: serde_json::from_str(&er_v1(req)).expect("json"),
         new_spec: serde_json::from_str(&er_v2(req)).expect("json"),
     })
-    .expect("diff ER");
+    .expect("ER diff");
     assert!(er.added.iter().any(|i| i.id == "reserva"));
     assert!(er.added.iter().any(|i| i.id == "venta → reserva"));
     assert!(er.removed.is_empty());
@@ -884,13 +874,13 @@ fn design_diff_compares_flows_and_rejects_invalid() {
         old_spec: serde_json::from_str(&flow_v1(req)).expect("json"),
         new_spec: serde_json::json!({"title": "Roto"}),
     })
-    .expect_err("inválida");
+    .expect_err("invalid");
     assert_eq!(err.kind, "generation_invalid");
     let err = ruth_api::design_diff(ruth_api::DesignDiffInput {
         kind: "uml".to_string(),
         old_spec: serde_json::from_str(&flow_v1(req)).expect("json"),
         new_spec: serde_json::from_str(&flow_v2(req)).expect("json"),
     })
-    .expect_err("tipo");
+    .expect_err("kind");
     assert_eq!(err.kind, "generation_invalid");
 }

@@ -1,5 +1,5 @@
-// Tipos de requisitos. Reflejan los DTOs de `ruth-api` (camelCase).
-// Puros: sin React, sin Tauri. El adaptador vive en client.ts.
+// Requirement types. They mirror the `ruth-api` DTOs (camelCase).
+// Pure: no React, no Tauri. The adapter lives in client.ts.
 
 export interface ProjectDto {
   id: string;
@@ -41,7 +41,7 @@ export interface ApprovalDto {
   at: string;
 }
 
-/** Instantánea autoritativa de un requisito, tal como la sirve Rust. */
+/** Authoritative snapshot of a requirement, as served by Rust. */
 export interface RequirementDetail {
   artifact: ArtifactDto;
   versions: VersionDto[];
@@ -54,65 +54,67 @@ export interface CoreApiError {
   message: string;
 }
 
-/** La versión actual cambió desde que se leyó: conservar el trabajo local. */
+/** The current version changed since it was read: keep the local work. */
 export const STALE_VERSION = "stale_version";
 
-/** Fallo de la persistencia local (SQLite): recuperable, sin borrar nada. */
+/** Local persistence (SQLite) failure: recoverable, deletes nothing. */
 export const STORAGE_ERROR = "storage_error";
 
-/** Operación sobre un módulo archivado: restaurar para continuar. */
+/** Operation on an archived module: restore to continue. */
 export const ARCHIVED_MODULE = "archived_module";
 
-/** Operación sobre un artefacto archivado: restaurar para continuar. */
+/** Operation on an archived artifact: restore to continue. */
 export const ARCHIVED_ARTIFACT = "archived_artifact";
 
-/** La versión depende de una fuente archivada. */
+/** The version depends on an archived source. */
 export const ARCHIVED_SOURCE = "archived_source";
 
-/** Nombre o título vacío. */
+/** Empty name or title. */
 export const EMPTY_NAME = "empty_name";
 
-/** Nombre o título más largo del máximo. */
+/** Name or title longer than the maximum. */
 export const NAME_TOO_LONG = "name_too_long";
 
-/** El nombre cambió desde que se leyó: revisar y reintentar. */
+/** The name changed since it was read: review and retry. */
 export const STALE_NAME = "stale_name";
 
-/** Dependiente del objetivo de archivo, con su módulo. */
+/** Dependent of the archive target, with its module. */
 export interface ArchiveDependentDto {
   artifact: ArtifactDto;
   sameModule: boolean;
 }
 
-/** Baseline que incluye al objetivo. */
+/** Baseline including the target. */
 export interface ArchiveBaselineDto {
   id: string;
   name: string;
 }
 
-/** Generación que menciona al objetivo. */
+/** Generation mentioning the target. */
 export interface ArchiveGenerationDto {
   id: string;
   log: string;
   role: string;
 }
 
-/** Bloqueo del borrado definitivo. */
+/** Permanent-deletion blocker. */
 export interface ArchiveBlockerDto {
   code: string;
   message: string;
 }
 
-/** Resumen consultivo antes de archivar o eliminar. */
+/** Advisory summary before archiving or deleting. */
 export interface ArchivePreviewDto {
   projectId: string;
   kind: string;
   id: string;
   archived: boolean;
   contents: ArtifactDto[];
+  /** Project modules. Only for `kind === "project"`. */
+  modules: ModuleDto[];
   dependents: ArchiveDependentDto[];
   baselines: ArchiveBaselineDto[];
-  /** Entregas de trabajo que lo incluyen (forma `{id, name}`). */
+  /** Work deliveries including it (`{id, name}` shape). */
   deliveries: ArchiveBaselineDto[];
   generations: ArchiveGenerationDto[];
   approvals: number;
@@ -121,7 +123,7 @@ export interface ArchivePreviewDto {
   deleteBlockers: ArchiveBlockerDto[];
 }
 
-/** Estado del almacenamiento local, servido por `core_status`. */
+/** Local storage status, served by `core_status`. */
 export interface CoreStatus {
   ready: boolean;
   message?: string | null;
@@ -138,14 +140,14 @@ export function normalizeCoreError(raw: unknown): CoreApiError {
       };
     }
   }
-  return { kind: "unexpected", message: "Error inesperado en la operación." };
+  return { kind: "unexpected", message: "Unexpected operation error." };
 }
 
 export function currentVersion(detail: RequirementDetail): VersionDto | undefined {
   return detail.versions.find((v) => v.id === detail.currentVersionId);
 }
 
-/** Aprobaciones de una versión concreta, derivadas del historial. */
+/** Approvals of one version, derived from history. */
 export function approvalsForVersion(
   detail: RequirementDetail,
   versionId: string,

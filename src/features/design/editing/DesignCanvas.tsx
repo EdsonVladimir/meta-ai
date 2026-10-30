@@ -1,14 +1,12 @@
-// Lienzo interactivo de diseños sobre React Flow (carga diferida: este
-// módulo solo se importa desde el editor, en su propio chunk).
-//
-// Navegación: zoom con rueda centrado en el cursor, arrastre del fondo para
-// desplazar, botones acercar/alejar/ajustar/restablecer con porcentaje.
-// La rueda solo actúa dentro del lienzo: fuera sigue desplazando la
-// interfaz y los formularios del inspector no se ven afectados.
-// Selección y movimiento de elementos en modo edición; en lectura se puede
-// navegar y seleccionar, pero no mover ni conectar.
-// La tecla de borrado está desactivada: eliminar pasa por el inspector con
-// confirmación de consecuencias.
+// Interactive design canvas on React Flow (lazy loaded: this module is
+// only imported from the editor, in its own chunk). Navigation:
+// cursor-centered wheel zoom, background drag to pan, zoom in/out/fit/
+// reset buttons with percentage. The wheel only acts inside the canvas:
+// outside it keeps scrolling the UI and the inspector forms are
+// unaffected. Element selection and movement in edit mode; in read mode
+// one can navigate and select, but not move or connect. The delete key
+// is disabled: deletion goes through the inspector with a consequences
+// confirmation.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -36,13 +34,13 @@ const NODE_TYPES = { flowNode: FlowNodeView, decisionNode: DecisionNodeView, erN
 export interface DesignCanvasProps {
   nodes: Node[];
   edges: Edge[];
-  /** "flowNode" | "erNode": lo elige el editor según el tipo. */
+  /** "flowNode" | "erNode": picked by the editor per kind. */
   readOnly: boolean;
-  /** Incrementar para reajustar la vista al contenido. */
+  /** Increment to refit the view to the content. */
   fitSignal: number;
-  /** Movimiento de un elemento: solo disposición, nunca semántica. */
+  /** Element move: layout only, never semantics. */
   onMoveNode?: (id: string, x: number, y: number) => void;
-  /** Nueva conexión arrastrada entre elementos (solo edición). */
+  /** New dragged connection between elements (editing only). */
   onConnectElements?: (from: string, to: string) => void;
   onSelectNode?: (id: string | null) => void;
   onSelectEdge?: (id: string | null) => void;
@@ -54,32 +52,32 @@ function CanvasToolbar({ readOnly }: { readOnly: boolean }) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const percent = Math.round(zoom * 100);
   return (
-    <div className="canvas-toolbar" role="toolbar" aria-label="Controles del lienzo">
-      {!readOnly && <span className="canvas-hint">Arrastra desde un punto para conectar</span>}
+    <div className="canvas-toolbar" role="toolbar" aria-label="Canvas controls">
+      {!readOnly && <span className="canvas-hint">Drag from a handle to connect</span>}
       <div className="canvas-toolbar-group">
-        <button type="button" className="secondary small" onClick={() => zoomOut()} aria-label="Alejar">
+        <button type="button" className="secondary small" onClick={() => zoomOut()} aria-label="Zoom out">
           −
         </button>
-        <span className="canvas-zoom" aria-live="polite" aria-label={`Zoom ${percent} por ciento`}>
+        <span className="canvas-zoom" aria-live="polite" aria-label={`Zoom ${percent} percent`}>
           {percent} %
         </span>
-        <button type="button" className="secondary small" onClick={() => zoomIn()} aria-label="Acercar">
+        <button type="button" className="secondary small" onClick={() => zoomIn()} aria-label="Zoom in">
           +
         </button>
         <button
           type="button"
           className="secondary small"
           onClick={() => fitView({ padding: FIT_PADDING, duration: 200 })}
-          aria-label="Ajustar al contenido"
+          aria-label="Fit to content"
         >
-          Ajustar
+          Fit
         </button>
         <button
           type="button"
           className="secondary small"
           onClick={() => fitView({ padding: FIT_PADDING, minZoom: 1, maxZoom: 1, duration: 200 })}
-          aria-label="Restablecer vista al cien por cien"
-          title="Centra el contenido al 100 %"
+          aria-label="Reset view to one hundred percent"
+          title="Centers the content at 100%"
         >
           100 %
         </button>
@@ -105,9 +103,9 @@ function CanvasInner({
   const didInitialFit = useRef(false);
   const nodeTypes = useMemo(() => NODE_TYPES, []);
 
-  // Dimensiones medidas por React Flow. En modo controlado hay que
-  // devolverlas en el prop `nodes` (si no, `nodesInitialized` jamás se
-  // activa y el ajuste inicial no sabe cuándo medir es estable).
+  // Dimensions measured by React Flow. In controlled mode they must be
+  // returned in the `nodes` prop (otherwise `nodesInitialized` never
+  // activates and the initial fit cannot tell when measuring is stable).
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
   const idsSignature = useMemo(() => nodes.map((node) => node.id).sort().join("|"), [nodes]);
   useEffect(() => {
@@ -122,9 +120,9 @@ function CanvasInner({
     [nodes, measured],
   );
 
-  // Ajuste inicial único cuando los nodos ya están medidos. A propósito NO
-  // se usa el prop `fitView` ni `onInit` ciego: ajustar antes de medir da
-  // un encuadre distinto en cada apertura y compite con el zoom manual.
+  // Single initial fit once nodes are measured. Deliberately NOT using
+  // the `fitView` prop or a blind `onInit`: fitting before measuring
+  // yields a different framing on each open and fights manual zoom.
   useEffect(() => {
     if (!nodesInitialized || didInitialFit.current) return;
     didInitialFit.current = true;

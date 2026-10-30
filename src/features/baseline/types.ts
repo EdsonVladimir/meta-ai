@@ -1,5 +1,5 @@
-// Tipos del hito 9: preparación de entregas, baselines y exportación.
-// Espejan los DTOs de `ruth-api` (camelCase); la UI no recalcula vigencia.
+// Milestone 9 types: delivery preparation, baselines and export. They
+// mirror the `ruth-api` DTOs (camelCase); the UI never recomputes liveness.
 import type { ArtifactDto, ProvenanceDto } from "../requirements/types";
 
 export interface BaselineBlockerDto {
@@ -34,14 +34,14 @@ export interface BaselinePreviewDto {
 }
 
 /**
- * Entrada histórica: espeja el DTO de Rust (artefacto anidado). `title` es
- * el título fijado al crear la baseline; `artifact.title` es el vigente y
- * solo sirve para contrastar (la entrega nunca lo usa).
+ * Historical entry: mirrors the Rust DTO (nested artifact). `title` is
+ * the title pinned when the baseline was created; `artifact.title` is the
+ * live one and only serves comparison (the delivery never uses it).
  */
 export interface BaselineEntryDto {
   artifact: ArtifactDto;
   kind: string;
-  /** Título fijado al crear la baseline (jamás el vigente). */
+  /** Title pinned when the baseline was created (never the live one). */
   title: string | null;
   versionId: string;
   number: number;
@@ -117,7 +117,7 @@ export interface DeliveryPreviewDto {
 export interface DeliveryEntryDto {
   artifact: ArtifactDto;
   kind: string;
-  /** Título fijado al crear la entrega (jamás el vigente). */
+  /** Title pinned when the delivery was created (never the live one). */
   title: string | null;
   versionId: string;
   number: number;

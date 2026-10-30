@@ -1,11 +1,11 @@
-// Panel inferior de terminal: pestañas (hasta tres), carpeta inicial,
-// acciones y avisos de ciclo de vida. Siempre montado: ocultar conserva
-// sesiones y scrollback; la salida entra directa a xterm sin React.
+// Bottom terminal panel: tabs (up to three), starting folder, actions
+// and lifecycle notices. Always mounted: hiding keeps sessions and
+// scrollback; output goes straight into xterm without React.
 //
-// La terminal tiene los permisos del usuario: no es un sandbox ni está
-// confinada a la carpeta inicial (ver README). Ruth depura la familia
-// `META_*` del entorno hijo, pero el shell puede cargar credenciales de
-// la configuración personal del usuario.
+// The terminal has the user's permissions: it is not a sandbox and is
+// not confined to the starting folder (see README). Ruth scrubs the
+// `META_*` family from the child environment, but the shell may load
+// credentials from the user's personal configuration.
 import { Fragment, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -38,13 +38,17 @@ import {
 } from "./client";
 import { TerminalView, type TerminalHandle } from "./TerminalView";
 import type { TerminalTab } from "./types";
-
-const MIN_PANEL_HEIGHT = 160;
-const MAX_PANEL_HEIGHT = 560;
-const DEFAULT_PANEL_HEIGHT = 260;
-/** Trozos de pegado muy por debajo del tope de Rust (256 KiB). */
+import {
+  DEFAULT_TERMINAL_HEIGHT,
+  MAX_TERMINAL_HEIGHT,
+  MIN_TERMINAL_HEIGHT,
+  RESIZE_KEYBOARD_STEP_FRAC,
+  RESIZE_KEYBOARD_STEP_PX,
+  useRequirementsUi,
+} from "../requirements/uiStore";
+/** Paste chunks well below the Rust cap (256 KiB). */
 const WRITE_CHUNK = 60 * 1024;
-/** Ancho mínimo de un panel en paralelo (igual que el CSS). */
+/** Minimum width of a side-by-side pane (mirrors the CSS). */
 const MIN_PANE_PX = 240;
 
 interface TerminalPanelProps {
@@ -57,10 +61,12 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [layout, setLayout] = useState<TerminalLayout>("tabs");
-  /** Fracciones de ancho en paralelo; null = reparto equitativo. */
-  const [widths, setWidths] = useState<number[] | null>(null);
+  /** Sizes persisted in the store (across sessions). */
+  const widths = useRequirementsUi((s) => s.terminalPaneWidths);
+  const storedHeight = useRequirementsUi((s) => s.terminalHeight);
+  const height = storedHeight ?? DEFAULT_TERMINAL_HEIGHT;
+  const maximized = useRequirementsUi((s) => s.terminalMaximized);
   const [folder, setFolder] = useState<string | null>(null);
-  const [height, setHeight] = useState(DEFAULT_PANEL_HEIGHT);
   const [creating, setCreating] = useState(false);
   const [closing, setClosing] = useState(false);
   const [quitting, setQuitting] = useState(false);
@@ -71,9 +77,21 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const cancelledRef = useRef(false);
+  const terminalRequest = useRequirementsUi((s) => s.terminalRequest);
+  const handledTerminalReq = useRef(0);
 
-  // Reconciliación inicial y suscripciones únicas: la salida va directa a
-  // xterm (sin setState por fragmento) y los fines actualizan la ficha.
+  // "Open terminal here" from the code tree: one session in that folder,
+  // without touching the open ones. Each request is served once.
+  useEffect(() => {
+    if (!desktop || terminalRequest === null) return;
+    if (terminalRequest.nonce === handledTerminalReq.current) return;
+    handledTerminalReq.current = terminalRequest.nonce;
+    void handleCreate(terminalRequest.cwd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desktop, terminalRequest]);
+
+  // Initial reconciliation and one-time subscriptions: output goes straight
+  // to xterm (no setState per chunk) and exits update the tab.
   useEffect(() => {
     if (!desktop) return;
     cancelledRef.current = false;
@@ -87,13 +105,13 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
         if (!cancelledRef.current) setError(normalizeTerminalError(raw).message);
       }
     })();
-    // Colector: si el desmontaje llega antes de resolverse (dev monta dos
-    // veces), las bajas tardías se aplican al momento y no quedan
-    // listeners huérfanos duplicando la salida.
+    // Collector: if unmounting arrives before resolving (dev mounts twice),
+    // late unsubscribes apply immediately and no orphaned listeners
+    // duplicate the output.
     const collector = createUnlistenCollector();
     collector.track(
       listenTerminalOutput((event) => {
-        // Los restos de sesiones ya cerradas se ignoran en silencio.
+        // Leftovers from already-closed sessions are silently ignored.
         handlesRef.current.get(event.id)?.write(event.data);
       }),
     );
@@ -113,7 +131,7 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
     };
   }, [desktop]);
 
-  // Enfocar la activa al mostrar el panel, cambiar de pestaña o de disposición.
+  // Focus the active one when showing the panel or switching tabs/layout.
   useEffect(() => {
     if (!visible || activeId === null) return;
     const frame = requestAnimationFrame(() => {
@@ -123,13 +141,13 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
   }, [visible, activeId, tabs.length, layout]);
 
   function registerHandle(id: string, handle: TerminalHandle | null) {
-    // Una sesión, una instancia visual: si algo intentara montar dos
-    // vistas para el mismo id, se avisa en vez de duplicar salida.
+    // One session, one view instance: if anything tried to mount two
+    // views for the same id, warn instead of duplicating output.
     if (handle === null) {
       handlesRef.current.delete(id);
     } else {
       if (handlesRef.current.has(id)) {
-        console.warn(`Terminal ${id}: ya tenía vista asociada; se sustituye.`);
+        console.warn(`Terminal ${id}: already had a view attached; replacing it.`);
       }
       handlesRef.current.set(id, handle);
     }
@@ -154,25 +172,29 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
       await resizeTerminal(id, cols, rows);
     } catch (raw) {
       const err = normalizeTerminalError(raw);
-      // Redimensionar una sesión que acaba de terminar no es un error
-      // para la persona: su estado ya lo cuenta.
+      // Resizing a session that just ended is not an error for the
+      // person: its state already tells the story.
       if (err.kind === "unknown_session" || err.kind === "session_exited") return;
       setError(err.message);
     }
   }
 
-  async function handleCreate() {
-    if (creating || !canCreateTerminal(tabsRef.current)) return;
+  async function handleCreate(cwd: string | null = folder) {
+    if (creating) return;
+    if (!canCreateTerminal(tabsRef.current)) {
+      setError("3-session limit: close one to open another.");
+      return;
+    }
     setCreating(true);
     setError(null);
     try {
-      // 80×24 de arranque: la vista mide y ajusta el PTY al montar.
-      const info = await createTerminal(folder, 80, 24);
+      // 80×24 at start: the view measures and fits the PTY on mount.
+      const info = await createTerminal(cwd, 80, 24);
       if (cancelledRef.current) return;
       setTabs((prev) => addTerminalTab(prev, info));
       setActiveId(info.id);
-      // Nueva sesión: reparto equitativo en paralelo.
-      setWidths(null);
+      // New session: even split side by side.
+      useRequirementsUi.getState().setTerminalPaneWidths(null);
     } catch (raw) {
       if (!cancelledRef.current) setError(normalizeTerminalError(raw).message);
     } finally {
@@ -197,7 +219,7 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
       await closeTerminal(id);
     } catch (raw) {
       const err = normalizeTerminalError(raw);
-      // Si Rust ya no la conoce, estaba cerrada: el efecto es el mismo.
+      // If Rust no longer knows it, it was closed: same effect.
       if (err.kind !== "unknown_session") {
         setError(err.message);
         setClosing(false);
@@ -207,23 +229,28 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
     const closedIndex = tabsRef.current.findIndex((tab) => tab.info.id === id);
     setTabs((prev) => removeTerminalTab(prev, id));
     setActiveId((prev) => nextActiveTerminal(tabsRef.current, id, prev));
-    // El espacio se redistribuye entre los que quedan.
-    setWidths((prev) =>
-      prev !== null && prev.length === tabsRef.current.length
-        ? dropPaneWidth(prev, closedIndex)
-        : null,
-    );
+    // Space is redistributed among the rest.
+    {
+      const prev = useRequirementsUi.getState().terminalPaneWidths;
+      useRequirementsUi
+        .getState()
+        .setTerminalPaneWidths(
+          prev !== null && prev.length === tabsRef.current.length
+            ? dropPaneWidth(prev, closedIndex)
+            : null,
+        );
+    }
     setClosing(false);
   }
 
   function handleClear(id: string) {
-    // Solo vista y scrollback: el shell ni se entera (sin PTY de por medio).
+    // View and scrollback only: the shell never notices (no PTY involved).
     handlesRef.current.get(id)?.clear();
   }
 
   async function handlePickFolder() {
     try {
-      const chosen = await open({ directory: true, multiple: false, title: "Carpeta inicial de la terminal" });
+      const chosen = await open({ directory: true, multiple: false, title: "Terminal starting folder" });
       if (typeof chosen === "string") {
         setFolder(chosen);
         setError(null);
@@ -260,7 +287,11 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
     const start = fractions;
     const minFrac = MIN_PANE_PX / containerWidth;
     const onMove = (move: PointerEvent) => {
-      setWidths(dragPaneWidths(start, index, (move.clientX - startX) / containerWidth, minFrac));
+      useRequirementsUi
+        .getState()
+        .setTerminalPaneWidths(
+          dragPaneWidths(start, index, (move.clientX - startX) / containerWidth, minFrac),
+        );
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
@@ -268,6 +299,25 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+  }
+
+  function onPaneSepKeyDown(event: React.KeyboardEvent<HTMLDivElement>, index: number) {
+    const container = panesRef.current;
+    if (container === null) return;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      const containerWidth = container.getBoundingClientRect().width;
+      if (containerWidth <= 0) return;
+      const delta = event.key === "ArrowRight" ? RESIZE_KEYBOARD_STEP_FRAC : -RESIZE_KEYBOARD_STEP_FRAC;
+      useRequirementsUi
+        .getState()
+        .setTerminalPaneWidths(
+          dragPaneWidths(fractions, index, delta, MIN_PANE_PX / containerWidth),
+        );
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      useRequirementsUi.getState().setTerminalPaneWidths(null);
+    }
   }
 
   function onDragHandlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -276,7 +326,11 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
     const startHeight = height;
     const onMove = (move: PointerEvent) => {
       const next = startHeight + (startY - move.clientY);
-      setHeight(Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT, Math.round(next))));
+      useRequirementsUi
+        .getState()
+        .setTerminalHeight(
+          Math.min(MAX_TERMINAL_HEIGHT, Math.max(MIN_TERMINAL_HEIGHT, Math.round(next))),
+        );
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
@@ -286,10 +340,25 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
     window.addEventListener("pointerup", onUp);
   }
 
+  function onDragHandleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      const delta = event.key === "ArrowUp" ? RESIZE_KEYBOARD_STEP_PX : -RESIZE_KEYBOARD_STEP_PX;
+      useRequirementsUi
+        .getState()
+        .setTerminalHeight(
+          Math.min(MAX_TERMINAL_HEIGHT, Math.max(MIN_TERMINAL_HEIGHT, height + delta)),
+        );
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      useRequirementsUi.getState().setTerminalHeight(null);
+    }
+  }
+
   if (!desktop) {
     return (
       <section className="terminal-panel" hidden={!visible} aria-label="Terminal">
-        <p className="hint">La terminal integrada requiere Ruth IDE de escritorio. Nada que ejecutar aquí.</p>
+        <p className="hint">The integrated terminal needs the Ruth IDE desktop app. Nothing to run here.</p>
       </section>
     );
   }
@@ -299,22 +368,27 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
     widths !== null && widths.length === tabs.length ? widths : equalPaneWidths(tabs.length);
   return (
     <section
-      className="terminal-panel"
+      className={`terminal-panel${maximized ? " maximized" : ""}`}
       hidden={!visible}
       aria-label="Terminal"
-      style={{ height: `${height}px` }}
+      style={maximized ? undefined : { height: `min(${height}px, calc(100dvh - 10rem))` }}
     >
       <div
         className="terminal-resize"
         role="separator"
         aria-orientation="horizontal"
-        aria-label="Altura del panel de terminal"
+        aria-label="Terminal panel height"
+        aria-valuenow={height}
+        aria-valuemin={MIN_TERMINAL_HEIGHT}
+        aria-valuemax={MAX_TERMINAL_HEIGHT}
+        tabIndex={0}
         onPointerDown={onDragHandlePointerDown}
+        onKeyDown={onDragHandleKeyDown}
       />
       <div className="terminal-head">
         {layout === "tabs" ? (
-          <div className="terminal-tabs" role="tablist" aria-label="Sesiones">
-            {tabs.length === 0 && <span className="hint">Sin sesiones: crea la primera.</span>}
+          <div className="terminal-tabs" role="tablist" aria-label="Sessions">
+            {tabs.length === 0 && <span className="hint">No sessions: create the first.</span>}
             {tabs.map((tab) => (
               <SessionHead
                 key={tab.info.id}
@@ -331,23 +405,23 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
         ) : (
           <span className="hint">
             {tabs.length === 0
-              ? "Sin sesiones: crea la primera."
-              : `${tabs.length} ${tabs.length === 1 ? "sesión" : "sesiones"} en paralelo.`}
+              ? "No sessions: create the first."
+              : `${tabs.length} ${tabs.length === 1 ? "session" : "sessions"} side by side.`}
           </span>
         )}
-        <div className="terminal-actions" role="toolbar" aria-label="Acciones de terminal">
+        <div className="terminal-actions" role="toolbar" aria-label="Terminal actions">
           <button
             type="button"
             className="term-tool"
             onClick={() => void handleCreate()}
             disabled={creating || !canCreateTerminal(tabs)}
-            aria-label={creating ? "Abriendo sesión" : "Nueva terminal"}
+            aria-label={creating ? "Opening session" : "New terminal"}
             title={
               creating
-                ? "Abriendo…"
+                ? "Opening…"
                 : canCreateTerminal(tabs)
-                  ? "Nueva terminal"
-                  : "Límite de tres sesiones: cierra una antes"
+                  ? "New terminal"
+                  : "Three-session limit: close one first"
             }
           >
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -358,8 +432,8 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
             type="button"
             className="term-tool"
             onClick={() => setLayout((prev) => (prev === "tabs" ? "parallel" : "tabs"))}
-            aria-label={layout === "tabs" ? "Ver en paralelo" : "Ver en pestañas"}
-            title={layout === "tabs" ? "Ver en paralelo" : "Ver en pestañas"}
+            aria-label={layout === "tabs" ? "View side by side" : "View as tabs"}
+            title={layout === "tabs" ? "View side by side" : "View as tabs"}
           >
             {layout === "tabs" ? (
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -386,8 +460,8 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
             type="button"
             className="term-tool"
             onClick={() => void handlePickFolder()}
-            aria-label="Carpeta para nuevas sesiones"
-            title="Carpeta para nuevas sesiones"
+            aria-label="Folder for new sessions"
+            title="Folder for new sessions"
           >
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
               <path
@@ -401,9 +475,44 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
           <button
             type="button"
             className="term-tool"
-            onClick={onHide}
-            aria-label="Ocultar panel de terminal"
-            title="Ocultar panel (las sesiones siguen en marcha)"
+            onClick={() => useRequirementsUi.getState().setTerminalMaximized(!maximized)}
+            aria-label={maximized ? "Restore terminal panel" : "Maximize terminal panel"}
+            aria-pressed={maximized}
+            title={maximized ? "Restore previous layout" : "Fill the workbench (terminal only)"}
+          >
+            {maximized ? (
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path
+                  d="M6 9.5H2.5V6 M2.5 9.5 8 4 M10 6.5h3.5V10 M13.5 6.5 8 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path
+                  d="M9.5 2.5h4v4 M13.5 2.5 8 8 M6.5 13.5h-4v-4 M2.5 13.5l5.5-5.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            className="term-tool"
+            onClick={() => {
+              useRequirementsUi.getState().setTerminalMaximized(false);
+              onHide();
+            }}
+            aria-label="Hide terminal panel"
+            title="Hide panel (sessions keep running)"
           >
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
               <path
@@ -419,23 +528,22 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
         </div>
       </div>
       <p className="hint terminal-cwd" title={folder ?? undefined}>
-        Carpeta de sesiones nuevas: {folder ?? "tu carpeta personal (por defecto)"}. Las abiertas
-        conservan la suya. La terminal tiene tus permisos: no es un sandbox.
+        New sessions folder: {folder ?? "your home folder (default)"}. Open ones
+        keep theirs. The terminal has your permissions: it is not a sandbox.
       </p>
       {/*
-        Una sola estructura para ambas disposiciones: las vistas xterm
-        nunca se desmontan al alternar (claves estables), así no se
-        pierde salida ni se reinicia nada. En pestañas, por
-        construcción: las cabeceras de panel no se renderizan (solo la
-        tira), los envoltorios inactivos llevan `display:none` en línea
-        y el activo `flex:1`; imposible mostrar dos niveles ni paneles
-        paralelos estrechos por un fallo de hoja de estilos.
+        One structure for both layouts: xterm views never unmount when
+        toggling (stable keys), so no output is lost and nothing
+        restarts. In tabs, by construction: pane headers don't render
+        (only the strip), inactive wrappers carry inline `display:none`
+        and the active one `flex:1`; a stylesheet failure cannot show
+        two levels or squeezed side-by-side panes.
       */}
       <div
         className="terminal-panes"
         ref={panesRef}
         role="group"
-        aria-label={layout === "tabs" ? "Sesión activa" : "Sesiones en paralelo"}
+        aria-label={layout === "tabs" ? "Active session" : "Sessions side by side"}
       >
         {tabs.map((tab, index) => {
           const isActive = tab.info.id === activeId;
@@ -448,8 +556,10 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
                   className="terminal-sep"
                   role="separator"
                   aria-orientation="vertical"
-                  aria-label={`Ancho entre ${tabs[index - 1].info.id} y ${tab.info.id}`}
+                  aria-label={`Width between ${tabs[index - 1].info.id} and ${tab.info.id}`}
+                  tabIndex={0}
                   onPointerDown={(event) => onPaneSepPointerDown(event, index - 1)}
+                  onKeyDown={(event) => onPaneSepKeyDown(event, index - 1)}
                 />
               )}
               <div
@@ -502,14 +612,14 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
         <p className="hint terminal-status">
           {active.info.shell} · {active.info.cwd} · {active.info.cols}×{active.info.rows} ·{" "}
           {terminalStatusLabel(active.info)}
-          {!active.info.running && " — cierra la pestaña cuando quieras; su texto queda arriba."}
+          {!active.info.running && " — close the tab whenever you want; its text stays above."}
         </p>
       )}
       {error !== null && (
         <p className="error terminal-error" role="alert">
           {error}{" "}
           <button type="button" className="secondary small" onClick={() => setError(null)}>
-            Cerrar aviso
+            Dismiss
           </button>
         </p>
       )}
@@ -519,17 +629,17 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
             className="modal"
             role="alertdialog"
             aria-modal="true"
-            aria-label={`Cerrar ${closeConfirmId}`}
+            aria-label={`Close ${closeConfirmId}`}
             onClick={(event) => event.stopPropagation()}
           >
-            <h3>Cerrar {closeConfirmId}</h3>
-            <p>Su proceso terminará. ¿Seguro?</p>
+            <h3>Close {closeConfirmId}</h3>
+            <p>Its process will end. Are you sure?</p>
             <div className="button-row">
               <button type="button" className="secondary" onClick={() => setCloseConfirmId(null)} autoFocus>
-                Cancelar
+                Cancel
               </button>
               <button type="button" className="danger" onClick={() => void doClose(closeConfirmId)}>
-                Cerrar sesión
+                Close session
               </button>
             </div>
           </div>
@@ -541,19 +651,19 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
             className="modal"
             role="alertdialog"
             aria-modal="true"
-            aria-label="Cerrar con terminales abiertas"
+            aria-label="Close with open terminals"
             onClick={(event) => event.stopPropagation()}
           >
             <h3>
-              Hay {quitRequest} {quitRequest === 1 ? "terminal en marcha" : "terminales en marcha"}
+              {quitRequest} {quitRequest === 1 ? "running terminal" : "running terminals"}
             </h3>
-            <p>Cerrar Ruth IDE terminará sus procesos. Los procesos no se restauran al reabrir.</p>
+            <p>Closing Ruth IDE will end their processes. Processes are not restored on reopen.</p>
             <div className="button-row">
               <button type="button" className="secondary" onClick={() => setQuitRequest(null)} autoFocus>
-                Seguir trabajando
+                Keep working
               </button>
               <button type="button" className="danger" onClick={() => void handleQuit()} disabled={quitting}>
-                {quitting ? "Cerrando…" : "Cerrar Ruth IDE"}
+                {quitting ? "Closing…" : "Close Ruth IDE"}
               </button>
             </div>
           </div>
@@ -564,9 +674,9 @@ export function TerminalPanel({ visible, onHide }: TerminalPanelProps) {
 }
 
 /**
- * Cabecera de una sesión (pestaña o panel): nombre y estado más iconos
- * Limpiar y Cerrar propios. Son botones hermanos, nunca anidados: pulsar
- * limpiar/cerrar no selecciona ni activa otra sesión por accidente.
+ * A session header (tab or pane): name and status plus its own Clear
+ * and Close icons. Sibling buttons, never nested: pressing clear/close
+ * never selects or activates another session by accident.
  */
 function SessionHead({
   tab,
@@ -606,8 +716,8 @@ function SessionHead({
         type="button"
         className="term-icon"
         onClick={onClear}
-        aria-label={`Limpiar vista de ${tab.info.id}`}
-        title={`Limpiar vista de ${tab.info.id} (el proceso sigue en marcha)`}
+        aria-label={`Clear ${tab.info.id} view`}
+        title={`Clear ${tab.info.id} view (its process keeps running)`}
       >
         <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
           <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -619,8 +729,8 @@ function SessionHead({
         className="term-icon"
         onClick={onClose}
         disabled={closing}
-        aria-label={`Cerrar ${tab.info.id}`}
-        title={`Cerrar ${tab.info.id} (termina su proceso)`}
+        aria-label={`Close ${tab.info.id}`}
+        title={`Close ${tab.info.id} (ends its process)`}
       >
         <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
           <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -633,8 +743,8 @@ function SessionHead({
 function TerminalEmpty() {
   return (
     <p className="hint terminal-empty">
-      Ejecuta shells, agentes como <code>$HOME/.local/bin/muse</code>, servidores o Git. Nada se
-      ejecuta al abrir el panel: todo nace de lo que escribas.
+      Run shells, agents like <code>$HOME/.local/bin/muse</code>, servers or Git. Nothing
+      runs when opening the panel: everything starts from what you type.
     </p>
   );
 }

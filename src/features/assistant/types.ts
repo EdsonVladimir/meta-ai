@@ -1,25 +1,25 @@
-// Tipos del panel Asistente Meta: acciones explícitas e historial.
+// Meta Assistant panel types: explicit actions and history.
 export type AssistantAction = "requirements" | "design" | "update";
 
 export const ASSISTANT_ACTIONS: { id: AssistantAction; label: string; hint: string }[] = [
   {
     id: "requirements",
-    label: "Proponer requisitos",
-    hint: "Describe el módulo; Meta propone requisitos y preguntas.",
+    label: "Propose requirements",
+    hint: "Describe the module; Meta proposes requirements and questions.",
   },
   {
     id: "design",
-    label: "Generar flujo o ER",
-    hint: "Desde requisitos y mockups guardados, marcando fuentes.",
+    label: "Generate flow or ER",
+    hint: "From saved requirements and mockups, marking sources.",
   },
   {
     id: "update",
-    label: "Proponer actualización",
-    hint: "Ajustar un diseño afectado según el impacto vigente.",
+    label: "Propose update",
+    hint: "Adjust an affected design per the live impact.",
   },
 ];
 
-/** Entrada de historial: solicitud + resultado, solo lectura. */
+/** History entry: request + result, read-only. */
 export interface AssistantHistoryEntry {
   id: string;
   kind: "requirements" | "design" | "update";
@@ -31,5 +31,5 @@ export interface AssistantHistoryEntry {
   openCount: number;
 }
 
-/** Historial acotado: las últimas N, las demás siguen en su vista. */
+/** Bounded history: the latest N, the rest stay in their view. */
 export const ASSISTANT_HISTORY_LIMIT = 8;

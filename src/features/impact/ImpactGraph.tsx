@@ -1,6 +1,6 @@
-// Grafo de impacto en SVG: lectura con selección, zoom y ajuste.
-// Sin dependencias: pan con arrastre del fondo (nunca modifica nada),
-// zoom con rueda o botones, nodos clicables y navegables por teclado.
+// Impact graph in SVG: reading with selection, zoom and fit. No
+// dependencies: background-drag pan (never modifies anything), wheel or
+// button zoom, clickable and keyboard-navigable nodes.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   NODE_H,
@@ -21,13 +21,13 @@ const MAX_SCALE = 2.5;
 function statusMeta(status: ImpactNodeStatus): { glyph: string; label: string } {
   switch (status) {
     case "origin":
-      return { glyph: "◉", label: "Origen del cambio" };
+      return { glyph: "◉", label: "Change origin" };
     case "pending":
-      return { glyph: "!", label: "Requiere revisión" };
+      return { glyph: "!", label: "Needs review" };
     case "awaiting":
-      return { glyph: "◷", label: "Fuentes al día, pendiente de revisión" };
+      return { glyph: "◷", label: "Sources current, review pending" };
     case "updated":
-      return { glyph: "✓", label: "Al día" };
+      return { glyph: "✓", label: "Current" };
   }
 }
 
@@ -36,9 +36,9 @@ function kindLabel(kind: string): string {
     case "requirement":
       return "REQ";
     case "flow":
-      return "FLUJO";
+      return "FLOW";
     case "data_model":
-      return "MER";
+      return "ER";
     case "mockup":
       return "MOCKUP";
     default:
@@ -84,8 +84,8 @@ export function ImpactGraph({ layout, selectedId, onSelect }: Props) {
     });
   }, [box.h, box.w, layout.height, layout.width]);
 
-  // Al cambiar el informe, reencuadrar. El zoom manual posterior es local
-  // y efímero: no se guarda en ningún sitio.
+  // Reframe when the report changes. Later manual zoom is local and
+  // ephemeral: saved nowhere.
   useEffect(() => {
     fit();
   }, [fit]);
@@ -112,15 +112,15 @@ export function ImpactGraph({ layout, selectedId, onSelect }: Props) {
 
   return (
     <div className="impact-graph">
-      <div className="graph-toolbar" role="toolbar" aria-label="Controles del mapa">
+      <div className="graph-toolbar" role="toolbar" aria-label="Map controls">
         <button type="button" className="secondary small" onClick={() => zoomStep(1.25)}>
-          Acercar
+          Zoom in
         </button>
         <button type="button" className="secondary small" onClick={() => zoomStep(1 / 1.25)}>
-          Alejar
+          Zoom out
         </button>
         <button type="button" className="secondary small" onClick={fit}>
-          Ajustar
+          Fit
         </button>
         <span className="hint" aria-live="polite">
           {Math.round(view.scale * 100)} %
@@ -153,7 +153,7 @@ export function ImpactGraph({ layout, selectedId, onSelect }: Props) {
           width={box.w}
           height={box.h}
           role="img"
-          aria-label={`Mapa de impacto con ${layout.shown} nodos visibles de ${layout.total}`}
+          aria-label={`Impact map with ${layout.shown} visible nodes of ${layout.total}`}
         >
           <defs>
             <marker
@@ -216,33 +216,33 @@ export function ImpactGraph({ layout, selectedId, onSelect }: Props) {
           </g>
         </svg>
       </div>
-      <ul className="graph-legend" aria-label="Leyenda">
+      <ul className="graph-legend" aria-label="Legend">
         <li>
           <span className="legend-swatch status-origin" aria-hidden="true">
             ◉
           </span>{" "}
-          Origen del cambio
+          Change origin
         </li>
         <li>
           <span className="legend-swatch status-pending" aria-hidden="true">
             !
           </span>{" "}
-          Requiere revisión
+          Needs review
         </li>
         <li>
           <span className="legend-swatch status-awaiting" aria-hidden="true">
             ◷
           </span>{" "}
-          Fuentes al día, pendiente de revisión
+          Sources current, review pending
         </li>
         <li>
           <span className="legend-swatch status-updated" aria-hidden="true">
             ✓
           </span>{" "}
-          Al día (relacionado, sin pendiente)
+          Current (related, nothing pending)
         </li>
       </ul>
-      <p className="hint">Las flechas van de la fuente al dependiente: el impacto fluye con ellas.</p>
+      <p className="hint">Arrows run from source to dependent: impact flows with them.</p>
     </div>
   );
 }

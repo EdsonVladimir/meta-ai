@@ -1,7 +1,7 @@
-//! Dominio: tipos, invariantes y operaciones puras.
+//! Domain: types, invariants and pure operations.
 //!
-//! Sin E/S ni estado global. Todo lo que necesita (identificadores, contenido,
-//! fechas) llega como parámetro.
+//! No I/O or global state. Everything needed (identifiers, content,
+//! dates) arrives as parameters.
 
 mod analysis;
 mod error;

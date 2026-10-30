@@ -1,7 +1,7 @@
-// Diálogo de entregas: preparar un conjunto coherente, crear la baseline
-// con una acción humana explícita y exportarla a un ZIP reproducible.
-// Crear la baseline y guardar el ZIP son pasos separados: si se cancela el
-// diálogo de guardado, la baseline sigue existiendo sin archivo.
+// Deliveries dialog: prepare a coherent set, create the baseline with an
+// explicit human action, and export it to a reproducible ZIP. Creating
+// the baseline and saving the ZIP are separate steps: cancelling the save
+// dialog leaves the baseline existing without a file.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauriEnvironment } from "../../lib/env";
 import { listArtifacts } from "../design/client";
@@ -62,14 +62,14 @@ export function BaselineDialog({ projectId, moduleId, onClose }: Props) {
           className="modal"
           role="dialog"
           aria-modal="true"
-          aria-label="Entregas"
+          aria-label="Deliveries"
           onClick={(e) => e.stopPropagation()}
         >
-          <h3>Entregas</h3>
-          <p className="hint">Preparar entregas y exportar al disco requiere escritorio.</p>
+          <h3>Deliveries</h3>
+          <p className="hint">Preparing deliveries and exporting to disk needs desktop.</p>
           <div className="modal-actions">
             <button type="button" onClick={onClose}>
-              Cerrar
+              Close
             </button>
           </div>
         </div>
@@ -83,21 +83,21 @@ export function BaselineDialog({ projectId, moduleId, onClose }: Props) {
         className="modal wide baseline-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Entregas y exportación"
+        aria-label="Deliveries and export"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="baseline-head">
-          <h3>Entregas</h3>
-          <div className="baseline-tabs" role="tablist" aria-label="Tipo de entrega">
+          <h3>Deliveries</h3>
+          <div className="baseline-tabs" role="tablist" aria-label="Delivery kind">
             <button
               type="button"
               role="tab"
               aria-selected={mode === "work"}
               className={mode === "work" ? "active" : ""}
               onClick={() => setMode("work")}
-              title="Borrador desde versiones guardadas, sin exigir revisión"
+              title="Draft from saved versions, no review required"
             >
-              De trabajo
+              Work
             </button>
             <button
               type="button"
@@ -105,12 +105,12 @@ export function BaselineDialog({ projectId, moduleId, onClose }: Props) {
               aria-selected={mode === "approved"}
               className={mode === "approved" ? "active" : ""}
               onClick={() => setMode("approved")}
-              title="Baseline con versiones aprobadas, actuales y coherentes"
+              title="Baseline with approved, current, coherent versions"
             >
-              Aprobada
+              Approved
             </button>
           </div>
-          <button type="button" className="ghost" onClick={onClose} aria-label="Cerrar">
+          <button type="button" className="ghost" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
@@ -122,7 +122,7 @@ export function BaselineDialog({ projectId, moduleId, onClose }: Props) {
             className={tab === "prepare" ? "active" : ""}
             onClick={() => setTab("prepare")}
           >
-            Preparar entrega
+            Prepare delivery
           </button>
           <button
             type="button"
@@ -131,7 +131,7 @@ export function BaselineDialog({ projectId, moduleId, onClose }: Props) {
             className={tab === "baselines" ? "active" : ""}
             onClick={() => setTab("baselines")}
           >
-            {mode === "work" ? "Entregas" : "Baselines"}
+            {mode === "work" ? "Deliveries" : "Baselines"}
           </button>
         </div>
         {mode === "work" ? (
@@ -166,7 +166,7 @@ export function BaselineDialog({ projectId, moduleId, onClose }: Props) {
 
 function errorText(err: unknown): string {
   const e = err as Partial<CoreApiError>;
-  return typeof e.message === "string" && e.message ? e.message : "Error inesperado.";
+  return typeof e.message === "string" && e.message ? e.message : "Unexpected error.";
 }
 
 function errorKind(err: unknown): string {
@@ -296,7 +296,7 @@ function PreparePane({
     <div className="baseline-prepare">
       <div className="baseline-row">
         <label>
-          Módulo del alcance
+          Scope module
           <select value={scope} onChange={(e) => setScope(e.target.value)} disabled={busy !== null}>
             {modules.map((m) => (
               <option key={m.id} value={m.id}>
@@ -307,8 +307,8 @@ function PreparePane({
         </label>
       </div>
       <fieldset className="baseline-checklist">
-        <legend>Artefactos del módulo ({selected.length} elegidos)</legend>
-        {busy === "loading" && <p className="hint">Cargando artefactos…</p>}
+        <legend>Module artifacts ({selected.length} picked)</legend>
+        {busy === "loading" && <p className="hint">Loading artifacts…</p>}
         {artifacts.map((a) => (
           <label key={a.id} className="check" title={a.title ?? a.id}>
             <input
@@ -322,11 +322,11 @@ function PreparePane({
             <span className="hint">{kindLabel(a.kind)}</span>
           </label>
         ))}
-        {artifacts.length === 0 && busy === null && <p className="hint">Sin artefactos en este módulo.</p>}
+        {artifacts.length === 0 && busy === null && <p className="hint">No artifacts in this module.</p>}
       </fieldset>
       <div className="modal-actions">
         <button type="button" onClick={runPrepare} disabled={busy !== null || selected.length === 0}>
-          {busy === "preparing" ? "Preparando…" : "Vista previa"}
+          {busy === "preparing" ? "Preparing…" : "Preview"}
         </button>
       </div>
       {error && (
@@ -336,7 +336,7 @@ function PreparePane({
             <>
               {" "}
               <button type="button" className="ghost" onClick={runPrepare}>
-                Volver a preparar
+                Prepare again
               </button>
             </>
           )}
@@ -345,17 +345,17 @@ function PreparePane({
       {preview && (
         <div className="baseline-preview">
           <h4>
-            {preview.canCreate ? "Conjunto coherente" : "Con bloqueos"} ({preview.entries.length}{" "}
-            versiones)
+            {preview.canCreate ? "Coherent set" : "With blockers"} ({preview.entries.length}{" "}
+            versions)
           </h4>
           <table className="baseline-table">
             <thead>
               <tr>
-                <th>Artefacto</th>
-                <th>Tipo</th>
-                <th>Versión</th>
-                <th>Aprobación</th>
-                <th>Origen</th>
+                <th>Artifact</th>
+                <th>Kind</th>
+                <th>Version</th>
+                <th>Approval</th>
+                <th>Origin</th>
               </tr>
             </thead>
             <tbody>
@@ -366,14 +366,14 @@ function PreparePane({
                     {e.artifact.title !== null && e.artifact.title !== "" && (
                       <code>{e.artifact.id}</code>
                     )}{" "}
-                    {e.autoIncluded && <span className="pill">por cierre</span>}
+                    {e.autoIncluded && <span className="pill">by closure</span>}
                   </td>
                   <td>{kindLabel(e.artifact.kind)}</td>
                   <td>
                     <code>{e.versionId}</code>
                   </td>
                   <td>{e.approvedBy ? `${e.approvedBy} (${e.approvedAt})` : "—"}</td>
-                  <td>{e.provenance.kind === "human" ? `humana (${e.provenance.by})` : `IA (${e.provenance.by})`}</td>
+                  <td>{e.provenance.kind === "human" ? `human (${e.provenance.by})` : `AI (${e.provenance.by})`}</td>
                 </tr>
               ))}
             </tbody>
@@ -389,7 +389,7 @@ function PreparePane({
           )}
           {(preview.outOfScope.artifacts.length > 0 || preview.outOfScope.modules.length > 0) && (
             <p className="hint">
-              Fuera del alcance:{" "}
+              Out of scope:{" "}
               {[
                 ...preview.outOfScope.artifacts,
                 ...preview.outOfScope.modules.flatMap((m) => m.artifacts),
@@ -398,18 +398,18 @@ function PreparePane({
           )}
           <div className="baseline-row">
             <label>
-              Nombre de la entrega
+              Delivery name
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="p. ej. Entrega ventas 1"
+                placeholder="e.g. Sales delivery 1"
                 maxLength={120}
                 disabled={busy !== null}
               />
             </label>
             <label>
-              Descripción (opcional)
+              Description (optional)
               <input
                 type="text"
                 value={description}
@@ -426,9 +426,9 @@ function PreparePane({
               onClick={runCreate}
               disabled={busy !== null || !preview.canCreate || !name.trim()}
             >
-              {busy === "creating" ? "Creando…" : "Crear baseline"}
+              {busy === "creating" ? "Creating…" : "Create baseline"}
             </button>
-            {!preview.canCreate && <span className="hint">Resuelve los bloqueos para crearla.</span>}
+            {!preview.canCreate && <span className="hint">Resolve the blockers to create it.</span>}
           </div>
         </div>
       )}
@@ -469,7 +469,7 @@ function BaselinesPane({
           if (focus) {
             setSelectedId(focus);
             setNotice(
-              "Baseline creada. Aún no se ha guardado ningún ZIP: elige la baseline y usa «Guardar ZIP».",
+              "Baseline created. No ZIP saved yet: pick the baseline and use \u201cSave ZIP\u201d.",
             );
           }
         })
@@ -575,7 +575,7 @@ function BaselinesPane({
       setError(errorText(err));
       return;
     }
-    if (dest === null) return; // Cancelar no escribe ni informa éxito.
+    if (dest === null) return; // Cancelling writes nothing and reports no success.
     saveTo(dest, false);
   }
 
@@ -593,7 +593,7 @@ function BaselinesPane({
       )}
       <div className="baseline-columns">
         <ul className="baseline-items">
-          {busy === "loading" && <li className="hint">Cargando baselines…</li>}
+          {busy === "loading" && <li className="hint">Loading baselines…</li>}
           {list.map((b) => (
             <li key={b.id}>
               <button
@@ -607,17 +607,17 @@ function BaselinesPane({
                 <strong>{b.name}</strong>
                 <code>{b.id}</code>
                 <span className="hint">
-                  {b.entryCount} versiones · {b.at}
+                  {b.entryCount} versions · {b.at}
                 </span>
-                {b.advanced && <span className="pill warn">el proyecto avanzó</span>}
+                {b.advanced && <span className="pill warn">the project moved on</span>}
               </button>
             </li>
           ))}
-          {list.length === 0 && busy === null && <li className="hint">Aún no hay baselines.</li>}
+          {list.length === 0 && busy === null && <li className="hint">No baselines yet.</li>}
         </ul>
         <div className="baseline-detail">
-          {!detail && busy !== "detail" && <p className="hint">Elige una baseline para verla.</p>}
-          {busy === "detail" && <p className="hint">Cargando detalle…</p>}
+          {!detail && busy !== "detail" && <p className="hint">Pick a baseline to see it.</p>}
+          {busy === "detail" && <p className="hint">Loading detail…</p>}
           {detail && (
             <>
               <h4>
@@ -626,16 +626,16 @@ function BaselinesPane({
               {detail.description && <p>{detail.description}</p>}
               <p className="hint">
                 {detail.at} ·{" "}
-                {detail.scopeModuleId ? `módulo ${detail.scopeModuleId}` : "selección manual"} ·{" "}
-                {detail.entries.length} versiones
+                {detail.scopeModuleId ? `module ${detail.scopeModuleId}` : "manual selection"} ·{" "}
+                {detail.entries.length} versions
               </p>
               <table className="baseline-table">
                 <thead>
                   <tr>
-                    <th>Artefacto</th>
-                    <th>Tipo</th>
-                    <th>Versión</th>
-                    <th>Aprobación</th>
+                    <th>Artifact</th>
+                    <th>Kind</th>
+                    <th>Version</th>
+                    <th>Approval</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -645,12 +645,12 @@ function BaselinesPane({
                         {e.title ?? <code>{e.artifact.id}</code>}
                         {e.title !== null && e.title !== "" && <code>{e.artifact.id}</code>}{" "}
                         {e.title !== null && e.title !== "" && (
-                          <span className="hint">(fijado en la entrega)</span>
+                          <span className="hint">(pinned in the delivery)</span>
                         )}
                         {e.title !== e.artifact.title &&
                           e.artifact.title !== null &&
                           e.artifact.title !== "" && (
-                            <span className="hint"> · hoy: {e.artifact.title}</span>
+                            <span className="hint"> · today: {e.artifact.title}</span>
                           )}
                       </td>
                       <td>{kindLabel(e.kind)}</td>
@@ -668,28 +668,28 @@ function BaselinesPane({
               </table>
               <div className="modal-actions">
                 <button type="button" onClick={runPreview} disabled={busy !== null}>
-                  {busy === "preview" ? "Preparando…" : "Vista previa del ZIP"}
+                  {busy === "preview" ? "Preparing…" : "ZIP preview"}
                 </button>
                 <button
                   type="button"
                   className="primary"
                   onClick={runSave}
                   disabled={busy !== null || zip === null}
-                  title={zip === null ? "Primero mira la vista previa del paquete" : undefined}
+                  title={zip === null ? "Look at the package preview first" : undefined}
                 >
-                  {busy === "saving" ? "Guardando…" : "Guardar ZIP"}
+                  {busy === "saving" ? "Saving…" : "Save ZIP"}
                 </button>
               </div>
               {zip && (
                 <div className="baseline-preview">
                   <h4>
-                    Paquete ({zip.files.length} archivos, {formatBytes(zip.totalBytes)})
+                    Package ({zip.files.length} files, {formatBytes(zip.totalBytes)})
                   </h4>
                   <table className="baseline-table">
                     <thead>
                       <tr>
-                        <th>Archivo</th>
-                        <th>Tamaño</th>
+                        <th>File</th>
+                        <th>Size</th>
                         <th>SHA-256</th>
                       </tr>
                     </thead>
@@ -708,14 +708,14 @@ function BaselinesPane({
                     </tbody>
                   </table>
                   <p className="hint">
-                    Los hashes verifican integridad; no son una firma digital.
+                    Hashes verify integrity; they are not a digital signature.
                   </p>
                 </div>
               )}
               {pendingPath && (
                 <div className="baseline-confirm" role="alert">
                   <p>
-                    Ya existe <code>{pendingPath}</code>. ¿Reemplazarlo?
+                    <code>{pendingPath}</code> already exists. Replace it?
                   </p>
                   <div className="modal-actions">
                     <button
@@ -724,17 +724,17 @@ function BaselinesPane({
                       onClick={() => saveTo(pendingPath, true)}
                       disabled={busy !== null}
                     >
-                      Reemplazar
+                      Replace
                     </button>
                     <button type="button" className="ghost" onClick={() => setPendingPath(null)}>
-                      Cancelar
+                      Cancel
                     </button>
                   </div>
                 </div>
               )}
               {saved && (
                 <p className="notice" role="status">
-                  ZIP guardado en <code>{saved.path}</code> ({formatBytes(saved.bytes)}). SHA-256:{" "}
+                  ZIP saved to <code>{saved.path}</code> ({formatBytes(saved.bytes)}). SHA-256:{" "}
                   <code>{saved.sha256}</code>
                 </p>
               )}

@@ -1,9 +1,9 @@
-//! Comandos de requisitos: envoltorios finos sobre `ruth-api`.
+//! Requirement commands: thin wrappers over `ruth-api`.
 //!
-//! Las mutaciones pasan por `transact`: validar con el núcleo, persistir en
-//! una transacción y publicar solo tras confirmar. Las lecturas usan la
-//! memoria (igual al último guardado confirmado). Las invariantes las valida
-//! el núcleo; aquí no se duplican reglas.
+//! Mutations go through `transact`: validate with the core, persist in
+//! one transaction and publish only after commit. Reads use memory
+//! (equal to the last confirmed save). The core validates the invariants;
+//! no rules duplicated here.
 
 use tauri::State;
 
@@ -16,7 +16,7 @@ use ruth_api::{
 use super::{lock, ready};
 use crate::state::{AppState, AppStateInner};
 
-/// Estado del almacenamiento local para la interfaz.
+/// Local storage state for the UI.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoreStatus {

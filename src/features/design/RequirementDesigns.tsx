@@ -1,6 +1,6 @@
-// Diseños vinculados a un requisito: subpestañas Flujos/Datos, selector
-// cuando hay varios, detalle reutilizado, fuentes completas y marcas de
-// desactualización. Todo deriva del índice de fuentes exactas.
+// Designs linked to a requirement: Flows/Data subtabs, a picker when
+// there are several, the reused detail, complete sources and
+// staleness marks. Everything derives from the exact-source index.
 import { useState } from "react";
 import type { ArtifactMeta } from "../explorer/explorerModel";
 import type { ModuleGraph } from "../explorer/useExplorerData";
@@ -16,14 +16,14 @@ interface RequirementDesignsProps {
   requirementId: string;
   graph: ModuleGraph | null;
   meta: Record<string, ArtifactMeta>;
-  /** Artefactos del módulo: aportan los títulos propios de los diseños. */
+  /** Module artifacts: they provide the designs own titles. */
   designs: ArtifactDto[];
   onOpenDesign: (designId: string) => void;
   onOpenRequirement: (requirementId: string) => void;
   onGenerate: (preselected: string[]) => void;
-  /** Requisito o módulo archivado: vínculos consultables, sin generar. */
+  /** Archived requirement or module: browsable links, no generation. */
   archived: boolean;
-  /** Actualización IA automática del módulo (sesión, desactivada). */
+  /** Module automatic AI update (session, off). */
   moduleName: string;
   autoEnabled: boolean;
   autoStatus: AutoStatus | null;
@@ -58,7 +58,7 @@ export function RequirementDesigns({
       moduleName={moduleName}
       enabled={autoEnabled}
       disabled={archived}
-      disabledTitle="Archivado: restaúralo para automatizar"
+      disabledTitle="Archived: restore it to automate"
       status={autoStatus}
       onToggle={onToggleAuto}
     />
@@ -67,13 +67,13 @@ export function RequirementDesigns({
   const [chosenId, setChosenId] = useState<string | null>(null);
 
   if (graph === null || graph.status === "loading") {
-    return <p className="hint">Calculando diseños vinculados…</p>;
+    return <p className="hint">Computing linked designs…</p>;
   }
   if (graph.status === "error" || graph.index === null) {
     return (
       <p className="error" role="alert">
-        No se pudieron calcular los vínculos: {graph.error ?? "error desconocido."} Expande el
-        requisito en el árbol para reintentar.
+        Could not compute the links: {graph.error ?? "unknown error."} Expand the
+        requirement in the tree to retry.
       </p>
     );
   }
@@ -81,10 +81,10 @@ export function RequirementDesigns({
   if (links.length === 0) {
     return (
       <div>
-        <p className="hint">Este requisito aún no tiene diseños vinculados.</p>
+        <p className="hint">This requirement has no linked designs yet.</p>
         {archived && (
           <p className="notice" role="note">
-            Archivado: restaúralo para generar diseños.
+            Archived: restore it to generate designs.
           </p>
         )}
         <button
@@ -92,16 +92,16 @@ export function RequirementDesigns({
           className="primary"
           onClick={() => onGenerate([requirementId])}
           disabled={archived}
-          title={archived ? "Archivado: restaúralo para generar" : undefined}
+          title={archived ? "Archived: restore it to generate" : undefined}
         >
-          Generar diseño
+          Generate design
         </button>
         {autoToggle}
       </div>
     );
   }
   const flows = links.filter((l) => l.kind === "flow");
-  // Solo modelos ER: los mockups vinculados viven en su propia vista.
+  // ER models only: linked mockups live in their own view.
   const models = links.filter((l) => l.kind === "data_model");
   const activeTab = tab === "flow" && flows.length > 0 ? "flow" : models.length > 0 ? "data_model" : "flow";
   const visible = activeTab === "flow" ? flows : models;
@@ -113,7 +113,7 @@ export function RequirementDesigns({
   return (
     <div className="linked-designs">
       {autoToggle}
-      <div className="center-tabs" role="tablist" aria-label="Diseños vinculados">
+      <div className="center-tabs" role="tablist" aria-label="Linked designs">
         <button
           type="button"
           role="tab"
@@ -122,7 +122,7 @@ export function RequirementDesigns({
           disabled={flows.length === 0}
           onClick={() => setTab("flow")}
         >
-          Flujos ({flows.length})
+          Flows ({flows.length})
         </button>
         <button
           type="button"
@@ -132,41 +132,41 @@ export function RequirementDesigns({
           disabled={models.length === 0}
           onClick={() => setTab("data_model")}
         >
-          Datos ({models.length})
+          Data ({models.length})
         </button>
         <span className="tabs-actions">
           <button type="button" className="secondary small" onClick={() => onGenerate([requirementId])}>
-            Generar diseño
+            Generate design
           </button>
         </span>
       </div>
       {visible.length > 1 && (
         <label className="design-picker">
-          Diagrama relacionado
+          Related diagram
           <select value={chosen.artifactId} onChange={(e) => setChosenId(e.target.value)}>
             {visible.map((l) => (
               <option key={l.artifactId} value={l.artifactId}>
                 {designLabel(designs, meta, l.artifactId)}
-                {l.link === "transitive" ? " (vía " + l.via.join(", ") + ")" : ""}
-                {l.stale ? " · desactualizado" : ""}
+                {l.link === "transitive" ? " (via " + l.via.join(", ") + ")" : ""}
+                {l.stale ? " · stale" : ""}
               </option>
             ))}
           </select>
         </label>
       )}
       <p className="hint">
-        Vínculo {chosen.link === "direct" ? "directo" : `transitivo (vía ${chosen.via.join(", ")})`}
-        {chosen.stale ? " · fija versiones que ya no son actuales" : ""} ·{" "}
+        Link {chosen.link === "direct" ? "direct" : `transitive (via ${chosen.via.join(", ")})`}
+        {chosen.stale ? " · pins versions that are no longer current" : ""} ·{" "}
         <button type="button" className="linklike" onClick={() => onOpenDesign(chosen.artifactId)}>
-          Abrir detalle
+          Open detail
         </button>
       </p>
       {freshness?.stale === true && (
         <p className="notice stale" role="status">
-          Diseño desactualizado: usa{" "}
+          Stale design: uses{" "}
           {freshness.pins
             .filter((p) => p.stale)
-            .map((p) => `${p.versionId} (actual: ${p.currentVersionId})`)
+            .map((p) => `${p.versionId} (current: ${p.currentVersionId})`)
             .join(", ")}
           .
         </p>
@@ -175,8 +175,8 @@ export function RequirementDesigns({
         <DesignDetail detail={detail} viewing={null} onBackToCurrent={() => {}} onValidatedVersion={() => {}} />
       )}
       {freshness !== null && freshness.pins.length > 0 && (
-        <section className="design-sources" aria-label="Fuentes del diseño">
-          <h4>Fuentes completas</h4>
+        <section className="design-sources" aria-label="Design sources">
+          <h4>Complete sources</h4>
           <ul className="pick-list">
             {freshness.pins.map((pin) => (
               <SourceRow
@@ -212,7 +212,7 @@ function SourceRow({
     return (
       <li>
         <span>
-          <code>{pin.versionId}</code> <span className="hint">fuente ajena al módulo cargado</span>
+          <code>{pin.versionId}</code> <span className="hint">source foreign to the loaded module</span>
         </span>
       </li>
     );
@@ -231,11 +231,11 @@ function SourceRow({
         onClick={() =>
           isReq ? onOpenRequirement(pin.artifactId as string) : onOpenDesign(pin.artifactId as string)
         }
-        title={`Abrir ${pin.artifactId}`}
+        title={`Open ${pin.artifactId}`}
       >
         <span>
           <code>{sourceLabel}</code> <code>{pin.versionId}</code>
-          {pin.stale && <span className="stale-badge">antigua (actual: {pin.currentVersionId})</span>}
+          {pin.stale && <span className="stale-badge">old (current: {pin.currentVersionId})</span>}
         </span>
       </button>
     </li>

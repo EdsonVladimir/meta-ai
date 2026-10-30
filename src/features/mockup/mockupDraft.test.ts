@@ -20,12 +20,12 @@ function init(): MockupDraftState {
     allowed: [],
     pins: [],
   });
-  if (state === null) throw new Error("init devolvió null");
+  if (state === null) throw new Error("init returned null");
   return state;
 }
 
-describe("borrador de mockup", () => {
-  it("init con la misma clave conserva el estado", () => {
+describe("mockup draft", () => {
+  it("init with the same key keeps the state", () => {
     const first = init();
     const again = mockupDraftReducer(first, {
       type: "init",
@@ -38,7 +38,7 @@ describe("borrador de mockup", () => {
     expect(again).toBe(first);
   });
 
-  it("editar marca sucio semántico; deshacer lo limpia", () => {
+  it("editing marks semantic dirty; undo clears it", () => {
     let state: MockupDraftState | null = init();
     expect(mockupSemanticDirty(state)).toBe(false);
     state = mockupDraftReducer(state, { type: "apply", spec: EDITED });
@@ -50,7 +50,7 @@ describe("borrador de mockup", () => {
     expect(mockupSemanticDirty(state)).toBe(true);
   });
 
-  it("mover solo ensucia la disposición, nunca la semántica", () => {
+  it("moving dirties only the layout, never the semantics", () => {
     let state: MockupDraftState | null = init();
     state = mockupDraftReducer(state, { type: "move", id: "s1", x: 40, y: 10 });
     expect(mockupLayoutDirty(state)).toBe(true);
@@ -58,19 +58,19 @@ describe("borrador de mockup", () => {
     expect(mockupSpec(state)).toBe(BASE);
   });
 
-  it("redimensionar solo ensucia la disposición", () => {
+  it("resizing dirties only the layout", () => {
     let state: MockupDraftState | null = init();
     state = mockupDraftReducer(state, { type: "resize", id: "s1", w: 200, h: 120 });
     expect(mockupLayoutDirty(state)).toBe(true);
     expect(mockupSemanticDirty(state)).toBe(false);
   });
 
-  it("mover a la misma posición no ensucia", () => {
+  it("moving to the same position does not dirty", () => {
     const state = mockupDraftReducer(init(), { type: "move", id: "s1", x: 0, y: 0 });
     expect(mockupLayoutDirty(state)).toBe(false);
   });
 
-  it("guardar disposición limpia solo lo visual", () => {
+  it("saving layout clears only the visual part", () => {
     let state: MockupDraftState | null = init();
     state = mockupDraftReducer(state, { type: "move", id: "s1", x: 40, y: 10 });
     state = mockupDraftReducer(state, { type: "apply", spec: EDITED });
@@ -80,7 +80,7 @@ describe("borrador de mockup", () => {
     expect(mockupSemanticDirty(state)).toBe(true);
   });
 
-  it("el resultado tardío no limpia lo editado durante el guardado", () => {
+  it("a late result does not clear edits made during the save", () => {
     const fresh = init();
     expect(
       mockupDraftReducer(fresh, {
@@ -102,22 +102,22 @@ describe("borrador de mockup", () => {
     expect(mockupSemanticDirty(kept)).toBe(true);
   });
 
-  it("renombrar reasigna la disposición sin ensuciar la semántica", () => {
+  it("renaming reassigns the layout without dirtying semantics", () => {
     let state: MockupDraftState | null = init();
     state = mockupDraftReducer(state, { type: "move", id: "s1", x: 40, y: 10 });
     state = mockupDraftReducer(state, { type: "remap", oldId: "s1", newId: "s2" });
-    if (state === null) throw new Error("remap devolvió null");
+    if (state === null) throw new Error("remap returned null");
     expect(state.layout["s2"]).toEqual({ x: 40, y: 10 });
     expect(state.layout["s1"]).toBeUndefined();
     expect(mockupSemanticDirty(state)).toBe(false);
   });
 
-  it("cambiar de selección limpia el borrador", () => {
+  it("changing selection clears the draft", () => {
     const state = mockupDraftReducer(init(), { type: "reset" });
     expect(state).toBeNull();
   });
 
-  it("pide confirmación al abandonar con cambios, no al quedarse", () => {
+  it("asks for confirmation when leaving with changes, not when staying", () => {
     const clean = init();
     expect(needsMockupConfirm(clean, "m1", "m2")).toBe(false);
     expect(needsMockupConfirm(null, "m1", "m2")).toBe(false);

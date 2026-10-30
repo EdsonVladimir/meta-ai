@@ -1,57 +1,76 @@
-//! Adaptador SQLite del núcleo: persistencia local fiable.
+//! SQLite adapter for the core: reliable local persistence.
 //!
-//! # Contrato mínimo
+//! # Minimal contract
 //!
-//! - La unidad de persistencia es la instantánea completa del `Store` más el
-//!   contador de identificadores. Cada mutación valida con el núcleo sobre
-//!   una copia, guarda la copia en una transacción y solo entonces la publica
-//!   en memoria. Si algo falla, memoria y disco conservan la versión anterior
-//!   y nunca se informa éxito antes de confirmar el guardado.
-//! - Las identidades, números, fuentes, aprobaciones y fechas se conservan
-//!   verbatim: jamás se regeneran al cargar o guardar.
-//! - La carga reconstruye con `Store::reconstitute`, que revalida las
-//!   invariantes. Datos inválidos, corrupción o esquema futuro se rechazan
-//!   sin escribir nada.
-//! - Las lecturas usan la memoria (igual al último commit confirmado).
-//! - Solo vive aquí el estado del dominio. No se guardan claves de API,
-//!   borradores, selecciones de interfaz ni credenciales.
+//! - The persistence unit is the complete `Store` snapshot plus the
+//!   identifier counter. Each mutation validates with the core over a
+//!   copy, saves the copy in a transaction and only then publishes it
+//!   in memory. On failure, memory and disk keep the previous version
+//!   and success is never reported before the save commits.
+//! - Identities, numbers, sources, approvals and dates are preserved
+//!   verbatim: never regenerated on load or save.
+//! - Loading rebuilds with `Store::reconstitute`, which revalidates
+//!   the invariants. Invalid data, corruption or a future schema
+//!   reject without writing anything.
+//! - Reads use memory (equal to the last confirmed commit).
+//! - Only domain state lives here. No API keys, drafts, UI selections
+//!   or credentials are stored.
 //!
-//! Las generaciones asistidas (hito 5) conviven en las mismas tablas de
-//! versión 2 con operaciones propias: registrar, aceptar (dominio + estado
-//! en una sola transacción) y descartar. `save` no las toca.
+//! Assisted generations (milestone 5) share the same version-2 tables
+//! with their own operations: register, accept (domain + state in a
+//! single transaction) and discard. `save` does not touch them.
 //!
-//! # Costo y límites
+//! # Cost and limits
 //!
-//! Cada mutación reescribe la base entera: costo O(tamaño) por guardado.
-//! Es deliberado (simplicidad y atomicidad obvia) y sobra para cientos de
-//! versiones; si crece, el siguiente paso es escritura incremental por
-//! entidad sin cambiar el contrato.
+//! Each mutation rewrites the whole database: O(size) cost per save.
+//! It is deliberate (simplicity and obvious atomicity) and plenty for
+//! hundreds of versions; on growth, the next step is incremental
+//! per-entity writing without changing the contract.
 //!
-//! # Concurrencia
+//! # Concurrency
 //!
-//! - Una única conexión SQLite vive en un hilo dedicado ([`DbActor`], `Send`
-//!   tras un `Mutex`); todo acceso SQL pasa por él, fuera del hilo de interfaz.
-//! - En proceso, un `Mutex` serializa los comandos; en disco, transacciones
-//!   `IMMEDIATE` con `busy_timeout=0` fallan rápido ante contención.
-//! - Segunda instancia: el actor toma un bloqueo `EXCLUSIVE` persistente al
-//!   abrir. Otro proceso que intente abrir falla con [`StoreError::Locked`]
-//!   y un mensaje claro. No se soportan dos instancias a la vez.
+//! - A single SQLite connection lives on a dedicated thread ([`DbActor`],
+//!   `Send` behind a `Mutex`); every SQL access goes through it, off the UI thread.
+//! - In process, a `Mutex` serializes commands; on disk, `IMMEDIATE`
+//!   transactions with `busy_timeout=0` fail fast under contention.
+//! - Second instance: the actor takes a persistent `EXCLUSIVE` lock on
+//!   open. Another process attempting to open fails with
+//!   [`StoreError::Locked`] and a clear message. Two instances at once
+//!   are not supported.
 
 mod actor;
 pub mod baseline_meta;
+pub mod code_links;
+pub mod code_roots;
+pub mod codegen;
 pub mod design;
 mod error;
 pub mod layout;
+pub mod mockups;
 mod persist;
 pub mod proposals;
+pub mod recents;
 mod schema;
+pub mod snapshots;
 
 pub use actor::{DbActor, Loaded};
 pub use baseline_meta::{
     BaselineMeta, BaselineMetaLog, MAX_BASELINE_DESCRIPTION_CHARS, MAX_BASELINE_NAME_CHARS,
 };
+pub use code_links::{CodeLinkLog, LinkKind, LinkScope, StoredCodeLink, SymbolRef};
+pub use code_roots::CodeRootLog;
+pub use codegen::{
+    CodeFileState, CodeGenLog, CodeScopeEntry, ScreenSourceRef, StoredCodeGeneration,
+    StoredProposalFile,
+};
 pub use design::{DesignLog, StoredDesignGeneration, StoredDesignProposal};
 pub use error::StoreError;
 pub use layout::LayoutLog;
+pub use mockups::{MockupLog, StoredMockupGeneration, StoredMockupProposal};
 pub use proposals::{ProposalLog, ProposalState, StoredGeneration, StoredProposal};
+pub use recents::{RecentLog, StoredRecent, MAX_RECENT_WORKSPACES};
 pub use schema::SCHEMA_VERSION;
+pub use snapshots::{
+    SnapshotFile, SnapshotLog, StoredSnapshot, MAX_RESULT_BYTES, MAX_SNAPSHOT_FILES,
+    MAX_SNAPSHOT_NAME_CHARS,
+};

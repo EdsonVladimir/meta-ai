@@ -17,7 +17,7 @@ async function toggleMaximizeWindow(): Promise<void> {
   await getCurrentWindow().toggleMaximize();
 }
 
-/** Cierre por el flujo existente: dispara CloseRequested (terminales). */
+/** Close through the existing flow: fires CloseRequested (terminals). */
 function requestWindowClose(): void {
   if (!isTauriEnvironment()) return;
   void getCurrentWindow().close().catch(() => {});
@@ -34,7 +34,7 @@ export function App() {
   const docStatus = useRequirementsUi((s) => s.docStatus);
   const saveAllResult = useRequirementsUi((s) => s.saveAllResult);
 
-  // Tras un Guardar-todo con éxito, cada puerta sigue su camino.
+  // After a successful Save-all, each gate continues on its way.
   useEffect(() => {
     if (saveAllResult === null || !saveAllResult.ok) return;
     if (exportGate) {
@@ -59,8 +59,8 @@ export function App() {
   }
 
   function requestClose() {
-    // Con borradores se avisa y se puede cancelar; sin ellos, directo al
-    // flujo existente (que aún puede frenar por terminales activas).
+    // With drafts, warn and allow cancel; without them, straight to the
+    // existing flow (which may still stop for active terminals).
     if (dirtyDocKeys(docStatus).length > 0) {
       useRequirementsUi.getState().resolveSaveAll(null);
       setCloseGate(true);
@@ -86,9 +86,9 @@ export function App() {
             className="export-button"
             onClick={requestExport}
             disabled={!projectId}
-            title={projectId ? "Preparar entregas y exportar" : "Elige un proyecto primero"}
+            title={projectId ? "Prepare deliveries and export" : "Choose a project first"}
             aria-label={
-              projectId ? "Exportar: preparar entregas" : "Exportar (elige un proyecto primero)"
+              projectId ? "Export: prepare deliveries" : "Export (choose a project first)"
             }
           >
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -108,7 +108,7 @@ export function App() {
                 strokeLinecap="round"
               />
             </svg>
-            Exportar
+            Export
           </button>
           <div className="menu-wrap">
             <button
@@ -116,13 +116,13 @@ export function App() {
               className="menu-button"
               onClick={() => setMenuOpen((open) => !open)}
               aria-expanded={menuOpen}
-              aria-label="Más opciones"
-              title="Más opciones"
+              aria-label="More options"
+              title="More options"
             >
               ⋯
             </button>
             {menuOpen && (
-              <div className="menu-popover" role="menu" aria-label="Más opciones">
+              <div className="menu-popover" role="menu" aria-label="More options">
                 <button
                   type="button"
                   role="menuitem"
@@ -131,7 +131,7 @@ export function App() {
                     setShowConnection((shown) => !shown);
                   }}
                 >
-                  Conexión con Meta
+                  Meta connection
                 </button>
               </div>
             )}
@@ -139,13 +139,13 @@ export function App() {
           {showConnection && (
             <div className="conn-popover">
               <div className="panel-head conn-head">
-                <h2>Conexión con Meta</h2>
+                <h2>Meta connection</h2>
                 <button
                   type="button"
                   className="secondary small"
                   onClick={() => setShowConnection(false)}
                 >
-                  Cerrar
+                  Close
                 </button>
               </div>
               <ConnectionPanel />
@@ -202,21 +202,22 @@ export function App() {
   );
 }
 
-/** Estado del documento activo + contador de otros con borrador. */
+/** Active document status + count of others with drafts. */
 function SaveStatus() {
   const selection = useRequirementsUi((s) => s.selection);
   const centerView = useRequirementsUi((s) => s.centerView);
+  const centerDoc = useRequirementsUi((s) => s.centerDoc);
   const docStatus = useRequirementsUi((s) => s.docStatus);
   const lastSave = useRequirementsUi((s) => s.lastSave);
-  const activeKey = activeDocKey(selection, centerView);
+  const activeKey = activeDocKey(selection, centerView, centerDoc);
   const { state, othersDirty, error } = headerSave(docStatus, activeKey);
 
   if (state === "none") {
     return (
       <span className="save-status hint" role="status">
-        Sin documento
+        No document
         {othersDirty > 0 && (
-          <span className="save-others"> · {othersDirty} con cambios</span>
+          <span className="save-others"> · {othersDirty} with changes</span>
         )}
       </span>
     );
@@ -224,29 +225,29 @@ function SaveStatus() {
   return (
     <span className="save-status" role="status">
       {state === "dirty" && (
-        <span className="save-state warn" title="Hay cambios sin guardar en este documento">
-          <span aria-hidden="true">●</span> Cambios sin guardar
+        <span className="save-state warn" title="This document has unsaved changes">
+          <span aria-hidden="true">●</span> Unsaved changes
         </span>
       )}
-      {state === "saving" && <span className="save-state">Guardando…</span>}
+      {state === "saving" && <span className="save-state">Saving…</span>}
       {state === "saved" && (
         <span
           className="save-state ok-text"
           title={lastSave ? new Date(lastSave.at).toLocaleTimeString() : undefined}
         >
-          Guardado
+          Saved
         </span>
       )}
       {state === "error" && (
         <span className="save-state error-text">
-          Error al guardar
+          Save failed
           <button
             type="button"
             className="secondary small"
             onClick={() => useRequirementsUi.getState().requestSave()}
-            title={error ?? "Reintentar el guardado"}
+            title={error ?? "Retry saving"}
           >
-            Reintentar
+            Retry
           </button>
         </span>
       )}
@@ -254,13 +255,13 @@ function SaveStatus() {
         type="button"
         className="secondary small"
         onClick={() => useRequirementsUi.getState().requestSave()}
-        title="Guardar el editor activo (Ctrl+S)"
+        title="Save the active editor (Ctrl+S)"
       >
-        Guardar
+        Save
       </button>
       {othersDirty > 0 && (
-        <span className="save-others" title="Otros documentos con cambios sin guardar">
-          · {othersDirty} {othersDirty === 1 ? "documento" : "documentos"} con cambios
+        <span className="save-others" title="Other documents with unsaved changes">
+          · {othersDirty} {othersDirty === 1 ? "document" : "documents"} with changes
         </span>
       )}
     </span>
@@ -268,9 +269,9 @@ function SaveStatus() {
 }
 
 /**
- * Puerta de exportación con borradores: el paquete solo incluye versiones
- * persistidas. Guardar-todo y continuar, exportar lo guardado o cancelar;
- * nunca descarta ediciones ni afirma lo contrario.
+ * Export gate with drafts: the package only includes persisted versions.
+ * Save-all and continue, export what's saved, or cancel; it never
+ * discards edits nor claims otherwise.
  */
 function ExportGateDialog({
   dirtyLabels,
@@ -296,13 +297,13 @@ function ExportGateDialog({
         className="modal"
         role="alertdialog"
         aria-modal="true"
-        aria-label="Exportar con cambios sin guardar"
+        aria-label="Export with unsaved changes"
         onClick={(event) => event.stopPropagation()}
       >
-        <h3>Cambios sin guardar</h3>
+        <h3>Unsaved changes</h3>
         <p>
-          El paquete solo incluye versiones persistidas. Estos documentos tienen borrador y{" "}
-          <strong>no</strong> entrarían tal cual:
+          The package only includes persisted versions. These documents have drafts and would{" "}
+          <strong>not</strong> be included as-is:
         </p>
         <ul>
           {dirtyLabels.map((label) => (
@@ -324,13 +325,13 @@ function ExportGateDialog({
               onSaveAll();
             }}
           >
-            {waiting ? "Guardando…" : "Guardar todo y continuar"}
+            {waiting ? "Saving…" : "Save all and continue"}
           </button>
           <button type="button" className="secondary" onClick={onExportSaved}>
-            Exportar lo guardado
+            Export saved work
           </button>
           <button type="button" className="secondary" onClick={onCancel} autoFocus>
-            Cancelar
+            Cancel
           </button>
         </div>
       </div>
@@ -339,9 +340,9 @@ function ExportGateDialog({
 }
 
 /**
- * Puerta de cierre con borradores: guardar todo y cerrar, cerrar sin
- * guardar (explícito, con la lista delante) o cancelar. Tras ella, el
- * cierre sigue por el flujo existente (terminales).
+ * Close gate with drafts: save all and close, close without saving
+ * (explicit, with the list shown), or cancel. Afterwards closing
+ * continues through the existing flow (terminals).
  */
 function CloseGateDialog({
   dirtyLabels,
@@ -367,11 +368,11 @@ function CloseGateDialog({
         className="modal"
         role="alertdialog"
         aria-modal="true"
-        aria-label="Cerrar con cambios sin guardar"
+        aria-label="Close with unsaved changes"
         onClick={(event) => event.stopPropagation()}
       >
-        <h3>Cambios sin guardar</h3>
-        <p>Estos documentos perderían su borrador al cerrar:</p>
+        <h3>Unsaved changes</h3>
+        <p>These documents would lose their draft on close:</p>
         <ul>
           {dirtyLabels.map((label) => (
             <li key={label}>{label}</li>
@@ -392,13 +393,13 @@ function CloseGateDialog({
               onSaveAll();
             }}
           >
-            {waiting ? "Guardando…" : "Guardar todo y cerrar"}
+            {waiting ? "Saving…" : "Save all and close"}
           </button>
           <button type="button" className="danger" onClick={onDiscard}>
-            Cerrar sin guardar
+            Close without saving
           </button>
           <button type="button" className="secondary" onClick={onCancel} autoFocus>
-            Cancelar
+            Cancel
           </button>
         </div>
       </div>
@@ -414,17 +415,17 @@ function Breadcrumb() {
   return (
     <nav
       className="breadcrumb"
-      aria-label="Ubicación"
+      aria-label="Location"
       data-tauri-drag-region
       onDoubleClick={() => void toggleMaximizeWindow()}
-      title="Arrastra para mover · doble clic para maximizar"
+      title="Drag to move · double-click to maximize"
     >
       {projectId ? (
         <span title={projectName && projectName !== projectId ? `${projectName} — ${projectId}` : projectId}>
           {projectName ?? projectId}
         </span>
       ) : (
-        <span className="hint">Sin proyecto</span>
+        <span className="hint">No project</span>
       )}
       {moduleId && (
         <>

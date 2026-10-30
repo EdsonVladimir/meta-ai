@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 ruth-core = { path = "../core" }
+ruth-code = { path = "../code" }
 ruth-meta = { path = "../meta" }
 ruth-store = { path = "../store" }
 serde = { version = "1", features = ["derive"] }

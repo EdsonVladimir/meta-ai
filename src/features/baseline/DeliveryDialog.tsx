@@ -1,7 +1,7 @@
-// Paneles de entrega de trabajo (borrador): preparar desde versiones guardadas
-// sin exigir aprobación, crear con una acción humana explícita y exportar a ZIP.
-// Las baselines históricas siguen intactas; aquí jamás se dice “coherente” ni
-// “verificado”: la UI muestra pendientes, sin revisión y fuentes obsoletas.
+// Work delivery panels (draft): prepare from saved versions without requiring
+// approval, create with an explicit human action, and export to ZIP.
+// Historical baselines stay intact; here “coherent” and “verified” are never
+// said: the UI shows pending items, unreviewed versions and stale sources.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listArtifacts } from "../design/client";
 import { listModules } from "../requirements/client";
@@ -152,11 +152,11 @@ export function DeliveryPreparePane({
   return (
     <div className="baseline-prepare">
       <p className="hint">
-        Borrador desde lo guardado: no exige revisión. Los pendientes se muestran, no se ocultan.
+        Draft from saved work: requires no review. Pending items show, never hide.
       </p>
       <div className="baseline-row">
         <label>
-          Módulo del alcance
+          Scope module
           <select value={scope} onChange={(e) => setScope(e.target.value)} disabled={busy !== null}>
             {modules.map((m) => (
               <option key={m.id} value={m.id}>
@@ -167,8 +167,8 @@ export function DeliveryPreparePane({
         </label>
       </div>
       <fieldset className="baseline-checklist">
-        <legend>Artefactos del módulo ({selected.length} elegidos)</legend>
-        {busy === "loading" && <p className="hint">Cargando artefactos…</p>}
+        <legend>Module artifacts ({selected.length} picked)</legend>
+        {busy === "loading" && <p className="hint">Loading artifacts…</p>}
         {artifacts.map((a) => (
           <label key={a.id} className="check" title={a.title ?? a.id}>
             <input
@@ -182,11 +182,11 @@ export function DeliveryPreparePane({
             <span className="hint">{kindLabel(a.kind)}</span>
           </label>
         ))}
-        {artifacts.length === 0 && busy === null && <p className="hint">Sin artefactos en este módulo.</p>}
+        {artifacts.length === 0 && busy === null && <p className="hint">No artifacts in this module.</p>}
       </fieldset>
       <div className="modal-actions">
         <button type="button" onClick={runPrepare} disabled={busy !== null || selected.length === 0}>
-          {busy === "preparing" ? "Preparando…" : "Vista previa"}
+          {busy === "preparing" ? "Preparing…" : "Preview"}
         </button>
       </div>
       {error && (
@@ -196,7 +196,7 @@ export function DeliveryPreparePane({
             <>
               {" "}
               <button type="button" className="ghost" onClick={runPrepare}>
-                Volver a preparar
+                Prepare again
               </button>
             </>
           )}
@@ -205,20 +205,20 @@ export function DeliveryPreparePane({
       {preview && (
         <div className="baseline-preview">
           <h4>
-            Entrega de trabajo ({preview.entries.length} versiones)
+            Work delivery ({preview.entries.length} versions)
           </h4>
           <p className="hint">
-            Sin revisar: {preview.unreviewedCount} · con fuentes obsoletas: {preview.staleCount}
+            Unreviewed: {preview.unreviewedCount} · with stale sources: {preview.staleCount}
           </p>
           <table className="baseline-table">
             <thead>
               <tr>
-                <th>Artefacto</th>
-                <th>Tipo</th>
-                <th>Versión</th>
-                <th>Revisión</th>
-                <th>Origen</th>
-                <th>Fuentes</th>
+                <th>Artifact</th>
+                <th>Kind</th>
+                <th>Version</th>
+                <th>Review</th>
+                <th>Origin</th>
+                <th>Sources</th>
               </tr>
             </thead>
             <tbody>
@@ -234,15 +234,15 @@ export function DeliveryPreparePane({
                   <td>
                     <code>{e.versionId}</code>
                   </td>
-                  <td>{e.approvedBy ? `${e.approvedBy} (${e.approvedAt})` : "sin revisar"}</td>
-                  <td>{e.provenance.kind === "human" ? `humana (${e.provenance.by})` : `IA (${e.provenance.by})`}</td>
+                  <td>{e.approvedBy ? `${e.approvedBy} (${e.approvedAt})` : "unreviewed"}</td>
+                  <td>{e.provenance.kind === "human" ? `human (${e.provenance.by})` : `AI (${e.provenance.by})`}</td>
                   <td>
                     {e.staleSources.length > 0 ? (
                       <span className="pill warn" title={e.staleSources.join(", ")}>
-                        obsoletas
+                        stale
                       </span>
                     ) : (
-                      "al día"
+                      "current"
                     )}
                   </td>
                 </tr>
@@ -260,7 +260,7 @@ export function DeliveryPreparePane({
           )}
           {(preview.outOfScope.artifacts.length > 0 || preview.outOfScope.modules.length > 0) && (
             <p className="hint">
-              Fuera del alcance:{" "}
+              Out of scope:{" "}
               {[
                 ...preview.outOfScope.artifacts,
                 ...preview.outOfScope.modules.flatMap((m) => m.artifacts),
@@ -269,18 +269,18 @@ export function DeliveryPreparePane({
           )}
           <div className="baseline-row">
             <label>
-              Nombre de la entrega
+              Delivery name
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="p. ej. Borrador ventas 1"
+                placeholder="e.g. Sales draft 1"
                 maxLength={120}
                 disabled={busy !== null}
               />
             </label>
             <label>
-              Descripción (opcional)
+              Description (optional)
               <input
                 type="text"
                 value={description}
@@ -297,9 +297,9 @@ export function DeliveryPreparePane({
               onClick={runCreate}
               disabled={busy !== null || !preview.canCreate || !name.trim()}
             >
-              {busy === "creating" ? "Creando…" : "Crear entrega"}
+              {busy === "creating" ? "Creating…" : "Create delivery"}
             </button>
-            {!preview.canCreate && <span className="hint">Resuelve los bloqueos para crearla.</span>}
+            {!preview.canCreate && <span className="hint">Resolve the blockers to create it.</span>}
           </div>
         </div>
       )}
@@ -340,7 +340,7 @@ export function DeliveriesPane({
           if (focus) {
             setSelectedId(focus);
             setNotice(
-              "Entrega creada. Aún no se ha guardado ningún ZIP: elígela y usa «Guardar ZIP».",
+              "Delivery created. No ZIP saved yet: pick it and use \u201cSave ZIP\u201d.",
             );
           }
         })
@@ -446,7 +446,7 @@ export function DeliveriesPane({
       setError(errorText(err));
       return;
     }
-    if (dest === null) return; // Cancelar no escribe ni informa éxito.
+    if (dest === null) return; // Cancelling writes nothing and reports no success.
     saveTo(dest, false);
   }
 
@@ -464,7 +464,7 @@ export function DeliveriesPane({
       )}
       <div className="baseline-columns">
         <ul className="baseline-items">
-          {busy === "loading" && <li className="hint">Cargando entregas…</li>}
+          {busy === "loading" && <li className="hint">Loading deliveries…</li>}
           {list.map((d) => (
             <li key={d.id}>
               <button
@@ -478,18 +478,18 @@ export function DeliveriesPane({
                 <strong>{d.name}</strong>
                 <code>{d.id}</code>
                 <span className="hint">
-                  {d.entryCount} versiones · sin revisar {d.unreviewedCount} · obsoletas{" "}
+                  {d.entryCount} versions · unreviewed {d.unreviewedCount} · stale{" "}
                   {d.staleCount} · {d.at}
                 </span>
-                {d.advanced && <span className="pill warn">el proyecto avanzó</span>}
+                {d.advanced && <span className="pill warn">the project moved on</span>}
               </button>
             </li>
           ))}
-          {list.length === 0 && busy === null && <li className="hint">Aún no hay entregas.</li>}
+          {list.length === 0 && busy === null && <li className="hint">No deliveries yet.</li>}
         </ul>
         <div className="baseline-detail">
-          {!detail && busy !== "detail" && <p className="hint">Elige una entrega para verla.</p>}
-          {busy === "detail" && <p className="hint">Cargando detalle…</p>}
+          {!detail && busy !== "detail" && <p className="hint">Pick a delivery to see it.</p>}
+          {busy === "detail" && <p className="hint">Loading detail…</p>}
           {detail && (
             <>
               <h4>
@@ -497,18 +497,18 @@ export function DeliveriesPane({
               </h4>
               {detail.description && <p>{detail.description}</p>}
               <p className="hint">
-                Borrador de trabajo · {detail.at} ·{" "}
-                {detail.scopeModuleId ? `módulo ${detail.scopeModuleId}` : "selección manual"} ·{" "}
-                {detail.entries.length} versiones
+                Work draft · {detail.at} ·{" "}
+                {detail.scopeModuleId ? `module ${detail.scopeModuleId}` : "manual selection"} ·{" "}
+                {detail.entries.length} versions
               </p>
               <table className="baseline-table">
                 <thead>
                   <tr>
-                    <th>Artefacto</th>
-                    <th>Tipo</th>
-                    <th>Versión</th>
-                    <th>Revisión</th>
-                    <th>Fuentes</th>
+                    <th>Artifact</th>
+                    <th>Kind</th>
+                    <th>Version</th>
+                    <th>Review</th>
+                    <th>Sources</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -518,12 +518,12 @@ export function DeliveriesPane({
                         {e.title ?? <code>{e.artifact.id}</code>}
                         {e.title !== null && e.title !== "" && <code>{e.artifact.id}</code>}{" "}
                         {e.title !== null && e.title !== "" && (
-                          <span className="hint">(fijado en la entrega)</span>
+                          <span className="hint">(pinned in the delivery)</span>
                         )}
                         {e.title !== e.artifact.title &&
                           e.artifact.title !== null &&
                           e.artifact.title !== "" && (
-                            <span className="hint"> · hoy: {e.artifact.title}</span>
+                            <span className="hint"> · today: {e.artifact.title}</span>
                           )}
                       </td>
                       <td>{kindLabel(e.kind)}</td>
@@ -533,15 +533,15 @@ export function DeliveriesPane({
                       <td>
                         {e.approvals.length > 0
                           ? e.approvals.map((a) => `${a.approvedBy} (${a.at})`).join("; ")
-                          : "sin revisar"}
+                          : "unreviewed"}
                       </td>
                       <td>
                         {e.staleSources.length > 0 ? (
                           <span className="pill warn" title={e.staleSources.join(", ")}>
-                            obsoletas
+                            stale
                           </span>
                         ) : (
-                          "al día"
+                          "current"
                         )}
                       </td>
                     </tr>
@@ -550,28 +550,28 @@ export function DeliveriesPane({
               </table>
               <div className="modal-actions">
                 <button type="button" onClick={runPreview} disabled={busy !== null}>
-                  {busy === "preview" ? "Preparando…" : "Vista previa del ZIP"}
+                  {busy === "preview" ? "Preparing…" : "ZIP preview"}
                 </button>
                 <button
                   type="button"
                   className="primary"
                   onClick={runSave}
                   disabled={busy !== null || zip === null}
-                  title={zip === null ? "Primero mira la vista previa del paquete" : undefined}
+                  title={zip === null ? "Look at the package preview first" : undefined}
                 >
-                  {busy === "saving" ? "Guardando…" : "Guardar ZIP"}
+                  {busy === "saving" ? "Saving…" : "Save ZIP"}
                 </button>
               </div>
               {zip && (
                 <div className="baseline-preview">
                   <h4>
-                    Paquete ({zip.files.length} archivos, {formatBytes(zip.totalBytes)})
+                    Package ({zip.files.length} files, {formatBytes(zip.totalBytes)})
                   </h4>
                   <table className="baseline-table">
                     <thead>
                       <tr>
-                        <th>Archivo</th>
-                        <th>Tamaño</th>
+                        <th>File</th>
+                        <th>Size</th>
                         <th>SHA-256</th>
                       </tr>
                     </thead>
@@ -590,14 +590,14 @@ export function DeliveriesPane({
                     </tbody>
                   </table>
                   <p className="hint">
-                    Los hashes verifican integridad; no son una firma digital.
+                    Hashes verify integrity; they are not a digital signature.
                   </p>
                 </div>
               )}
               {pendingPath && (
                 <div className="baseline-confirm" role="alert">
                   <p>
-                    Ya existe <code>{pendingPath}</code>. ¿Reemplazarlo?
+                    <code>{pendingPath}</code> already exists. Replace it?
                   </p>
                   <div className="modal-actions">
                     <button
@@ -606,17 +606,17 @@ export function DeliveriesPane({
                       onClick={() => saveTo(pendingPath, true)}
                       disabled={busy !== null}
                     >
-                      Reemplazar
+                      Replace
                     </button>
                     <button type="button" className="ghost" onClick={() => setPendingPath(null)}>
-                      Cancelar
+                      Cancel
                     </button>
                   </div>
                 </div>
               )}
               {saved && (
                 <p className="notice" role="status">
-                  ZIP guardado en <code>{saved.path}</code> ({formatBytes(saved.bytes)}). SHA-256:{" "}
+                  ZIP saved to <code>{saved.path}</code> ({formatBytes(saved.bytes)}). SHA-256:{" "}
                   <code>{saved.sha256}</code>
                 </p>
               )}
@@ -632,7 +632,7 @@ function errorText(err: unknown): string {
   if (typeof err === "object" && err !== null && "message" in err) {
     return String((err as { message: unknown }).message);
   }
-  return "Error inesperado.";
+  return "Unexpected error.";
 }
 
 function errorKind(err: unknown): string {

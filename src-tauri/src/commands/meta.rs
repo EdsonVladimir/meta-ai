@@ -1,21 +1,21 @@
-//! Comandos Tauri de Meta (hito 1, sin cambios).
+//! Meta Tauri commands (milestone 1, unchanged).
 //!
-//! - `meta_status`: lectura local del entorno (¿hay clave? ¿qué modelo?).
-//!   No hace red y puede llamarse al mostrar la interfaz.
-//! - `test_meta_connection`: la única llamada real a Meta. Requiere gesto
-//!   explícito del botón, permite una sola prueba simultánea y no reintenta.
+//! - `meta_status`: local environment read (key present? which model?).
+//!   No network; may be called when showing the UI.
+//! - `test_meta_connection`: the only real Meta call. Requires an
+//!   explicit button gesture, allows a single simultaneous test and never retries.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::State;
 
-/// Candado gestionado por Tauri para permitir una sola prueba simultánea.
+/// Tauri-managed lock allowing a single simultaneous test.
 #[derive(Default)]
 pub struct TestLock {
     busy: AtomicBool,
 }
 
-/// Estado local serializable. La clave nunca sale del proceso nativo.
+/// Serializable local state. The key never leaves the native process.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MetaStatus {

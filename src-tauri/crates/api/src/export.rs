@@ -1,10 +1,10 @@
-//! Exportación reproducible de baselines: el paquete de archivos y el ZIP
-//! determinista se construyen exclusivamente desde la baseline indicada,
-//! nunca desde las versiones actuales (`latest`). Para la misma baseline y
-//! la misma versión del exportador, el contenido es idéntico.
+//! Reproducible baseline export: the file package and the deterministic
+//! ZIP build exclusively from the given baseline, never from the current
+//! (`latest`) versions. For the same baseline and the same exporter
+//! version, the content is identical.
 //!
-//! No exporta claves, bases SQLite, historiales de chat, respuestas crudas
-//! de API, propuestas descartadas ni artefactos fuera de la baseline.
+//! It exports no keys, SQLite databases, chat histories, raw API
+//! responses, discarded proposals or off-baseline artifacts.
 
 use std::io::Write;
 
@@ -21,11 +21,11 @@ use crate::dto::{
 };
 use crate::error::ApiError;
 
-/// Versión del formato de exportación. Si cambia, los ZIP anteriores ya no
-/// son comparables binariamente con los nuevos.
+/// Export format version. On change, older ZIPs are no longer
+/// binary-comparable with new ones.
 pub const EXPORTER_VERSION: u32 = 1;
 pub const EXPORT_FORMAT: &str = "ruth-baseline-export";
-/// Límites razonables: una entrega mayor debe dividirse en baselines.
+/// Reasonable limits: a larger delivery must split into baselines.
 pub const MAX_EXPORT_ARTIFACTS: usize = 500;
 pub const MAX_EXPORT_FILE_BYTES: usize = 1024 * 1024;
 pub const MAX_EXPORT_TOTAL_BYTES: usize = 16 * 1024 * 1024;
@@ -37,14 +37,14 @@ fn sha256_hex(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(digest.len() * 2);
     for byte in digest {
         use std::fmt::Write as _;
-        write!(out, "{byte:02x}").expect("hex en memoria");
+        write!(out, "{byte:02x}").expect("in-memory hex");
     }
     out
 }
 
-/// Nombre de archivo derivado del ID, nunca de títulos libres: conserva
-/// letras, dígitos, `-` y `_`; lo demás se vuelve `_`. Sin barras ni
-/// secuencias de escape posibles.
+/// File name derived from the ID, never from free titles: keeps
+/// letters, digits, `-` and `_`; anything else becomes `_`. No slashes
+/// or escape sequences possible.
 fn safe_stem(id: &str) -> String {
     let mut stem: String = id
         .chars()
@@ -71,11 +71,11 @@ fn design_kind(kind: ArtifactType) -> Option<DesignKind> {
     }
 }
 
-/// Entrada de la baseline o entrega resuelta contra el dominio. Todo
-/// sale de la versión exacta fijada, no de la actual; el título es el
-/// fijado al crear, nunca el vigente (`latest`). `stale_sources` identifica
-/// fuentes que ya no son actuales (las entregas de trabajo lo muestran;
-/// las baselines aprobadas lo ignoran para conservar sus bytes).
+/// Baseline or delivery entry resolved against the domain. Everything
+/// comes from the exact pinned version, not the current one; the title
+/// is the pinned-at-creation one, never the current (`latest`).
+/// `stale_sources` identifies sources that are no longer current (work
+/// deliveries show them; approved baselines ignore them to keep their bytes).
 struct Entry {
     artifact_id: String,
     kind: ArtifactType,
@@ -104,20 +104,20 @@ fn resolve_entries(
     let Some(baseline) = store.baseline(id) else {
         return Err(ApiError::coded(
             "baseline_not_found",
-            format!("No existe la baseline {baseline_id}."),
+            format!("Baseline {baseline_id} does not exist."),
         ));
     };
     if baseline.project() != project {
         return Err(ApiError::coded(
             "baseline_not_found",
-            format!("La baseline {baseline_id} no es de este proyecto."),
+            format!("Baseline {baseline_id} does not belong to this project."),
         ));
     }
     if baseline.entries().len() > MAX_EXPORT_ARTIFACTS {
         return Err(ApiError::coded(
             "export_too_large",
             format!(
-                "La baseline tiene {} artefactos; el máximo exportable es {}.",
+                "The baseline holds {} artifacts; the exportable maximum is {}.",
                 baseline.entries().len(),
                 MAX_EXPORT_ARTIFACTS
             ),
@@ -128,7 +128,7 @@ fn resolve_entries(
         baseline.entries(),
         &|artifact| baseline.title_of(artifact).flatten().map(str::to_string),
         "baseline_dangling",
-        "La baseline",
+        "The baseline",
     )?;
     Ok((
         baseline.id().as_str().to_string(),
@@ -146,20 +146,20 @@ fn resolve_delivery_entries(
     let Some(delivery) = store.delivery(id) else {
         return Err(ApiError::coded(
             "delivery_not_found",
-            format!("No existe la entrega {delivery_id}."),
+            format!("Delivery {delivery_id} does not exist."),
         ));
     };
     if delivery.project() != project {
         return Err(ApiError::coded(
             "delivery_not_found",
-            format!("La entrega {delivery_id} no es de este proyecto."),
+            format!("Delivery {delivery_id} does not belong to this project."),
         ));
     }
     if delivery.entries().len() > MAX_EXPORT_ARTIFACTS {
         return Err(ApiError::coded(
             "export_too_large",
             format!(
-                "La entrega tiene {} artefactos; el máximo exportable es {}.",
+                "The delivery holds {} artifacts; the exportable maximum is {}.",
                 delivery.entries().len(),
                 MAX_EXPORT_ARTIFACTS
             ),
@@ -170,7 +170,7 @@ fn resolve_delivery_entries(
         delivery.entries(),
         &|artifact| delivery.title_of(artifact).flatten().map(str::to_string),
         "delivery_dangling",
-        "La entrega",
+        "The delivery",
     )?;
     Ok((
         delivery.id().as_str().to_string(),
@@ -179,9 +179,9 @@ fn resolve_delivery_entries(
     ))
 }
 
-/// Resuelve versiones fijadas contra el dominio, con límites de tamaño.
-/// Compartido por baselines y entregas: mismo paquete para las mismas
-/// versiones, salvo los avisos propios de cada clase.
+/// Resolves pinned versions against the domain, with size limits.
+/// Shared by baselines and deliveries: same package for the same
+/// versions, except each kind's own notices.
 fn resolve_pinned(
     store: &Store,
     pairs: &[(ArtifactId, VersionId)],
@@ -193,11 +193,11 @@ fn resolve_pinned(
     let mut total: usize = 0;
     for (artifact, version) in pairs {
         let (Some(known), Some(pinned)) = (store.artifact(artifact), store.version(version)) else {
-            // El núcleo no permite borrar historial: no debería ocurrir.
+            // The core forbids deleting history: this should not happen.
             return Err(ApiError::coded(
                 dangling_kind,
                 format!(
-                    "{dangling_label} hace referencia a {} {}, que ya no está en el dominio.",
+                    "{dangling_label} references {} {}, which is no longer in the domain.",
                     artifact.as_str(),
                     version.as_str()
                 ),
@@ -208,7 +208,7 @@ fn resolve_pinned(
             return Err(ApiError::coded(
                 "export_too_large",
                 format!(
-                    "El contenido de {} supera el máximo de {} bytes.",
+                    "The content of {} exceeds the maximum of {} bytes.",
                     artifact.as_str(),
                     MAX_EXPORT_FILE_BYTES
                 ),
@@ -219,7 +219,7 @@ fn resolve_pinned(
             return Err(ApiError::coded(
                 "export_too_large",
                 format!(
-                    "El contenido total supera el máximo de {} bytes.",
+                    "The total content exceeds the maximum of {} bytes.",
                     MAX_EXPORT_TOTAL_BYTES
                 ),
             ));
@@ -271,7 +271,7 @@ fn resolve_pinned(
     Ok(entries)
 }
 
-/// Archivo del paquete: ruta relativa segura y contenido exacto.
+/// Package file: safe relative path and exact content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportFile {
     pub path: String,
@@ -281,8 +281,8 @@ pub struct ExportFile {
 fn render_designs(entries: &mut [Entry], allowed: &[String]) -> Vec<ExportFile> {
     let mut diagrams = Vec::new();
     for entry in entries.iter_mut() {
-        // Los mockups no producen diagramas: se revalidan contra sus citas
-        // para el resumen estructurado de la especificación.
+        // Mockups produce no diagrams: they revalidate against their citations
+        // for the spec's structured summary.
         if entry.kind == ArtifactType::Mockup {
             if let Ok(spec) = serde_json::from_str::<serde_json::Value>(&entry.content) {
                 let cited = crate::mockup::mockup_cited_refs(&spec);
@@ -307,12 +307,12 @@ fn render_designs(entries: &mut [Entry], allowed: &[String]) -> Vec<ExportFile> 
                 entry.diagram_ok = true;
             }
             Err(_) => {
-                // Contenido heredado no estructurado: no se inventa un
-                // diagrama; se deja un comentario que apunta al original.
+                // Legacy unstructured content: no diagram is invented;
+                // a comment pointing to the original is left instead.
                 diagrams.push(ExportFile {
                     path: path.clone(),
                     bytes: format!(
-                        "%% Diseño {}: contenido no estructurado; ver {}.\n",
+                        "%% Design {}: unstructured content; see {}.\n",
                         entry.artifact_id, entry.artifact_file
                     )
                     .into_bytes(),
@@ -333,8 +333,8 @@ fn plural(count: usize, one: &'static str, many: &'static str) -> &'static str {
     }
 }
 
-/// Un título en una línea para encabezados Markdown: sin saltos que
-/// rompan la estructura (el título completo vive en el manifiesto).
+/// A one-line title for Markdown headings: no breaks that would
+/// break the structure (the full title lives in the manifest).
 fn one_line(title: &str) -> String {
     title
         .chars()
@@ -344,23 +344,23 @@ fn one_line(title: &str) -> String {
 
 fn kind_label(kind: ArtifactType) -> &'static str {
     match kind {
-        ArtifactType::Requirement => "requisito",
-        ArtifactType::Flow => "flujo",
-        ArtifactType::DataModel => "modelo de datos",
+        ArtifactType::Requirement => "requirement",
+        ArtifactType::Flow => "flow",
+        ArtifactType::DataModel => "data model",
         ArtifactType::Mockup => "mockup",
     }
 }
 
 fn provenance_label(provenance: &ProvenanceDto) -> String {
     match provenance.kind.as_str() {
-        "human" => format!("humana ({})", provenance.by),
-        _ => format!("propuesta de IA ({})", provenance.by),
+        "human" => format!("human ({})", provenance.by),
+        _ => format!("AI proposal ({})", provenance.by),
     }
 }
 
-/// Clase de entrega exportada. La baseline aprobada conserva sus bytes
-/// exactos; la entrega de trabajo añade identificación honesta de
-/// pendientes (nunca se llama coherente ni verificada).
+/// Exported delivery kind. The approved baseline keeps its exact
+/// bytes; the work delivery adds honest identification of
+/// pendings (never called coherent or verified).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExportKind {
     ApprovedBaseline,
@@ -384,39 +384,39 @@ fn build_readme(
     let designs = entries.len() - reqs;
     let id_label = match kind {
         ExportKind::ApprovedBaseline => "Baseline",
-        ExportKind::WorkDelivery => "Entrega de trabajo",
+        ExportKind::WorkDelivery => "Work delivery",
     };
     let context_line = match kind {
-        ExportKind::ApprovedBaseline => "contexto para implementar lo aprobado",
-        ExportKind::WorkDelivery => "contexto para continuar el trabajo",
+        ExportKind::ApprovedBaseline => "context for implementing the approved scope",
+        ExportKind::WorkDelivery => "context for continuing the work",
     };
     let mut out = format!(
         "# {name}\n\
          \n\
-         Especificación exportada por Ruth IDE (exportador v{EXPORTER_VERSION}).\n\
+         Specification exported by Ruth IDE (exporter v{EXPORTER_VERSION}).\n\
          \n\
          - {id_label}: {id} ({at})\n\
-         - Proyecto: {project}\n\
-         - Alcance: {}\n\
-         - Contenido: {reqs} requisitos, {designs} diseños, {total_bytes} bytes\n\
+         - Project: {project}\n\
+         - Scope: {}\n\
+         - Content: {reqs} requirements, {designs} designs, {total_bytes} bytes\n\
          \n\
-         ## Cómo leer este paquete\n\
+         ## How to read this package\n\
          \n\
-         - `specification.md`: requisitos y diseños incluidos, con fuentes y aprobaciones.\n\
-         - `artifacts/`: contenido original de cada versión incluida.\n\
-         - `diagrams/`: fuentes Mermaid derivadas de los diseños (se regeneran; no editar).\n\
-         - `manifest.json`: inventario con hashes SHA-256 para comprobar integridad.\n\
+         - `specification.md`: included requirements and designs, with sources and approvals.\n\
+         - `artifacts/`: original content of each included version.\n\
+         - `diagrams/`: Mermaid sources derived from the designs (regenerated; do not edit).\n\
+         - `manifest.json`: inventory with SHA-256 hashes for checking integrity.\n\
          - `implementation-context.md`: {context_line}.\n\
          \n\
-         ## Límites\n\
+         ## Limits\n\
          \n\
-         - Los hashes SHA-256 verifican integridad; no son una firma digital.\n\
-         - Sintaxis Mermaid válida no garantiza corrección del diseño.\n\
-         - Las preguntas y supuestos pendientes están en `implementation-context.md`.\n\
-         - Esta entrega es inmutable: no cambia aunque el proyecto avance.\n",
+         - SHA-256 hashes verify integrity; they are not a digital signature.\n\
+         - Valid Mermaid syntax does not guarantee design correctness.\n\
+         - Open questions and assumptions live in `implementation-context.md`.\n\
+         - This delivery is immutable: it never changes as the project advances.\n",
         scope
-            .map(|m| format!("módulo {m}"))
-            .unwrap_or_else(|| "selección manual (ver manifest.json)".to_string())
+            .map(|m| format!("module {m}"))
+            .unwrap_or_else(|| "manual selection (see manifest.json)".to_string())
     );
     if kind == ExportKind::WorkDelivery {
         let unreviewed = entries.iter().filter(|e| e.approvals.is_empty()).count();
@@ -425,14 +425,14 @@ fn build_readme(
             .filter(|e| !e.stale_sources.is_empty())
             .count();
         out.push_str(&format!(
-            "\n## Estado del trabajo\n\
+            "\n## Work status\n\
              \n\
-             Entrega de trabajo (borrador): foto de versiones guardadas sin exigir revisión.\n\
-             - Entradas sin revisión: {unreviewed} de {}\n\
-             - Entradas con fuentes desactualizadas: {stale} de {}\n\
+             Work delivery (draft): snapshot of saved versions without requiring review.\n\
+             - Unreviewed entries: {unreviewed} of {}\n\
+             - Entries with stale sources: {stale} of {}\n\
              \n\
-             No es una entrega coherente ni verificada: sincroniza y revisa antes de\n\
-             tomarla como referencia estable.\n",
+             Not a coherent or verified delivery: sync and review before\n\
+             taking it as a stable reference.\n",
             entries.len(),
             entries.len(),
         ));
@@ -449,15 +449,15 @@ fn build_specification(
 ) -> String {
     let id_label = match kind {
         ExportKind::ApprovedBaseline => "Baseline",
-        ExportKind::WorkDelivery => "Entrega de trabajo",
+        ExportKind::WorkDelivery => "Work delivery",
     };
-    let mut out = format!("# Especificación — {name}\n\n{id_label} {id} ({at}).\n");
+    let mut out = format!("# Specification — {name}\n\n{id_label} {id} ({at}).\n");
     for entry in entries {
-        // El encabezado muestra el título fijado en la baseline (si lo hay)
-        // sin ocultar nunca el ID: la identidad es el ID, no el título.
+        // The heading shows the baseline-pinned title (when any)
+        // without ever hiding the ID: identity is the ID, not the title.
         let heading = match &entry.title {
             Some(title) => format!(
-                "{} — {} ({}, versión {}, nº {})",
+                "{} — {} ({}, version {}, no. {})",
                 one_line(title),
                 entry.artifact_id,
                 kind_label(entry.kind),
@@ -465,7 +465,7 @@ fn build_specification(
                 entry.number
             ),
             None => format!(
-                "{} — {} (versión {}, nº {})",
+                "{} — {} (version {}, no. {})",
                 entry.artifact_id,
                 kind_label(entry.kind),
                 entry.version_id,
@@ -474,38 +474,38 @@ fn build_specification(
         };
         out.push_str(&format!(
             "\n## {heading}\n\n\
-             - Procedencia: {}\n",
+             - Provenance: {}\n",
             provenance_label(&entry.provenance),
         ));
         for approval in &entry.approvals {
             out.push_str(&format!(
-                "- Aprobación: {} ({})\n",
+                "- Approval: {} ({})\n",
                 approval.approved_by, approval.at
             ));
         }
         if entry.sources.is_empty() {
-            out.push_str("- Fuentes: ninguna\n");
+            out.push_str("- Sources: none\n");
         } else {
-            out.push_str(&format!("- Fuentes: {}\n", entry.sources.join(", ")));
+            out.push_str(&format!("- Sources: {}\n", entry.sources.join(", ")));
         }
         if kind == ExportKind::WorkDelivery {
             if entry.stale_sources.is_empty() {
-                out.push_str("- Fuentes desactualizadas: ninguna\n");
+                out.push_str("- Stale sources: none\n");
             } else {
                 out.push_str(&format!(
-                    "- Fuentes desactualizadas: {}\n",
+                    "- Stale sources: {}\n",
                     entry.stale_sources.join(", ")
                 ));
             }
         }
         out.push_str(&format!("- Original: `{}`\n", entry.artifact_file));
         if entry.kind == ArtifactType::Requirement {
-            out.push_str("\n### Contenido\n\n");
+            out.push_str("\n### Content\n\n");
             out.push_str(&entry.content);
             out.push('\n');
         } else if let Some(design) = &entry.design {
             if let Some(diagram) = &entry.diagram_file {
-                out.push_str(&format!("- Diagrama: `{diagram}`\n"));
+                out.push_str(&format!("- Diagram: `{diagram}`\n"));
             }
             out.push_str(&format!(
                 "\n### {}\n\n{}\n",
@@ -513,23 +513,23 @@ fn build_specification(
             ));
             match (&design.flow, &design.er) {
                 (Some(flow), _) => out.push_str(&format!(
-                    "\nElementos: {} {}, {} {}.\n",
+                    "\nElements: {} {}, {} {}.\n",
                     flow.nodes.len(),
-                    plural(flow.nodes.len(), "nodo", "nodos"),
+                    plural(flow.nodes.len(), "node", "nodes"),
                     flow.edges.len(),
-                    plural(flow.edges.len(), "arista", "aristas"),
+                    plural(flow.edges.len(), "edge", "edges"),
                 )),
                 (_, Some(er)) => out.push_str(&format!(
-                    "\nElementos: {} {}, {} {}.\n",
+                    "\nElements: {} {}, {} {}.\n",
                     er.entities.len(),
-                    plural(er.entities.len(), "entidad", "entidades"),
+                    plural(er.entities.len(), "entity", "entities"),
                     er.relations.len(),
-                    plural(er.relations.len(), "relación", "relaciones"),
+                    plural(er.relations.len(), "relation", "relations"),
                 )),
                 (None, None) => {}
             }
             if !design.questions.is_empty() {
-                out.push_str("\nPreguntas pendientes:\n\n");
+                out.push_str("\nOpen questions:\n\n");
                 for question in &design.questions {
                     out.push_str(&format!("- {question}\n"));
                 }
@@ -541,7 +541,7 @@ fn build_specification(
                 summarize_mockup(mockup)
             ));
         } else {
-            out.push_str("\nContenido no estructurado: ver el archivo original.\n");
+            out.push_str("\nUnstructured content: see the original file.\n");
         }
     }
     out.push('\n');
@@ -555,29 +555,29 @@ fn build_context(name: &str, id: &str, entries: &[Entry], kind: ExportKind) -> S
     let (scope_line, rules_title) = match kind {
         ExportKind::ApprovedBaseline => (
             format!(
-                "Alcance aprobado de la baseline {id}: módulos {}.",
+                "Approved scope of baseline {id}: modules {}.",
                 modules.join(", ")
             ),
-            "Reglas aprobadas",
+            "Approved rules",
         ),
         ExportKind::WorkDelivery => (
             format!(
-                "Alcance de trabajo de la entrega {id}: módulos {}.",
+                "Work scope of delivery {id}: modules {}.",
                 modules.join(", ")
             ),
-            "Reglas incluidas",
+            "Included rules",
         ),
     };
     let work_line = match kind {
         ExportKind::ApprovedBaseline => {
-            "Implementar solo lo descrito aquí; lo demás está fuera de la entrega."
+            "Implement only what is described here; the rest is out of the delivery."
         }
         ExportKind::WorkDelivery => {
-            "Continuar el trabajo solo sobre lo descrito aquí; lo demás está fuera de la entrega."
+            "Continue the work only on what is described here; the rest is out of the delivery."
         }
     };
     let mut out = format!(
-        "# Contexto de implementación — {name}\n\
+        "# Implementation context — {name}\n\
          \n\
          {scope_line}\n\
          {work_line}\n\
@@ -590,31 +590,31 @@ fn build_context(name: &str, id: &str, entries: &[Entry], kind: ExportKind) -> S
     {
         let heading = match &entry.title {
             Some(title) => format!(
-                "{} — {} (versión {})",
+                "{} — {} (version {})",
                 one_line(title),
                 entry.artifact_id,
                 entry.version_id
             ),
-            None => format!("{} (versión {})", entry.artifact_id, entry.version_id),
+            None => format!("{} (version {})", entry.artifact_id, entry.version_id),
         };
         out.push_str(&format!("\n### {heading}\n\n{}\n", entry.content));
     }
     let designs_title = match kind {
-        ExportKind::ApprovedBaseline => "Diseños aprobados",
-        ExportKind::WorkDelivery => "Diseños incluidos",
+        ExportKind::ApprovedBaseline => "Approved designs",
+        ExportKind::WorkDelivery => "Included designs",
     };
     out.push_str(&format!(
         "\n## {designs_title}\n\
          \n\
-         Los diagramas fuente están en `diagrams/` y su contenido estructurado\n\
-         en `artifacts/`; `specification.md` detalla cada uno.\n",
+         The source diagrams live in `diagrams/` and their structured content\n\
+         in `artifacts/`; `specification.md` details each one.\n",
     ));
     for entry in entries
         .iter()
         .filter(|e| e.kind != ArtifactType::Requirement)
     {
-        // `design.title` es el título interno de la especificación JSON;
-        // el título fijado del artefacto lo precede cuando existe.
+        // `design.title` is the inner title of the JSON spec;
+        // the artifact's pinned title precedes it when present.
         let head = match &entry.title {
             Some(title) => format!(
                 "{} — {} ({})",
@@ -635,27 +635,27 @@ fn build_context(name: &str, id: &str, entries: &[Entry], kind: ExportKind) -> S
                     "\n- {head}: {} — {} {}, {} {} (ver `specification.md`).\n",
                     mockup.title,
                     mockup.screens.len(),
-                    plural(mockup.screens.len(), "pantalla", "pantallas"),
+                    plural(mockup.screens.len(), "screen", "screens"),
                     total,
-                    plural(total, "componente", "componentes"),
+                    plural(total, "component", "components"),
                 ));
             }
             (None, None) => out.push_str(&format!(
-                "\n- {head}: contenido no estructurado; ver `{}`.\n",
+                "\n- {head}: unstructured content; see `{}`.\n",
                 entry.artifact_file
             )),
         }
     }
     out.push_str(
-        "\n## Restricciones del proceso\n\
+        "\n## Process constraints\n\
          \n\
-         Las añade el exportador; no son decisiones registradas del proyecto:\n\
+         The exporter adds them; they are not the project's recorded decisions:\n\
          \n\
-         - No inventar stack, arquitectura, decisiones ni código ya implementado.\n\
-         - No implementar supuestos pendientes como si estuvieran aprobados.\n\
-         - Ante una ambigüedad, preguntar en lugar de decidir.\n\
+         - Do not invent stack, architecture, decisions or already implemented code.\n\
+         - Do not implement open assumptions as if they were approved.\n\
+         - On ambiguity, ask instead of deciding.\n\
          \n\
-         ## Preguntas y supuestos pendientes\n",
+         ## Open questions and assumptions\n",
     );
     let mut any = false;
     for entry in entries.iter().filter_map(|e| {
@@ -670,14 +670,14 @@ fn build_context(name: &str, id: &str, entries: &[Entry], kind: ExportKind) -> S
         }
     }
     if !any {
-        out.push_str("\nNinguna registrada en esta entrega.\n");
+        out.push_str("\nNone recorded in this delivery.\n");
     } else {
         out.push('\n');
     }
     out
 }
 
-/// Cabecera del manifiesto: identidad de la entrega y metadatos humanos.
+/// Manifest header: delivery identity and human metadata.
 struct ManifestHead<'a> {
     id: &'a str,
     at: &'a str,
@@ -754,7 +754,7 @@ fn build_manifest(head: &ManifestHead<'_>, entries: &[Entry], files: &[ExportFil
                     .collect::<Vec<_>>()),
             );
             entry.insert("sources".to_string(), serde_json::json!(e.sources));
-            // Solo entregas de trabajo: las baselines conservan sus bytes.
+            // Work deliveries only: baselines keep their bytes.
             if head.kind == ExportKind::WorkDelivery {
                 entry.insert(
                     "stale_sources".to_string(),
@@ -785,7 +785,7 @@ fn build_manifest(head: &ManifestHead<'_>, entries: &[Entry], files: &[ExportFil
         "entries".to_string(),
         serde_json::Value::Array(entry_values),
     );
-    // El manifiesto se excluye a sí mismo para evitar autorreferencia.
+    // The manifest excludes itself to avoid self-reference.
     let file_values: Vec<serde_json::Value> = files
         .iter()
         .filter(|f| f.path != "manifest.json")
@@ -805,7 +805,7 @@ fn build_manifest(head: &ManifestHead<'_>, entries: &[Entry], files: &[ExportFil
         "total_bytes".to_string(),
         serde_json::json!(files.iter().map(|f| f.bytes.len()).sum::<usize>()),
     );
-    // Solo entregas de trabajo: pendientes honestos en el manifiesto.
+    // Work deliveries only: honest pendings in the manifest.
     if head.kind == ExportKind::WorkDelivery {
         counts.insert(
             "unreviewed_entries".to_string(),
@@ -822,12 +822,12 @@ fn build_manifest(head: &ManifestHead<'_>, entries: &[Entry], files: &[ExportFil
     root.insert("counts".to_string(), serde_json::Value::Object(counts));
     format!(
         "{}\n",
-        serde_json::to_string_pretty(&root).expect("el manifiesto serializa")
+        serde_json::to_string_pretty(&root).expect("the manifest serializes")
     )
 }
 
-/// Construye los archivos del paquete ordenados por ruta. Consulta pura:
-/// no toca el dominio ni la base.
+/// Builds the package files ordered by path. Pure query:
+/// touches neither the domain nor the database.
 pub fn build_export_files(
     store: &Store,
     metalog: &BaselineMetaLog,
@@ -837,13 +837,13 @@ pub fn build_export_files(
     let project = ProjectId::new(project_id).map_err(|_| {
         ApiError::coded(
             "baseline_not_found",
-            format!("No existe la baseline {baseline_id}."),
+            format!("Baseline {baseline_id} does not exist."),
         )
     })?;
     let baseline_ref = BaselineId::new(baseline_id).map_err(|_| {
         ApiError::coded(
             "baseline_not_found",
-            format!("No existe la baseline {baseline_id}."),
+            format!("Baseline {baseline_id} does not exist."),
         )
     })?;
     let (id, at, mut entries) = resolve_entries(store, &project, &baseline_ref)?;
@@ -870,9 +870,9 @@ pub fn build_export_files(
     ))
 }
 
-/// Construye los archivos de una entrega de trabajo: mismo paquete seguro
-/// y reproducible, con identificación honesta de pendientes (nunca se
-/// presenta como coherente ni verificada). Consulta pura.
+/// Builds a work delivery's files: same safe, reproducible package,
+/// with honest identification of pendings (never presented as
+/// coherent or verified). Pure query.
 pub fn build_delivery_files(
     store: &Store,
     project_id: &str,
@@ -881,20 +881,20 @@ pub fn build_delivery_files(
     let project = ProjectId::new(project_id).map_err(|_| {
         ApiError::coded(
             "delivery_not_found",
-            format!("No existe la entrega {delivery_id}."),
+            format!("Delivery {delivery_id} does not exist."),
         )
     })?;
     let delivery_ref = DeliveryId::new(delivery_id).map_err(|_| {
         ApiError::coded(
             "delivery_not_found",
-            format!("No existe la entrega {delivery_id}."),
+            format!("Delivery {delivery_id} does not exist."),
         )
     })?;
     let (id, at, mut entries) = resolve_delivery_entries(store, &project, &delivery_ref)?;
     let Some(delivery) = store.delivery(&delivery_ref) else {
         return Err(ApiError::coded(
             "delivery_not_found",
-            format!("No existe la entrega {delivery_id}."),
+            format!("Delivery {delivery_id} does not exist."),
         ));
     };
     Ok(assemble_package(
@@ -910,8 +910,8 @@ pub fn build_delivery_files(
     ))
 }
 
-/// Ensambla artefactos, diagramas, README, especificación, contexto y
-/// manifiesto, ordenados por ruta. La clase decide solo los avisos.
+/// Assembles artifacts, diagrams, README, spec, context and
+/// manifest, ordered by path. The kind decides only the notices.
 #[allow(clippy::too_many_arguments)]
 fn assemble_package(
     display: &str,
@@ -970,7 +970,7 @@ fn assemble_package(
     files
 }
 
-/// Vista previa para la UI: rutas, tamaños y hashes sin el contenido.
+/// Preview for the UI: paths, sizes and hashes without the content.
 pub fn export_preview(
     store: &Store,
     metalog: &BaselineMetaLog,
@@ -988,7 +988,7 @@ pub fn export_preview(
     })
 }
 
-/// Vista previa de una entrega de trabajo, con su propia identidad.
+/// A work delivery's preview, with its own identity.
 pub fn export_delivery_preview(
     store: &Store,
     project_id: &str,
@@ -1016,9 +1016,9 @@ fn preview_files(files: &[ExportFile]) -> Vec<ExportFileDto> {
         .collect()
 }
 
-/// Empaqueta los archivos en un ZIP determinista: orden fijo, fecha fija,
-/// permisos fijos y la misma compresión. El mismo paquete produce los
-/// mismos bytes.
+/// Packages the files into a deterministic ZIP: fixed order, fixed date,
+/// fixed permissions and the same compression. The same package produces
+/// the same bytes.
 pub fn package_to_zip(files: &[ExportFile]) -> Result<Vec<u8>, ApiError> {
     use std::io::Cursor;
     let mut ordered: Vec<&ExportFile> = files.iter().collect();
@@ -1026,7 +1026,7 @@ pub fn package_to_zip(files: &[ExportFile]) -> Result<Vec<u8>, ApiError> {
     let mut out = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(&mut out);
     let stamp = zip::DateTime::from_date_and_time(2024, 1, 1, 0, 0, 0)
-        .map_err(|_| ApiError::coded("export_failed", "No se pudo fijar la fecha del ZIP."))?;
+        .map_err(|_| ApiError::coded("export_failed", "Could not pin the ZIP date."))?;
     for file in ordered {
         let options = zip::write::FileOptions::<()>::default()
             .compression_method(zip::CompressionMethod::Deflated)
@@ -1035,22 +1035,22 @@ pub fn package_to_zip(files: &[ExportFile]) -> Result<Vec<u8>, ApiError> {
         zip.start_file(&file.path, options).map_err(|e| {
             ApiError::coded(
                 "export_failed",
-                format!("No se pudo empaquetar {}: {e}", file.path),
+                format!("Could not package {}: {e}", file.path),
             )
         })?;
         zip.write_all(&file.bytes).map_err(|e| {
             ApiError::coded(
                 "export_failed",
-                format!("No se pudo empaquetar {}: {e}", file.path),
+                format!("Could not package {}: {e}", file.path),
             )
         })?;
     }
     zip.finish()
-        .map_err(|e| ApiError::coded("export_failed", format!("No se pudo cerrar el ZIP: {e}")))?;
+        .map_err(|e| ApiError::coded("export_failed", format!("Could not close the ZIP: {e}")))?;
     Ok(out.into_inner())
 }
 
-/// Hash del ZIP resultante, para mostrarlo tras guardar.
+/// Hash of the resulting ZIP, for showing after saving.
 pub fn zip_sha256(zip: &[u8]) -> String {
     sha256_hex(zip)
 }

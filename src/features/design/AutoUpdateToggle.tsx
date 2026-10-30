@@ -1,8 +1,7 @@
-// Interruptor de actualización automática con IA, por módulo y por sesión.
-// Desactivado por defecto: al activarlo se muestra qué se enviará a Meta.
-// Cuando está activo, cada guardado manual programa (agrupando) propuestas
-// de actualización para los diseños desactualizados. Presentación pura:
-// la programación y la ejecución viven en el workspace.
+// AI auto-update switch, per module and per session. Off by default:
+// enabling it shows what will be sent to Meta. While on, each manual
+// save schedules (batching) update proposals for stale designs. Pure
+// presentation: scheduling and execution live in the workspace.
 export interface AutoStatus {
   message: string;
   kind: "working" | "ok" | "error";
@@ -35,17 +34,17 @@ export function AutoUpdateToggle({
           title={disabled ? disabledTitle : undefined}
           onChange={(e) => onToggle(e.target.checked)}
         />
-        <span>Actualización IA automática</span>
+        <span>Automatic AI update</span>
       </label>
       <details>
-        <summary>¿Qué se envía a Meta?</summary>
+        <summary>What is sent to Meta?</summary>
         <p className="hint">
-          Al guardar en {moduleName}, Ruth IDE propondrá actualizar los
-          diseños que queden desactualizados. Se envían las versiones
-          guardadas de los requisitos y diseños implicados (nunca borradores
-          sin guardar ni otros módulos). Máximo 5 propuestas por ciclo, de
-          una en una. Los resultados van a propuestas separadas en Impacto:
-          nada se sobrescribe ni se acepta solo.
+          When saving in {moduleName}, Ruth IDE will propose updating the
+          designs left stale. The saved versions of the requirements and
+          designs involved are sent (never unsaved drafts or other
+          modules). At most 5 proposals per cycle, one at a time. Results
+          go to separate proposals in Impact: nothing is overwritten or
+          accepted alone.
         </p>
       </details>
       {status !== null && (

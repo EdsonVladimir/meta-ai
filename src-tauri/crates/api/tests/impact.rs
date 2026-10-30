@@ -1,5 +1,5 @@
-//! Informe de impacto sobre el núcleo, sin red ni persistencia: el
-//! escenario de ventas se construye con casos de uso y el informe solo lee.
+//! Impact report over the core, no network or persistence: the
+//! sales scenario builds with use cases and the report only reads.
 
 use ruth_api::{
     ApproveVersionInput, CreateModuleInput, CreateRequirementInput, IdGen, ImpactQueryInput,
@@ -25,7 +25,7 @@ fn baby() -> Baby {
     let mut ids = IdGen::new();
     let project = ProjectId::new(
         ruth_api::create_project(&mut store, &mut ids)
-            .expect("proyecto")
+            .expect("project")
             .id,
     )
     .expect("id");
@@ -37,7 +37,7 @@ fn baby() -> Baby {
                 project_id: project.as_str().to_string(),
             },
         )
-        .expect("módulo")
+        .expect("module")
         .id,
     )
     .expect("id");
@@ -52,7 +52,7 @@ fn baby() -> Baby {
                 author: "ana".to_string(),
             },
         )
-        .expect("requisito")
+        .expect("requirement")
         .artifact
         .id,
     )
@@ -67,10 +67,10 @@ fn baby() -> Baby {
 }
 
 fn author() -> Author {
-    Author::Human(HumanId::new("ana").expect("autora"))
+    Author::Human(HumanId::new("ana").expect("author"))
 }
 
-/// Nueva versión del artefacto con las fuentes exactas dadas.
+/// New version of the artifact with the given exact sources.
 fn save_with_sources(
     baby: &mut Baby,
     artifact: &ArtifactId,
@@ -90,11 +90,11 @@ fn save_with_sources(
             artifact,
             expected.as_ref(),
             id.clone(),
-            Content::new(content).expect("contenido"),
+            Content::new(content).expect("content"),
             &author(),
             sources,
         )
-        .expect("versión");
+        .expect("version");
     id
 }
 
@@ -107,7 +107,7 @@ fn design(baby: &mut Baby, kind: ArtifactType, sources: &[VersionId]) -> Artifac
     };
     baby.store
         .create_artifact(&baby.project, &baby.module, id.clone(), kind)
-        .expect("artefacto");
+        .expect("artifact");
     save_with_sources(baby, &id, 1, "{}", sources);
     id
 }
@@ -123,7 +123,7 @@ fn approve(baby: &mut Baby, artifact: &ArtifactId, expected: &VersionId) {
         },
         AT,
     )
-    .expect("aprobar");
+    .expect("approve");
 }
 
 fn query(baby: &Baby, from: Option<&str>) -> ruth_api::ImpactReportDto {
@@ -135,7 +135,7 @@ fn query(baby: &Baby, from: Option<&str>) -> ruth_api::ImpactReportDto {
             from_version_id: from.map(str::to_string),
         },
     )
-    .expect("informe")
+    .expect("report")
 }
 
 fn sales_with_designs() -> (Baby, ArtifactId, ArtifactId) {
@@ -153,7 +153,7 @@ fn sales_with_designs() -> (Baby, ArtifactId, ArtifactId) {
     );
     let mer_v1 = IdGen::version(&mer, 1);
     approve(&mut baby, &mer, &mer_v1);
-    // Cambia la regla: nueva versión del requisito.
+    // Change the rule: new version of the requirement.
     let detail = ruth_api::save_version(
         &mut baby.store,
         SaveVersionInput {
@@ -185,7 +185,7 @@ fn direct_impact_lists_pins_and_paths() {
         .affected
         .iter()
         .find(|a| a.artifact.id == flow.as_str())
-        .expect("flujo");
+        .expect("flow");
     assert!(flow_dto.requires_review);
     assert_eq!(flow_dto.current_number, 1);
     assert_eq!(
@@ -211,8 +211,8 @@ fn direct_impact_lists_pins_and_paths() {
             flow.as_str().to_string()
         ]]
     );
-    // La v1 aprobada sigue aprobada; la actual (v1) no tiene aprobaciones
-    // nuevas y el informe muestra ambos hechos.
+    // The approved v1 stays approved; the current one (v1) has no new
+    // approvals and the report shows both facts.
     assert!(flow_dto.approved_before);
     assert_eq!(flow_dto.approvals.len(), 1);
 
@@ -220,7 +220,7 @@ fn direct_impact_lists_pins_and_paths() {
         .affected
         .iter()
         .find(|a| a.artifact.id == mer.as_str())
-        .expect("mer");
+        .expect("erm");
     assert!(mer_dto.requires_review);
     assert_eq!(mer_dto.paths.len(), 1);
 }
@@ -231,7 +231,7 @@ fn transitive_impact_reaches_two_levels() {
     let req_v1 = IdGen::version(&baby.req, 1);
     let flow = design(&mut baby, ArtifactType::Flow, std::slice::from_ref(&req_v1));
     let flow_v1 = IdGen::version(&flow, 1);
-    // El modelo deriva del flujo, no del requisito.
+    // The model derives from the flow, not from the requirement.
     let mer = design(
         &mut baby,
         ArtifactType::DataModel,
@@ -255,7 +255,7 @@ fn transitive_impact_reaches_two_levels() {
         .affected
         .iter()
         .find(|a| a.artifact.id == mer.as_str())
-        .expect("mer");
+        .expect("erm");
     assert_eq!(
         mer_dto.paths,
         vec![vec![
@@ -264,8 +264,8 @@ fn transitive_impact_reaches_two_levels() {
             mer.as_str().to_string()
         ]]
     );
-    // El pin del modelo sigue apuntando a la actual del flujo: alcanzado por
-    // el cambio (impacto) aunque su pin no esté desactualizado.
+    // The model's pin still points to the flow's current one: reached by
+    // the change (impact) even though its pin is not stale.
     assert!(!mer_dto.requires_review);
     assert!(mer_dto.pins.iter().all(|p| !p.stale));
 }
@@ -300,9 +300,9 @@ fn diamond_keeps_every_path() {
         .affected
         .iter()
         .find(|a| a.artifact.id == report.as_str())
-        .expect("informe");
+        .expect("report");
     assert_eq!(report_dto.paths.len(), 2);
-    // Un solo registro aunque haya varios caminos: sin duplicados.
+    // A single log even with several paths: no duplicates.
     assert_eq!(
         impact
             .affected
@@ -323,7 +323,7 @@ fn requirement_without_dependents_reports_empty() {
             project_id: baby.project.as_str().to_string(),
             artifact_id: baby.req.as_str().to_string(),
             expected_version_id: req_v1.as_str().to_string(),
-            content: "Segunda redacción.".to_string(),
+            content: "Second wording.".to_string(),
             author: "ana".to_string(),
         },
     )
@@ -337,7 +337,7 @@ fn requirement_without_dependents_reports_empty() {
 #[test]
 fn updated_design_is_related_but_not_pending() {
     let (mut baby, flow, mer) = sales_with_designs();
-    // El flujo se revisa con la fuente actual; el modelo no.
+    // The flow reviews with the current source; the model does not.
     let req_v2 = IdGen::version(&baby.req, 2);
     save_with_sources(
         &mut baby,
@@ -352,7 +352,7 @@ fn updated_design_is_related_but_not_pending() {
         .affected
         .iter()
         .find(|a| a.artifact.id == flow.as_str())
-        .expect("flujo");
+        .expect("flow");
     assert!(!flow_dto.requires_review);
     assert!(flow_dto.stale_sources.is_empty());
     assert!(flow_dto.approved_before);
@@ -361,7 +361,7 @@ fn updated_design_is_related_but_not_pending() {
         .affected
         .iter()
         .find(|a| a.artifact.id == mer.as_str())
-        .expect("mer");
+        .expect("erm");
     assert!(mer_dto.requires_review);
 }
 
@@ -375,7 +375,7 @@ fn explicit_from_version_compares() {
             project_id: baby.project.as_str().to_string(),
             artifact_id: baby.req.as_str().to_string(),
             expected_version_id: req_v2.as_str().to_string(),
-            content: "Tercera redacción.".to_string(),
+            content: "Third wording.".to_string(),
             author: "ana".to_string(),
         },
     )
@@ -404,7 +404,7 @@ fn single_version_compares_with_itself() {
 #[test]
 fn invalid_references_fail_with_stable_kinds() {
     let mut baby = self::baby();
-    let second = ruth_api::create_project(&mut baby.store, &mut baby.ids).expect("segundo");
+    let second = ruth_api::create_project(&mut baby.store, &mut baby.ids).expect("second");
     let err = ruth_api::impact_report(
         &baby.store,
         ImpactQueryInput {
@@ -413,7 +413,7 @@ fn invalid_references_fail_with_stable_kinds() {
             from_version_id: None,
         },
     )
-    .expect_err("artefacto inexistente");
+    .expect_err("missing artifact");
     assert_eq!(err.kind, "artifact_not_found");
 
     let err = ruth_api::impact_report(
@@ -424,7 +424,7 @@ fn invalid_references_fail_with_stable_kinds() {
             from_version_id: Some("req-9-v9".to_string()),
         },
     )
-    .expect_err("versión ajena");
+    .expect_err("foreign version");
     assert_eq!(err.kind, "version_not_found");
 
     let err = ruth_api::impact_report(
@@ -435,7 +435,7 @@ fn invalid_references_fail_with_stable_kinds() {
             from_version_id: None,
         },
     )
-    .expect_err("otro proyecto");
+    .expect_err("other project");
     assert_eq!(err.kind, "artifact_not_in_project");
 }
 
@@ -452,8 +452,8 @@ fn query_does_not_mutate() {
 
 #[test]
 fn pins_always_resolve_on_valid_state() {
-    // Las invariantes impiden fuentes colgadas (se rechazan al crear y al
-    // reconstituir), así que todo pin resuelve a artefacto y actual.
+    // Invariants forbid dangling sources (rejected at creation and
+    // reconstitution), so every pin resolves to artifact and current.
     let (baby, _, _) = sales_with_designs();
     let report = query(&baby, None);
     assert!(!report.affected.is_empty());

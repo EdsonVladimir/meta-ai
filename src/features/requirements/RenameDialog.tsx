@@ -1,8 +1,8 @@
-// Diálogo de renombrado: formulario pequeño con el nombre actual, Guardar
-// y Cancelar. Enter guarda, Escape cancela. La validación local es
-// orientativa (máximo 120 caracteres, no vacío); Rust revalida al guardar
-// y rechaza revisiones obsoletas. Renombrar no toca contenido, versiones
-// ni borradores: solo el nombre organizativo o el título metadato.
+// Rename dialog: small form with the current name, Save and Cancel.
+// Enter saves, Escape cancels. Local validation is advisory (120
+// characters max, non-empty); Rust revalidates on save and rejects stale
+// revisions. Renaming touches no content, versions or drafts: only the
+// organizational name or the metadata title.
 import { useEffect, useRef, useState } from "react";
 import {
   MAX_NAME_CHARS,
@@ -16,7 +16,7 @@ interface RenameDialogProps {
   target: RenameTarget;
   busy: boolean;
   error: string | null;
-  /** Autoría inicial para el historial de títulos (requisito/diagrama). */
+  /** Initial authorship for the title history (requirement/design). */
   author: string;
   onConfirm: (name: string, author: string) => void;
   onClose: () => void;
@@ -30,13 +30,13 @@ export function RenameDialog({ target, busy, error, author, onConfirm, onClose }
   const kindLabel = renameKindLabel(target.kind);
   const id = renameTargetId(target);
 
-  // Foco inicial en el campo, con el nombre seleccionado para reemplazarlo.
+  // Initial focus in the field, with the name selected for replacing.
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
 
-  // Escape cancela (salvo mientras se guarda).
+  // Escape cancels (except while saving).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busy) onClose();
@@ -60,25 +60,25 @@ export function RenameDialog({ target, busy, error, author, onConfirm, onClose }
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label={`Renombrar ${kindLabel} ${id}`}
+        aria-label={`Rename ${kindLabel} ${id}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
           <h3>
-            Renombrar {kindLabel} <code>{id}</code>
+            Rename {kindLabel} <code>{id}</code>
           </h3>
           <button
             type="button"
             className="secondary small"
             onClick={onClose}
             disabled={busy}
-            aria-label="Cancelar renombrado"
+            aria-label="Cancel rename"
           >
             ✕
           </button>
         </div>
         <label className="field">
-          <span>{needsAuthor ? "Título" : "Nombre"}</span>
+          <span>{needsAuthor ? "Title" : "Name"}</span>
           <input
             ref={inputRef}
             type="text"
@@ -100,7 +100,7 @@ export function RenameDialog({ target, busy, error, author, onConfirm, onClose }
         )}
         {needsAuthor && (
           <label className="field">
-            <span>Autoría del cambio</span>
+            <span>Change authorship</span>
             <input
               type="text"
               value={by}
@@ -109,7 +109,7 @@ export function RenameDialog({ target, busy, error, author, onConfirm, onClose }
                 if (e.key === "Enter") confirm();
               }}
               disabled={busy}
-              placeholder="Tu nombre"
+              placeholder="Your name"
               autoComplete="off"
             />
           </label>
@@ -117,9 +117,9 @@ export function RenameDialog({ target, busy, error, author, onConfirm, onClose }
         <p className="hint">
           {target.kind === "requirement" || target.kind === "design"
             ? target.expected === null && target.derived !== null
-              ? `Sin título propio: ahora se muestra «${target.derived}» (primera línea). El ID no cambia.`
-              : "El ID, el contenido, las versiones y las aprobaciones no cambian."
-            : "Nombre organizativo: el ID y todo lo demás no cambian."}
+              ? `No own title: it now shows "${target.derived}" (first line). The ID does not change.`
+              : "The ID, content, versions and approvals do not change."
+            : "Organizational name: the ID and everything else stay put."}
         </p>
         {error !== null && (
           <p className="error" role="alert">
@@ -128,16 +128,16 @@ export function RenameDialog({ target, busy, error, author, onConfirm, onClose }
         )}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-            Cancelar
+            Cancel
           </button>
           <button
             type="button"
             className="primary"
             onClick={confirm}
             disabled={!canSave}
-            title={invalid ?? (authorMissing ? "Indica la autoría del cambio." : undefined)}
+            title={invalid ?? (authorMissing ? "State the change authorship." : undefined)}
           >
-            {busy ? "Guardando…" : "Guardar"}
+            {busy ? "Saving…" : "Save"}
           </button>
         </div>
       </div>

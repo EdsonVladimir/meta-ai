@@ -1,10 +1,9 @@
-// Adaptador Tauri para diseño vinculado a requisitos. La red, la clave y
-// la validación viven solo en Rust; aquí solo se invocan comandos.
+// Tauri adapter for requirement-linked design. Network, key and
+// validation live only in Rust; only commands are invoked here.
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriEnvironment } from "../../lib/env";
 import { normalizeCoreError, type CoreApiError } from "../requirements/types";
 import type {
-  DesignContextPreview,
   DesignDiffDto,
   DesignGenerationDto,
   DesignKind,
@@ -17,7 +16,7 @@ function ensureTauri(): void {
   if (!isTauriEnvironment()) {
     throw {
       kind: "not_tauri",
-      message: "El diseño requiere ejecutar Ruth IDE como escritorio (Tauri).",
+      message: "Design requires running Ruth IDE as a desktop app (Tauri).",
     } satisfies CoreApiError;
   }
 }
@@ -29,13 +28,6 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   } catch (raw) {
     throw normalizeCoreError(raw);
   }
-}
-
-export function designContext(
-  projectId: string,
-  moduleId: string,
-): Promise<DesignContextPreview[]> {
-  return call("core_design_context", { input: { projectId, moduleId } });
 }
 
 export function listArtifacts(projectId: string, moduleId: string): Promise<ArtifactDto[]> {

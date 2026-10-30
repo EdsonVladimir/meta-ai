@@ -1,5 +1,5 @@
-//! Sesiones PTY reales: ciclo de vida, E/S, límites, entorno depurado.
-//! Sin red, sin agentes, sin nada que tocar fuera de `/tmp`.
+//! Real PTY sessions: lifecycle, I/O, limits, scrubbed environment.
+//! No network, no agents, nothing to touch outside `/tmp`.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -73,21 +73,21 @@ fn wait_for(cond: impl Fn() -> bool, what: &str) {
     while !cond() {
         assert!(
             start.elapsed() < Duration::from_secs(10),
-            "tiempo agotado esperando: {what}"
+            "timed out waiting for: {what}"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
 }
 
 #[test]
-fn crear_lista_y_describir() {
+fn create_list_and_describe() {
     if !has_sh() {
         return;
     }
     let (mut manager, _) = manager();
     let first = manager
         .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 80, 24)
-        .expect("crear sesión");
+        .expect("create session");
     assert_eq!(first.id, "term-1");
     assert!(first.running);
     assert_eq!(first.exit_code, None);
@@ -95,7 +95,7 @@ fn crear_lista_y_describir() {
     assert!(!first.cwd.is_empty());
     let second = manager
         .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 80, 24)
-        .expect("crear segunda sesión");
+        .expect("create second session");
     assert_eq!(second.id, "term-2");
     let ids: Vec<String> = manager
         .list()
@@ -103,14 +103,14 @@ fn crear_lista_y_describir() {
         .map(|info: &SessionInfo| info.id.clone())
         .collect();
     assert_eq!(ids, vec!["term-1".to_string(), "term-2".to_string()]);
-    assert_eq!(manager.describe("term-1").expect("describir").id, "term-1");
+    assert_eq!(manager.describe("term-1").expect("describe").id, "term-1");
     assert_eq!(manager.running_count(), 2);
     manager.shutdown();
     assert!(manager.list().is_empty());
 }
 
 #[test]
-fn limite_de_sesiones_y_cierre_con_errores() {
+fn session_limit_and_closing_with_errors() {
     if !has_sh() {
         return;
     }
@@ -118,63 +118,61 @@ fn limite_de_sesiones_y_cierre_con_errores() {
     for _ in 0..MAX_SESSIONS {
         manager
             .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 80, 24)
-            .expect("crear dentro del límite");
+            .expect("create within the limit");
     }
     let err = manager
         .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 80, 24)
-        .expect_err("cuarta sesión");
+        .expect_err("fourth session");
     assert_eq!(err.kind, TermErrorKind::TooManySessions);
     assert_eq!(err.kind_str(), "too_many_sessions");
-    manager.close("term-1").expect("cerrar una");
+    manager.close("term-1").expect("close one");
     manager
         .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 80, 24)
-        .expect("crear tras cerrar");
-    let missing = manager.close("term-99").expect_err("cerrar inexistente");
+        .expect("create after closing");
+    let missing = manager.close("term-99").expect_err("close missing");
     assert_eq!(missing.kind, TermErrorKind::UnknownSession);
-    let missing = manager
-        .write("term-99", "x")
-        .expect_err("escribir inexistente");
+    let missing = manager.write("term-99", "x").expect_err("write missing");
     assert_eq!(missing.kind, TermErrorKind::UnknownSession);
     manager.shutdown();
 }
 
 #[test]
-fn eco_de_salida_y_escritura() {
+fn output_echo_and_writing() {
     if !has_sh() {
         return;
     }
     let (mut manager, recorder) = manager();
     let info = manager
         .create_with(
-            &ShellSpec::new("/bin/sh", &["-c", "echo marca-ruth-42; exec sleep 30"]),
+            &ShellSpec::new("/bin/sh", &["-c", "echo ruth-mark-42; exec sleep 30"]),
             &[],
             None,
             80,
             24,
         )
-        .expect("crear eco");
+        .expect("create echo");
     wait_for(
-        || recorder.outputs_for(&info.id).contains("marca-ruth-42"),
-        "eco del hijo",
+        || recorder.outputs_for(&info.id).contains("ruth-mark-42"),
+        "child echo",
     );
-    // Escritura a un `cat`: lo tecleado vuelve por el PTY.
+    // Writing to a `cat`: typed input comes back through the PTY.
     let cat = manager
         .create_with(&ShellSpec::new("/bin/cat", &[]), &[], None, 80, 24)
-        .expect("crear cat");
-    manager.write(&cat.id, "ping-ruth\n").expect("escribir");
+        .expect("create cat");
+    manager.write(&cat.id, "ping-ruth\n").expect("write");
     wait_for(
-        || recorder.outputs_for(&info.id).contains("marca-ruth-42"),
-        "eco previo intacto",
+        || recorder.outputs_for(&info.id).contains("ruth-mark-42"),
+        "previous echo intact",
     );
     wait_for(
         || recorder.outputs_for(&cat.id).contains("ping-ruth"),
-        "eco de cat",
+        "cat echo",
     );
     manager.shutdown();
 }
 
 #[test]
-fn fin_de_proceso_con_codigo_y_escritura_posterior() {
+fn process_end_with_code_and_later_write() {
     if !has_sh() {
         return;
     }
@@ -187,48 +185,48 @@ fn fin_de_proceso_con_codigo_y_escritura_posterior() {
             80,
             24,
         )
-        .expect("crear salida 7");
-    wait_for(|| recorder.exit_for(&info.id).is_some(), "aviso de fin");
+        .expect("create exit 7");
+    wait_for(|| recorder.exit_for(&info.id).is_some(), "exit notice");
     assert_eq!(recorder.exit_for(&info.id), Some(Some(7)));
-    let described = manager.describe(&info.id).expect("describir fin");
+    let described = manager.describe(&info.id).expect("describe end");
     assert!(!described.running);
     assert_eq!(described.exit_code, Some(7));
     assert_eq!(manager.running_count(), 0);
-    let err = manager.write(&info.id, "x").expect_err("escribir tras fin");
+    let err = manager.write(&info.id, "x").expect_err("write after end");
     assert_eq!(err.kind, TermErrorKind::SessionExited);
     let err = manager
         .resize(&info.id, 80, 24)
-        .expect_err("redimensionar tras fin");
+        .expect_err("resize after end");
     assert_eq!(err.kind, TermErrorKind::SessionExited);
-    manager.close(&info.id).expect("cerrar sesión terminada");
+    manager.close(&info.id).expect("close ended session");
 }
 
 #[test]
-fn redimension_y_tamanos_invalidos() {
+fn resize_and_invalid_sizes() {
     if !has_sh() {
         return;
     }
     let (mut manager, _) = manager();
     let info = manager
         .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 80, 24)
-        .expect("crear");
-    let resized = manager.resize(&info.id, 100, 30).expect("redimensionar");
+        .expect("create");
+    let resized = manager.resize(&info.id, 100, 30).expect("resize");
     assert_eq!((resized.cols, resized.rows), (100, 30));
     for (cols, rows) in [(0, 24), (1, 24), (80, 0), (600, 24), (80, 300)] {
         let err = manager
             .resize(&info.id, cols, rows)
-            .expect_err("tamaño inválido");
-        assert_eq!(err.kind, TermErrorKind::BadSize, "para {cols}×{rows}");
+            .expect_err("invalid size");
+        assert_eq!(err.kind, TermErrorKind::BadSize, "for {cols}×{rows}");
     }
     let err = manager
         .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 0, 24)
-        .expect_err("crear sin columnas");
+        .expect_err("create without columns");
     assert_eq!(err.kind, TermErrorKind::BadSize);
     manager.shutdown();
 }
 
 #[test]
-fn carpeta_invalida_y_carga_enorme() {
+fn invalid_folder_and_huge_payload() {
     if !has_sh() {
         return;
     }
@@ -241,7 +239,7 @@ fn carpeta_invalida_y_carga_enorme() {
             80,
             24,
         )
-        .expect_err("carpeta inexistente");
+        .expect_err("missing folder");
     assert_eq!(err.kind, TermErrorKind::BadDirectory);
     let err = manager
         .create_with(
@@ -251,60 +249,60 @@ fn carpeta_invalida_y_carga_enorme() {
             80,
             24,
         )
-        .expect_err("carpeta que es archivo");
+        .expect_err("folder that is a file");
     assert_eq!(err.kind, TermErrorKind::BadDirectory);
     let info = manager
         .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 80, 24)
-        .expect("crear");
+        .expect("create");
     let huge = "x".repeat(300 * 1024);
-    let err = manager.write(&info.id, &huge).expect_err("carga enorme");
+    let err = manager.write(&info.id, &huge).expect_err("huge payload");
     assert_eq!(err.kind, TermErrorKind::PayloadTooLarge);
     manager.shutdown();
 }
 
 #[test]
-fn ctrl_c_llega_al_pty_y_el_shell_reporta_su_tamano() {
+fn ctrl_c_reaches_the_pty_and_the_shell_reports_its_size() {
     if !has_sh() {
         return;
     }
     let (mut manager, recorder) = manager();
-    // `cat` muere con SIGINT: escribir \x03 equivale a Ctrl+C.
+    // `cat` dies on SIGINT: writing \x03 equals Ctrl+C.
     let cat = manager
         .create_with(&ShellSpec::new("/bin/cat", &[]), &[], None, 80, 24)
-        .expect("crear cat");
-    manager.write(&cat.id, "\x03").expect("escribir Ctrl+C");
-    wait_for(|| recorder.exit_for(&cat.id).is_some(), "fin por SIGINT");
-    manager.close(&cat.id).expect("cerrar");
-    // El PTY informa su tamaño real al shell (`stty size` → filas cols).
+        .expect("create cat");
+    manager.write(&cat.id, "\x03").expect("write Ctrl+C");
+    wait_for(|| recorder.exit_for(&cat.id).is_some(), "end by SIGINT");
+    manager.close(&cat.id).expect("close");
+    // The PTY reports its real size to the shell (`stty size` → rows cols).
     let shell = manager
         .create_with(&ShellSpec::new("/bin/sh", &[]), &[], None, 80, 24)
-        .expect("crear shell");
-    let resized = manager.resize(&shell.id, 100, 30).expect("redimensionar");
+        .expect("create shell");
+    let resized = manager.resize(&shell.id, 100, 30).expect("resize");
     assert_eq!((resized.cols, resized.rows), (100, 30));
     manager
         .write(&shell.id, "stty size; exit\n")
-        .expect("pedir tamaño");
+        .expect("request size");
     wait_for(
         || recorder.outputs_for(&shell.id).contains("30 100"),
-        "tamaño 30x100 en el shell",
+        "size 30x100 in the shell",
     );
-    wait_for(|| recorder.exit_for(&shell.id).is_some(), "fin del shell");
-    manager.close(&shell.id).expect("cerrar");
+    wait_for(|| recorder.exit_for(&shell.id).is_some(), "shell end");
+    manager.close(&shell.id).expect("close");
 }
 
 #[test]
-fn el_hijo_no_recibe_credenciales_meta() {
+fn the_child_receives_no_meta_credentials() {
     if !has_sh() || !std::path::Path::new("/usr/bin/env").exists() {
         return;
     }
     let (mut manager, recorder) = manager();
     let env = vec![
-        ("META_API_KEY".to_string(), "ultra-secreta".to_string()),
-        ("META_OTRA".to_string(), "tambien-fuera".to_string()),
+        ("META_API_KEY".to_string(), "ultra-secret".to_string()),
+        ("META_OTRA".to_string(), "also-out".to_string()),
         ("RUTH_CONTROL".to_string(), "visible".to_string()),
     ];
-    // `scrub_env` es lo que `create` aplica; aquí se comprueba el camino
-    // completo hasta el proceso hijo a través de `env`.
+    // `scrub_env` is what `create` applies; here the full path to the
+    // child process through `env` is verified.
     let mut scrubbed = env.clone();
     ruth_term::scrub_env(&mut scrubbed);
     let info = manager
@@ -315,12 +313,12 @@ fn el_hijo_no_recibe_credenciales_meta() {
             80,
             24,
         )
-        .expect("crear env");
-    wait_for(|| recorder.exit_for(&info.id).is_some(), "fin de env");
+        .expect("create env");
+    wait_for(|| recorder.exit_for(&info.id).is_some(), "env end");
     let output = recorder.outputs_for(&info.id);
-    assert!(output.contains("RUTH_CONTROL=visible"), "el resto pasa");
-    assert!(!output.contains("META_API_KEY"), "la clave no cruza");
-    assert!(!output.contains("ultra-secreta"), "el valor no cruza");
-    assert!(!output.contains("META_OTRA"), "la familia no cruza");
+    assert!(output.contains("RUTH_CONTROL=visible"), "the rest passes");
+    assert!(!output.contains("META_API_KEY"), "the key does not cross");
+    assert!(!output.contains("ultra-secret"), "the value does not cross");
+    assert!(!output.contains("META_OTRA"), "the family does not cross");
     manager.shutdown();
 }

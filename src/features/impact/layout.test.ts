@@ -3,7 +3,7 @@ import { MAX_GRAPH_NODES } from "./coordination";
 import { layoutImpactGraph, NODE_H, NODE_W } from "./layout";
 
 describe("layoutImpactGraph", () => {
-  test("origen solo, sin afectados", () => {
+  test("origin alone, no affected items", () => {
     const layout = layoutImpactGraph({
       originId: "req-1",
       originKind: "requirement",
@@ -18,7 +18,7 @@ describe("layoutImpactGraph", () => {
     expect(layout.total).toBe(1);
   });
 
-  test("capas por profundidad sin duplicar nodos ni aristas", () => {
+  test("layers by depth without duplicating nodes or edges", () => {
     const layout = layoutImpactGraph({
       originId: "req-1",
       originKind: "requirement",
@@ -46,7 +46,7 @@ describe("layoutImpactGraph", () => {
     expect(layout.truncated).toBe(false);
   });
 
-  test("distingue pendiente de aprobación de pendiente de fuentes", () => {
+  test("tells pending approval from pending sources apart", () => {
     const layout = layoutImpactGraph({
       originId: "req-1",
       originKind: "requirement",
@@ -65,7 +65,7 @@ describe("layoutImpactGraph", () => {
     expect(byId.get("mer-1")?.status).toBe("updated");
   });
 
-  test("diamante: dos caminos, un solo nodo", () => {
+  test("diamond: two paths, one node", () => {
     const layout = layoutImpactGraph({
       originId: "req-1",
       originKind: "requirement",
@@ -84,7 +84,7 @@ describe("layoutImpactGraph", () => {
     expect(layout.edges).toHaveLength(4);
   });
 
-  test("truncado explícito sin falsear el total", () => {
+  test("explicit truncation without faking the total", () => {
     const affected = Array.from({ length: MAX_GRAPH_NODES + 5 }, (_, i) => ({
       id: `flujo-${i}`,
       kind: "flow",
@@ -101,11 +101,11 @@ describe("layoutImpactGraph", () => {
     expect(layout.nodes).toHaveLength(MAX_GRAPH_NODES);
     expect(layout.total).toBe(MAX_GRAPH_NODES + 6);
     expect(layout.truncated).toBe(true);
-    // El origen nunca se trunca: es la referencia del mapa.
+    // The source never truncates: it is the map's reference.
     expect(layout.nodes[0].id).toBe("req-1");
   });
 
-  test("determinista y con caja contenida", () => {
+  test("deterministic with a contained box", () => {
     const input = {
       originId: "req-1",
       originKind: "requirement",

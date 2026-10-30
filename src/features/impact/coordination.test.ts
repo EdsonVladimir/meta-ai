@@ -13,8 +13,8 @@ function report(pending: boolean[]): ImpactReportDto {
     projectId: "proy-1",
     origin: {
       artifact: { id: "req-1", projectId: "proy-1", moduleId: "mod-1", kind: "requirement", title: null, archived: false },
-      fromVersion: { id: "req-1-v1", number: 1, content: "antes" },
-      currentVersion: { id: "req-1-v2", number: 2, content: "ahora" },
+      fromVersion: { id: "req-1-v1", number: 1, content: "before" },
+      currentVersion: { id: "req-1-v2", number: 2, content: "now" },
     },
     affected: pending.map((requiresReview, i) => ({
       artifact: { id: `flujo-${i}`, projectId: "proy-1", moduleId: "mod-1", kind: "flow", title: null, archived: false },
@@ -31,14 +31,14 @@ function report(pending: boolean[]): ImpactReportDto {
 }
 
 describe("isStaleImpactResponse", () => {
-  test("solo vale la respuesta de la consulta exacta", () => {
+  test("only the exact query response counts", () => {
     expect(isStaleImpactResponse("a", "a")).toBe(false);
     expect(isStaleImpactResponse("a", "b")).toBe(true);
   });
 });
 
 describe("countPendingUnique", () => {
-  test("cuenta pendientes sin duplicar artefactos", () => {
+  test("counts pending items without duplicating artifacts", () => {
     const base = report([true, false, true]);
     expect(countPendingUnique(base)).toBe(2);
     const dup = report([true]);
@@ -49,7 +49,7 @@ describe("countPendingUnique", () => {
 });
 
 describe("paginate", () => {
-  test("ventanas acotadas con el total intacto", () => {
+  test("bounded windows with the total intact", () => {
     expect(paginate(25, 0, 10)).toEqual({ page: 0, pages: 3, start: 0, end: 10 });
     expect(paginate(25, 2, 10)).toEqual({ page: 2, pages: 3, start: 20, end: 25 });
     expect(paginate(25, 9, 10).page).toBe(2);
@@ -58,7 +58,7 @@ describe("paginate", () => {
 });
 
 describe("impactStatus", () => {
-  test("distingue pendiente, pendiente de aprobación y al día", () => {
+  test("tells pending, pending approval and current apart", () => {
     const base = report([false]).affected[0];
     expect(impactStatus({ ...base, requiresReview: true })).toBe("pending");
     expect(
@@ -72,7 +72,7 @@ describe("impactStatus", () => {
       }),
     ).toBe("ok");
     expect(impactStatus(base)).toBe("ok");
-    // Lo pendiente manda sobre lo histórico.
+    // Pending wins over historical.
     expect(
       impactStatus({ ...base, requiresReview: true, approvedBefore: true }),
     ).toBe("pending");
@@ -80,7 +80,7 @@ describe("impactStatus", () => {
 });
 
 describe("MAX_GRAPH_NODES", () => {
-  test("el tope del grafo es positivo y acotado", () => {
+  test("the graph cap is positive and bounded", () => {
     expect(MAX_GRAPH_NODES).toBeGreaterThan(0);
     expect(MAX_GRAPH_NODES).toBeLessThanOrEqual(200);
   });

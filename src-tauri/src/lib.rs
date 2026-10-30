@@ -1,12 +1,12 @@
-//! Ruth IDE: comandos Tauri.
+//! Ruth IDE: Tauri commands.
 //!
-//! - `commands::meta`: prueba de conexión con Meta (hito 1).
-//! - `commands::requirements`: requisitos sobre `ruth-core` con persistencia
-//!   local (hitos 3–4).
-//! - `commands::proposals`: generación asistida con Meta (hito 5).
-//! - `commands::design`: diseño vinculado a requisitos (hito 6) y
-//!   propuestas de actualización de diseños (hito 8).
-//! - `commands::impact`: consulta de impacto sobre el núcleo (hito 7).
+//! - `commands::meta`: Meta connection test (milestone 1).
+//! - `commands::requirements`: requirements over `ruth-core` with local
+//!   persistence (milestones 3-4).
+//! - `commands::proposals`: Meta-assisted generation (milestone 5).
+//! - `commands::design`: requirement-linked design (milestone 6) and
+//!   design update proposals (milestone 8).
+//! - `commands::impact`: core impact query (milestone 7).
 
 mod commands;
 mod state;
@@ -15,11 +15,24 @@ use tauri::{Emitter, Manager, WindowEvent};
 
 use commands::archive::{
     core_archive_module, core_archive_preview, core_archive_requirement, core_delete_module,
-    core_delete_requirement, core_restore_module, core_restore_requirement,
+    core_delete_project, core_delete_requirement, core_restore_module, core_restore_requirement,
 };
 use commands::baseline::{
     core_create_baseline, core_export_preview, core_export_save, core_get_baseline,
     core_list_baselines, core_prepare_baseline,
+};
+use commands::code::{
+    code_add_root, code_analyze_rust, code_list_dir, code_list_roots, code_read_file,
+    code_remove_root, code_set_root_project, code_write_file,
+};
+use commands::code_links::{
+    code_add_module_link, code_add_symbol_link, code_delete_snapshot, code_get_snapshot,
+    code_list_links, code_list_snapshots, code_project_links, code_remove_link, code_save_snapshot,
+    code_verify_snapshot,
+};
+use commands::codegen::{
+    code_accept_file, code_discard_file, code_gen_context, code_generate, code_list_generations,
+    code_mockup_screens,
 };
 use commands::delivery::{
     core_create_delivery, core_export_delivery_preview, core_export_delivery_save,
@@ -34,16 +47,19 @@ use commands::design::{
 use commands::impact::core_impact_report;
 use commands::meta::{meta_status, test_meta_connection, TestLock};
 use commands::mockup::{
-    core_create_mockup, core_generate_design_from_mockups, core_mockup_context,
-    core_mockup_sources, core_save_mockup_version, core_validate_mockup,
+    core_accept_mockup_screen, core_create_mockup, core_discard_mockup_screen,
+    core_generate_design_from_mockups, core_list_mockup_generations, core_mockup_context,
+    core_mockup_sources, core_propose_mockups, core_save_mockup_version, core_validate_mockup,
 };
 use commands::proposals::{
     core_accept_proposal, core_discard_proposal, core_generation_context, core_list_generations,
     core_propose_requirements,
 };
+use commands::recent::{recent_list, recent_remove, recent_touch};
 use commands::rename::{
     core_rename_design, core_rename_module, core_rename_project, core_rename_requirement,
 };
+use commands::replicate::{code_replicate_execute, code_replicate_preview};
 use commands::requirements::{
     core_approve_version, core_create_module, core_create_project, core_create_requirement,
     core_get_requirement, core_list_modules, core_list_projects, core_list_requirements,
@@ -61,11 +77,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(TestLock::default())
         .setup(|app| {
-            // La base vive en el directorio de datos de la aplicación
-            // (p. ej. ~/.local/share/ide.ruth.app/ruth.db en Linux), nunca en
-            // el repositorio ni en rutas fijas. Si no puede abrirse, la app
-            // arranca igual en modo degradado: la interfaz muestra el error
-            // recuperable sin borrar ni reemplazar nada.
+            // The database lives in the application data directory
+            // (e.g. ~/.local/share/ide.ruth.app/ruth.db on Linux), never in
+            // the repo or in fixed paths. If it cannot open, the app
+            // still starts in degraded mode: the UI shows the recoverable
+            // error without deleting or replacing anything.
             let path = app.path().app_data_dir().map(|dir| dir.join("ruth.db"));
             let state = match path {
                 Ok(path) => match ruth_store::DbActor::spawn(&path) {
@@ -78,12 +94,18 @@ pub fn run() {
                         loaded.designs,
                         loaded.baseline_meta,
                         loaded.layouts,
+                        loaded.mockups,
+                        loaded.code_roots,
+                        loaded.code_links,
+                        loaded.snapshots,
+                        loaded.codegen,
+                        loaded.recents,
                     ),
                     Err(err) => AppState::unavailable(path, err.to_string()),
                 },
                 Err(err) => AppState::unavailable(
-                    std::path::PathBuf::from("desconocida"),
-                    format!("no se pudo resolver el directorio de datos: {err}"),
+                    std::path::PathBuf::from("unknown"),
+                    format!("could not resolve the data directory: {err}"),
                 ),
             };
             app.manage(state);
@@ -91,9 +113,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Cerrar con terminales en marcha pide confirmación: se frena
-            // aquí y la interfaz decide (ver `term_quit_app`). Sin
-            // sesiones en marcha, el cierre sigue su curso normal.
+            // Closing with running terminals asks for confirmation: it stops
+            // here and the UI decides (see `term_quit_app`). Without
+            // running sessions, closing proceeds normally.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let running = window.state::<TerminalState>().running_count();
                 if running > 0 {
@@ -144,6 +166,10 @@ pub fn run() {
             core_mockup_sources,
             core_generate_design_from_mockups,
             core_validate_mockup,
+            core_propose_mockups,
+            core_list_mockup_generations,
+            core_accept_mockup_screen,
+            core_discard_mockup_screen,
             core_prepare_baseline,
             core_create_baseline,
             core_get_baseline,
@@ -160,6 +186,7 @@ pub fn run() {
             core_archive_module,
             core_restore_module,
             core_delete_module,
+            core_delete_project,
             core_archive_requirement,
             core_restore_requirement,
             core_delete_requirement,
@@ -167,6 +194,35 @@ pub fn run() {
             core_rename_module,
             core_rename_requirement,
             core_rename_design,
+            code_list_roots,
+            code_add_root,
+            code_remove_root,
+            code_set_root_project,
+            code_list_dir,
+            code_read_file,
+            code_write_file,
+            code_analyze_rust,
+            recent_list,
+            recent_touch,
+            recent_remove,
+            code_add_module_link,
+            code_add_symbol_link,
+            code_remove_link,
+            code_list_links,
+            code_project_links,
+            code_save_snapshot,
+            code_list_snapshots,
+            code_get_snapshot,
+            code_delete_snapshot,
+            code_verify_snapshot,
+            code_gen_context,
+            code_generate,
+            code_list_generations,
+            code_mockup_screens,
+            code_replicate_preview,
+            code_replicate_execute,
+            code_accept_file,
+            code_discard_file,
             term_list,
             term_create,
             term_write,

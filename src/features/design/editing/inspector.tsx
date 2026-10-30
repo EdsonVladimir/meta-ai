@@ -1,6 +1,6 @@
-// Piezas compartidas del inspector del editor visual: edición con
-// confirmación (no se ensucia el historial a cada tecla), citas a
-// requisitos, confirmación de borrado y metadatos del diseño.
+// Shared pieces of the visual-editor inspector: commit-on-blur editing
+// (history is not dirtied on every keystroke), requirement citations,
+// deletion confirmation and design metadata.
 import { useState } from "react";
 
 interface CommitInputProps {
@@ -13,8 +13,8 @@ interface CommitInputProps {
 }
 
 /**
- * Campo que confirma al salir o pulsar Intro (Escape revierte). Se
- * reinicia con `key` cuando el valor externo cambia (p. ej. deshacer).
+ * Field that commits on blur or Enter (Escape reverts). It restarts
+ * with `key` when the external value changes (e.g. undo).
  */
 export function CommitInput({
   label,
@@ -69,10 +69,10 @@ interface RefsPickerProps {
   onChange: (refs: string[]) => void;
 }
 
-/** Citas a requisitos: casillas sobre el conjunto de fuentes declaradas. */
+/** Requirement citations: checkboxes over the declared source set. */
 export function RefsPicker({ allowed, selected, onChange }: RefsPickerProps) {
   if (allowed.length === 0) {
-    return <p className="hint">Sin fuentes citables en este diseño.</p>;
+    return <p className="hint">No citable sources in this design.</p>;
   }
   function toggle(id: string, checked: boolean) {
     onChange(
@@ -81,7 +81,7 @@ export function RefsPicker({ allowed, selected, onChange }: RefsPickerProps) {
   }
   return (
     <fieldset className="refs-picker">
-      <legend>Requisitos citados</legend>
+      <legend>Cited requirements</legend>
       {allowed.map((id) => (
         <label key={id} className="check">
           <input
@@ -96,6 +96,96 @@ export function RefsPicker({ allowed, selected, onChange }: RefsPickerProps) {
   );
 }
 
+interface MockupRefsEditorProps {
+  /** Citable mockups (declared-set identifiers). */
+  mockups: string[];
+  selected: string[];
+  onChange: (refs: string[]) => void;
+}
+
+/**
+ * Citations to `mockup/component` motivating the element: which mockup
+ * field or action justifies this node or entity. Informational, not
+ * dependencies. The component is typed by hand: Rust requires the
+ * mockup in the set and the alphabet, without checking fine-grained
+ * existence (like `designs` in mockups).
+ */
+export function MockupRefsEditor({ mockups, selected, onChange }: MockupRefsEditorProps) {
+  const [mockup, setMockup] = useState(mockups[0] ?? "");
+  const [element, setElement] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  if (mockups.length === 0) {
+    return <p className="hint">No citable mockups in this design.</p>;
+  }
+  function add(): void {
+    setError(null);
+    const clean = element.trim();
+    if (!/^[A-Za-z0-9_]{1,64}$/.test(clean)) {
+      setError("The component uses letters, digits and underscore.");
+      return;
+    }
+    const ref = `${mockup}/${clean}`;
+    if (selected.includes(ref)) {
+      setError("That citation already exists.");
+      return;
+    }
+    onChange([...selected, ref]);
+    setElement("");
+  }
+  return (
+    <div className="field">
+      <span>Motivated by (mockup/component)</span>
+      {selected.length > 0 && (
+        <ul className="question-list">
+          {selected.map((ref) => (
+            <li key={ref}>
+              <code>{ref}</code>
+              <button
+                type="button"
+                className="secondary small"
+                aria-label={`Remove citation ${ref}`}
+                onClick={() => onChange(selected.filter((r) => r !== ref))}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="add-row">
+        <select value={mockup} aria-label="Cited mockup" onChange={(e) => setMockup(e.target.value)}>
+          {mockups.map((id) => (
+            <option key={id} value={id}>
+              {id}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={element}
+          placeholder="component"
+          maxLength={64}
+          aria-label="Cited component"
+          autoComplete="off"
+          onChange={(e) => setElement(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") add();
+          }}
+        />
+        <button type="button" className="secondary small" onClick={add}>
+          Add
+        </button>
+      </div>
+      {error !== null && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="hint">Which field or action justifies this element. Informational.</p>
+    </div>
+  );
+}
+
 interface DeleteConfirmProps {
   what: string;
   consequences: string[];
@@ -103,10 +193,10 @@ interface DeleteConfirmProps {
   onCancel: () => void;
 }
 
-/** Confirmación explícita de borrado con sus consecuencias. */
+/** Explicit deletion confirmation with its consequences. */
 export function DeleteConfirm({ what, consequences, onConfirm, onCancel }: DeleteConfirmProps) {
   return (
-    <div className="delete-confirm" role="alertdialog" aria-label={`Eliminar ${what}`}>
+    <div className="delete-confirm" role="alertdialog" aria-label={`Delete ${what}`}>
       <ul>
         {consequences.map((line, i) => (
           <li key={i}>{line}</li>
@@ -114,10 +204,10 @@ export function DeleteConfirm({ what, consequences, onConfirm, onCancel }: Delet
       </ul>
       <div className="row-actions">
         <button type="button" className="danger small" onClick={onConfirm} autoFocus>
-          Eliminar
+          Delete
         </button>
         <button type="button" className="secondary small" onClick={onCancel}>
-          Cancelar
+          Cancel
         </button>
       </div>
     </div>
@@ -133,7 +223,7 @@ interface DesignMetaFormProps {
   onQuestions: (questions: string[]) => void;
 }
 
-/** Título, explicación y preguntas pendientes del diseño. */
+/** Design title, explanation and open questions. */
 export function DesignMetaForm({
   title,
   explanation,
@@ -144,25 +234,25 @@ export function DesignMetaForm({
 }: DesignMetaFormProps) {
   const [draft, setDraft] = useState("");
   return (
-    <section className="inspector-meta" aria-label="Datos del diseño">
-      <h4>Diseño</h4>
-      <CommitInput key={`t:${title}`} label="Título" value={title} onCommit={onTitle} maxLength={200} />
+    <section className="inspector-meta" aria-label="Design data">
+      <h4>Design</h4>
+      <CommitInput key={`t:${title}`} label="Title" value={title} onCommit={onTitle} maxLength={200} />
       <CommitInput
         key={`e:${explanation}`}
-        label="Explicación"
+        label="Explanation"
         value={explanation}
         onCommit={onExplanation}
         multiline
         maxLength={2000}
       />
       <div className="field">
-        <span>Preguntas pendientes ({questions.length}/5)</span>
+        <span>Open questions ({questions.length}/5)</span>
         {questions.length > 0 && (
           <ul className="question-list">
             {questions.map((question, i) => (
               <li key={`${i}:${question}`}>
                 <CommitInput
-                  label={`Pregunta ${i + 1}`}
+                  label={`Question ${i + 1}`}
                   value={question}
                   maxLength={1000}
                   onCommit={(next) => {
@@ -174,10 +264,10 @@ export function DesignMetaForm({
                 <button
                   type="button"
                   className="secondary small"
-                  aria-label={`Quitar pregunta ${i + 1}`}
+                  aria-label={`Remove question ${i + 1}`}
                   onClick={() => onQuestions(questions.filter((_, j) => j !== i))}
                 >
-                  Quitar
+                  Remove
                 </button>
               </li>
             ))}
@@ -188,9 +278,9 @@ export function DesignMetaForm({
             <input
               type="text"
               value={draft}
-              placeholder="Nueva pregunta"
+              placeholder="New question"
               maxLength={1000}
-              aria-label="Nueva pregunta"
+              aria-label="New question"
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && draft.trim() !== "") {
@@ -208,7 +298,7 @@ export function DesignMetaForm({
                 setDraft("");
               }}
             >
-              Añadir
+              Add
             </button>
           </div>
         )}

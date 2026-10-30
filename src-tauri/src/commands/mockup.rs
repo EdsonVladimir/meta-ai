@@ -1,25 +1,32 @@
-//! Comandos de mockups versionados (diseño vivo, etapa B).
+//! Versioned mockup commands (living design, stage B).
 //!
-//! - `core_create_mockup`: artefacto nuevo con su primera versión dibujada
-//!   por la persona, validada en Rust y con disposición inicial, en una
-//!   sola transacción.
-//! - `core_save_mockup_version`: revisión manual como versión nueva del
-//!   MISMO artefacto, con fuentes vigentes y versión esperada.
-//! - `core_mockup_context`: requisitos y mockups seleccionables (sin red).
-//! - `core_generate_design_from_mockups`: genera un flujo o ER con Meta
-//!   desde mockups y requisitos guardados. La red ocurre SIN bloqueos y el
-//!   registro usa el mismo ciclo de diseños (misma tabla, misma
-//!   aceptación): la plantilla con mockups queda en `template_version`.
-//! - La disposición se lee y guarda con `core_design_layout` y
-//!   `core_save_design_layout` (genéricos por artefacto y versión).
-//! - La aprobación usa `core_approve_design` (revalida el mockup en Rust).
+//! - `core_create_mockup`: new artifact with its first version drawn by
+//!   the person, validated in Rust and with initial layout, in one
+//!   transaction.
+//! - `core_save_mockup_version`: manual revision as a new version of
+//!   the SAME artifact, with current sources and expected version.
+//! - `core_mockup_context`: selectable requirements and mockups (no network).
+//! - `core_generate_design_from_mockups`: generates a flow or ER with Meta
+//!   from saved mockups and requirements. The network runs WITHOUT locks and
+//!   recording uses the same design cycle (same table, same
+//!   acceptance): the mockup-bearing template stays in `template_version`.
+//! - `core_propose_mockups`: proposes screens with Meta from saved
+//!   requirements (selection or whole module). The network runs WITHOUT locks;
+//!   recording uses the screens' own cycle (individual acceptance
+//!   as a new mockup, idempotent).
+//! - `core_list_mockup_generations`, `core_accept_mockup_screen`,
+//!   `core_discard_mockup_screen`: thin wrappers over `ruth-api`.
+//! - Layout is read and saved with `core_design_layout` and
+//!   `core_save_design_layout` (generic per artifact and version).
+//! - Approval uses `core_approve_design` (revalidates the mockup in Rust).
 
 use tauri::State;
 
 use ruth_api::{
-    now_utc_iso8601, ApiError, CreateMockupInput, DesignContextInput, DesignGenerationDto,
-    MockupContextPreview, RecordDesignInput, RequirementDetail, SaveMockupVersionInput,
-    ValidateMockupInput, ValidatedMockupDto,
+    now_utc_iso8601, AcceptMockupScreenInput, ApiError, CreateMockupInput, DesignContextInput,
+    DesignGenerationDto, DiscardMockupScreenInput, ListMockupGenerationsInput,
+    MockupContextPreview, MockupGenerationDto, RecordDesignInput, RecordMockupInput,
+    RequirementDetail, SaveMockupVersionInput, ValidateMockupInput, ValidatedMockupDto,
 };
 
 use super::{lock, mark_inflight, ready, InflightGuard};
@@ -74,7 +81,7 @@ pub fn core_mockup_context(
 
 #[tauri::command]
 pub fn core_validate_mockup(input: ValidateMockupInput) -> Result<ValidatedMockupDto, ApiError> {
-    // Puro: valida el JSON contra sus citas, sin tocar el estado ni la red.
+    // Pure: validates the JSON against its quotes, without touching state or network.
     ruth_api::validate_mockup_stored(input)
 }
 
@@ -94,7 +101,7 @@ pub async fn core_generate_design_from_mockups(
     input: GenerateFromMockupsInput,
 ) -> Result<DesignGenerationDto, ApiError> {
     let kind = ruth_meta::design::DesignKind::parse(&input.kind).map_err(ApiError::from_meta)?;
-    // Bloqueo corto: foto del contexto guardado y marca de generación.
+    // Short lock: saved-context snapshot and generation mark.
     let snapshot = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
@@ -110,7 +117,7 @@ pub async fn core_generate_design_from_mockups(
     };
     let _guard = InflightGuard::hold(&state.inflight, input.module_id.clone());
 
-    // Sin bloqueos durante la red: ni SQLite ni el estado del proyecto.
+    // No locks during the network: neither SQLite nor the project state.
     let config = ruth_meta::MetaConfig::from_env().map_err(ApiError::from_meta)?;
     let prompt = ruth_meta::design::build_mockup_design_input(
         kind,
@@ -129,9 +136,9 @@ pub async fn core_generate_design_from_mockups(
         .await
         .map_err(ApiError::from_meta)?;
 
-    // Bloqueo corto: registrar lo validado (o nada, si la red falló). Si
-    // una fuente se movió durante la red, la propuesta nace desactualizada
-    // (se calcula al servir) y su aceptación se bloquea.
+    // Short lock: record what validated (or nothing, if the network failed). If
+    // a source moved during the network, the proposal is born stale
+    // (computed when served) and its acceptance is blocked.
     let mut guard = lock(&state.inner)?;
     let ready = ready(&mut guard)?;
     let (input_tokens, output_tokens, total_tokens) = match &result.usage {
@@ -164,4 +171,115 @@ pub async fn core_generate_design_from_mockups(
             target: None,
         },
     )
+}
+
+/// Input of 'Propose screens': empty selection = whole module.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposeMockupsInput {
+    pub project_id: String,
+    pub module_id: String,
+    pub requirement_ids: Vec<String>,
+}
+
+/// Proposes screens with Meta from saved requirements. Without an
+/// approval barrier: generates from saved versions. One generation per
+/// module, no locks during the network; each screen was already validated
+/// in Rust before recording.
+#[tauri::command]
+pub async fn core_propose_mockups(
+    state: State<'_, AppState>,
+    input: ProposeMockupsInput,
+) -> Result<MockupGenerationDto, ApiError> {
+    // Short lock: saved-context snapshot and generation mark.
+    let context = {
+        let mut guard = lock(&state.inner)?;
+        let ready = ready(&mut guard)?;
+        let context = ruth_api::snapshot_screen_context(
+            ready.store,
+            &input.project_id,
+            &input.module_id,
+            &input.requirement_ids,
+        )?;
+        mark_inflight(&state.inflight, &input.module_id)?;
+        context
+    };
+    let _guard = InflightGuard::hold(&state.inflight, input.module_id.clone());
+
+    // No locks during the network: neither SQLite nor the project state.
+    let config = ruth_meta::MetaConfig::from_env().map_err(ApiError::from_meta)?;
+    let prompt = ruth_meta::mockup::build_mockup_generation_input(&context);
+    let mut allowed: Vec<String> = context.iter().map(|c| c.artifact_id.clone()).collect();
+    allowed.sort();
+    allowed.dedup();
+    let result = ruth_meta::mockup::generate_mockups(&config, &prompt, &allowed)
+        .await
+        .map_err(ApiError::from_meta)?;
+
+    // Short lock: record what validated (or nothing, if the network failed). If
+    // a source moved during the network, the proposal is born stale
+    // (computed when served) and its acceptance is blocked.
+    let mut guard = lock(&state.inner)?;
+    let ready = ready(&mut guard)?;
+    let (input_tokens, output_tokens, total_tokens) = match &result.usage {
+        Some(usage) => (
+            Some(usage.input_tokens),
+            Some(usage.output_tokens),
+            Some(usage.total_tokens),
+        ),
+        None => (None, None, None),
+    };
+    ruth_api::record_mockup_generation(
+        ready.store,
+        ready.ids,
+        ready.mockups,
+        ready.db,
+        RecordMockupInput {
+            project_id: input.project_id,
+            module_id: input.module_id,
+            model: result.model,
+            context,
+            validated: ruth_meta::mockup::ValidatedMockupGeneration {
+                screens: result.screens,
+                questions: result.questions,
+            },
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            created_at: now_utc_iso8601(),
+        },
+    )
+}
+
+/// A module's screen generations (thin wrapper, no network).
+#[tauri::command]
+pub fn core_list_mockup_generations(
+    state: State<'_, AppState>,
+    input: ListMockupGenerationsInput,
+) -> Result<Vec<MockupGenerationDto>, ApiError> {
+    let mut guard = lock(&state.inner)?;
+    let ready = ready(&mut guard)?;
+    ruth_api::list_mockup_generations(ready.store, ready.mockups, input)
+}
+
+/// Takes ONE screen in as a new mockup (thin wrapper, no network).
+#[tauri::command]
+pub fn core_accept_mockup_screen(
+    state: State<'_, AppState>,
+    input: AcceptMockupScreenInput,
+) -> Result<RequirementDetail, ApiError> {
+    let mut guard = lock(&state.inner)?;
+    let ready = ready(&mut guard)?;
+    ruth_api::accept_mockup_screen(ready.store, ready.ids, ready.mockups, ready.db, input)
+}
+
+/// Discards a pending screen (thin wrapper, no network).
+#[tauri::command]
+pub fn core_discard_mockup_screen(
+    state: State<'_, AppState>,
+    input: DiscardMockupScreenInput,
+) -> Result<(), ApiError> {
+    let mut guard = lock(&state.inner)?;
+    let ready = ready(&mut guard)?;
+    ruth_api::discard_mockup_screen(ready.mockups, ready.db, input)
 }

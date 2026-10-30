@@ -1,11 +1,11 @@
-//! Análisis puro sobre versiones: vigencia, impacto y ciclos.
+//! Pure version analysis: freshness, impact and cycles.
 //!
-//! Todo se calcula a partir de vistas inmutables; no hay flags almacenados
-//! que puedan contradecir las dependencias. Recalcular nunca muta nada.
+//! Everything computes from immutable views; there are no stored flags
+//! that could contradict the dependencies. Recalculating never mutates.
 
 use crate::domain::{ArtifactId, VersionId};
 
-/// Vista mínima de una versión para analizar dependencias.
+/// Minimal version view for dependency analysis.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionView {
     pub id: VersionId,
@@ -14,8 +14,8 @@ pub struct VersionView {
     pub is_current: bool,
 }
 
-/// Vigencia calculada de una versión: es vigente si todas sus fuentes exactas
-/// siguen siendo las actuales de sus artefactos.
+/// Computed version freshness: it is fresh when all its exact sources
+/// are still their artifacts current ones.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Validity {
     pub version: VersionId,
@@ -34,8 +34,8 @@ impl Validity {
     }
 }
 
-/// Fuentes de la versión que ya no son actuales. Una fuente desconocida se
-/// considera desactualizada por prudencia (no se puede probar que sea actual).
+/// Version sources that are no longer current. An unknown source counts
+/// as stale out of caution (it cannot be proven current).
 pub fn stale_sources(view: &VersionView, all: &[VersionView]) -> Vec<VersionId> {
     view.sources
         .iter()
@@ -60,31 +60,31 @@ pub fn version_is_valid(view: &VersionView, all: &[VersionView]) -> bool {
     stale_sources(view, all).is_empty()
 }
 
-/// Artefacto afectado por un cambio, con los caminos que lo justifican. Cada
-/// camino va desde un artefacto cambiado hasta el afectado, ambos incluidos.
+/// Artifact affected by a change, with the paths justifying it. Each
+/// path runs from a changed artifact to the affected one, both included.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImpactedArtifact {
     pub artifact: ArtifactId,
     pub paths: Vec<Vec<ArtifactId>>,
 }
 
-/// Informe de impacto: artefactos afectados y caminos explicativos.
+/// Impact report: affected artifacts and explanatory paths.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImpactReport {
     pub changed: Vec<ArtifactId>,
     pub affected: Vec<ImpactedArtifact>,
 }
 
-/// Calcula derivados directos e indirectos que requieren revisión cuando
-/// cambian unos artefactos. El impacto fluye por las derivaciones actuales:
-/// si B deriva de A y C deriva de B, un cambio en A afecta a B y a C aunque
-/// el pin de C siga apuntando a la versión actual de B.
+/// Computes direct and indirect derivatives needing review when
+/// artifacts change. Impact flows through current derivations: when B
+/// derives from A and C derives from B, a change in A affects B and C
+/// even when C pin still points at B current version.
 pub fn compute_impact(changed: &[ArtifactId], all: &[VersionView]) -> ImpactReport {
     let mut roots: Vec<&ArtifactId> = changed.iter().collect();
     roots.sort_by(|a, b| a.as_str().cmp(b.as_str()));
     roots.dedup();
 
-    // Aristas dependiente → fuente entre artefactos, desde versiones actuales.
+    // Dependent → source edges between artifacts, from current versions.
     let mut edges: Vec<(&ArtifactId, &ArtifactId)> = Vec::new();
     for view in all.iter().filter(|v| v.is_current) {
         for source in &view.sources {
@@ -97,7 +97,7 @@ pub fn compute_impact(changed: &[ArtifactId], all: &[VersionView]) -> ImpactRepo
         }
     }
 
-    // Adyacencia fuente → dependientes, ordenada para determinismo.
+    // Source → dependents adjacency, ordered for determinism.
     let mut next: Vec<(&ArtifactId, Vec<&ArtifactId>)> = Vec::new();
     for (dependent, source) in &edges {
         match next.iter_mut().find(|(s, _)| s == source) {
@@ -116,7 +116,7 @@ pub fn compute_impact(changed: &[ArtifactId], all: &[VersionView]) -> ImpactRepo
             .unwrap_or_default()
     };
 
-    // Alcanzables (afectados), excluyendo las raíces cambiadas.
+    // Reachable (affected) nodes, excluding the changed roots.
     let is_root = |node: &ArtifactId| roots.contains(&node);
     let mut affected: Vec<&ArtifactId> = Vec::new();
     let mut stack: Vec<&ArtifactId> = roots.clone();
@@ -134,7 +134,7 @@ pub fn compute_impact(changed: &[ArtifactId], all: &[VersionView]) -> ImpactRepo
     }
     affected.sort_by(|a, b| a.as_str().cmp(b.as_str()));
 
-    // Caminos simples desde cada raíz hasta cada afectado.
+    // Simple paths from each root to each affected node.
     let mut paths_of: Vec<(&ArtifactId, Vec<Vec<ArtifactId>>)> =
         affected.iter().map(|a| (*a, Vec::new())).collect();
     for root in &roots {
@@ -173,9 +173,9 @@ pub fn compute_impact(changed: &[ArtifactId], all: &[VersionView]) -> ImpactRepo
     }
 }
 
-/// Camino del ciclo que se crearía al añadir una versión con esas fuentes, o
-/// `None` si el grafo sigue acíclico. Como las versiones son inmutables y las
-/// fuentes deben existir, el único ciclo alcanzable es la autorreferencia.
+/// Cycle path that adding a version with those sources would create, or
+/// `None` when the graph stays acyclic. Since versions are immutable and
+/// sources must exist, the only reachable cycle is self-reference.
 pub fn dependency_cycle(
     new_id: &VersionId,
     sources: &[VersionId],
@@ -218,9 +218,9 @@ fn path_to(
     None
 }
 
-/// Busca un ciclo en el grafo completo de dependencias. Devuelve un camino
-/// cerrado (`[a, b, a]`) si existe, o `None` si es acíclico. Se usa al
-/// reconstituir un estado persistido, que podría estar manipulado.
+/// Searches for a cycle in the full dependency graph. Returns a
+/// closed path (`[a, b, a]`) when one exists, or `None` when acyclic.
+/// Used when reconstituting persisted state, which could be tampered.
 pub fn find_cycle(all: &[VersionView]) -> Option<Vec<VersionId>> {
     use std::collections::HashMap;
     fn successors<'a>(id: &VersionId, all: &'a [VersionView]) -> &'a [VersionId] {
@@ -229,7 +229,7 @@ pub fn find_cycle(all: &[VersionView]) -> Option<Vec<VersionId>> {
             .map(|v| v.sources.as_slice())
             .unwrap_or(&[])
     }
-    // 0 = sin visitar, 1 = en camino, 2 = terminado.
+    // 0 = unvisited, 1 = on path, 2 = done.
     let mut state: HashMap<&VersionId, u8> = all.iter().map(|v| (&v.id, 0)).collect();
     for root in all {
         if state[&root.id] != 0 {
@@ -239,7 +239,7 @@ pub fn find_cycle(all: &[VersionView]) -> Option<Vec<VersionId>> {
         let mut indexes: Vec<usize> = vec![0];
         state.insert(&root.id, 1);
         while let Some(top) = path.last().copied() {
-            let index = indexes.last_mut().expect("camino e índices van parejos");
+            let index = indexes.last_mut().expect("path and indexes go together");
             let succs = successors(top, all);
             if *index >= succs.len() {
                 state.insert(top, 2);
@@ -254,7 +254,7 @@ pub fn find_cycle(all: &[VersionView]) -> Option<Vec<VersionId>> {
                     let start = path
                         .iter()
                         .position(|n| *n == next)
-                        .expect("gris está en el camino");
+                        .expect("gray is on the path");
                     let mut cycle: Vec<VersionId> =
                         path[start..].iter().map(|n| (*n).clone()).collect();
                     cycle.push(next.clone());
@@ -272,7 +272,7 @@ pub fn find_cycle(all: &[VersionView]) -> Option<Vec<VersionId>> {
     None
 }
 
-/// Valida fuentes duplicadas dentro de una misma versión.
+/// Validates duplicate sources within one version.
 pub fn duplicate_source(sources: &[VersionId]) -> Option<VersionId> {
     let mut seen = Vec::new();
     for source in sources {
@@ -425,7 +425,7 @@ mod tests {
             view("b1", "b", &["a1"], true),
             view("c1", "c", &["b1"], true),
         ];
-        let cycle = find_cycle(&all).expect("ciclo");
+        let cycle = find_cycle(&all).expect("cycle");
         assert!(cycle.len() >= 2);
         assert_eq!(cycle.first(), cycle.last());
     }

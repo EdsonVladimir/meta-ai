@@ -1,18 +1,18 @@
-// Adaptador Tauri para mockups. La validación y la persistencia viven
-// solo en Rust; aquí solo se invocan comandos. La disposición se lee y
-// guarda con los comandos genéricos de diseño (por artefacto y versión).
+// Tauri adapter for mockups. Validation and persistence live only in
+// Rust; only commands are invoked here. The layout is read and saved
+// with the generic design commands (per artifact and version).
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriEnvironment } from "../../lib/env";
 import { normalizeCoreError, type CoreApiError } from "../requirements/types";
 import type { DesignGenerationDto, DesignKind, UpdateSourceDto } from "../design/types";
 import type { RequirementDetail } from "../requirements/types";
-import type { MockupContextPreview } from "./types";
+import type { MockupContextPreview, MockupGeneration } from "./types";
 
 function ensureTauri(): void {
   if (!isTauriEnvironment()) {
     throw {
       kind: "not_tauri",
-      message: "Los mockups requieren ejecutar Ruth IDE como escritorio (Tauri).",
+      message: "Mockups require running Ruth IDE as a desktop app (Tauri).",
     } satisfies CoreApiError;
   }
 }
@@ -82,4 +82,33 @@ export function generateDesignFromMockups(input: {
   mockupIds: string[];
 }): Promise<DesignGenerationDto> {
   return call("core_generate_design_from_mockups", { input });
+}
+
+export function proposeMockups(input: {
+  projectId: string;
+  moduleId: string;
+  requirementIds: string[];
+}): Promise<MockupGeneration> {
+  return call("core_propose_mockups", { input });
+}
+
+export function listMockupGenerations(
+  projectId: string,
+  moduleId: string,
+): Promise<MockupGeneration[]> {
+  return call("core_list_mockup_generations", { input: { projectId, moduleId } });
+}
+
+export function acceptMockupScreen(input: {
+  generationId: string;
+  tempId: string;
+}): Promise<RequirementDetail> {
+  return call("core_accept_mockup_screen", { input });
+}
+
+export function discardMockupScreen(input: {
+  generationId: string;
+  tempId: string;
+}): Promise<void> {
+  return call("core_discard_mockup_screen", { input });
 }

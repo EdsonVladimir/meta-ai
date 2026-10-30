@@ -1,10 +1,10 @@
-// Panel de generación asistida: describe el módulo, propone requisitos con
-// Meta y acepta propuestas como borradores persistidos. La IA nunca aprueba:
-// aceptar crea un requisito sin aprobación, que sigue el flujo humano.
+// Assisted-generation panel: describe the module, propose requirements with
+// Meta and accept proposals as persisted drafts. AI never approves:
+// accepting creates an unapproved requirement, which follows the human flow.
 //
-// Borradores (descripción y ediciones) en estado local: un fallo conserva
-// todo. Las generaciones son instantáneas de Rust. Se monta con `key` por
-// módulo, así que una respuesta tardía jamás toca otro módulo.
+// Drafts (description and edits) in local state: a failure keeps everything.
+// Generations are Rust snapshots. Mounted with a per-module `key`, so a
+// late response never touches another module.
 import { useEffect, useRef, useState } from "react";
 import { normalizeCoreError, type RequirementDetail } from "../requirements/types";
 import {
@@ -26,13 +26,13 @@ import type { GenerationContextPreview, GenerationDto, ProposalDto } from "./typ
 interface GenerationPanelProps {
   projectId: string;
   moduleId: string;
-  /** Módulo archivado: historial consultable, sin generar ni aceptar. */
+  /** Archived module: history stays readable, no generating or accepting. */
   moduleArchived: boolean;
   onAccepted: (detail: RequirementDetail) => void;
   onOpenRequirement: (artifactId: string) => void;
   /**
-   * Descripción sugerida (p. ej. desde el compositor del asistente): solo
-   * se adopta si el campo sigue intacto; nunca pisa lo escrito ni genera.
+   * Suggested description (e.g. from the assistant composer): only adopted
+   * while the field stays pristine; never overwrites typing nor generates.
    */
   suggestedDescription?: string | null;
 }
@@ -122,7 +122,7 @@ export function GenerationPanel({
       setGenerations((prev) => upsertGeneration(prev, created));
     } catch (raw) {
       if (cancelledRef.current) return;
-      // La descripción y los resultados anteriores se conservan intactos.
+      // The description and earlier results stay intact.
       setGenerateError(normalizeCoreError(raw).message);
     } finally {
       if (!cancelledRef.current) setGenerating(false);
@@ -176,19 +176,19 @@ export function GenerationPanel({
   }
 
   return (
-    <section className="editor generation" aria-label="Generación asistida">
+    <section className="editor generation" aria-label="Assisted generation">
       <div className="editor-head">
-        <h3>Proponer requisitos con IA</h3>
+        <h3>Propose requirements with AI</h3>
       </div>
       {moduleArchived && (
         <p className="notice" role="note">
-          Módulo archivado: puedes consultar las generaciones guardadas, pero no
-          generar ni aceptar propuestas hasta restaurarlo.
+          Archived module: you can read the saved generations, but not generate
+          or accept proposals until restored.
         </p>
       )}
 
       <label className="field">
-        <span>Describe el módulo</span>
+        <span>Describe the module</span>
         <textarea
           value={description}
           onChange={(e) => {
@@ -197,20 +197,20 @@ export function GenerationPanel({
           }}
           rows={4}
           disabled={generating || moduleArchived}
-          placeholder="p. ej. Ventas de productos con control de stock."
+          placeholder="e.g. Product sales with stock control."
         />
       </label>
 
       <div className="context-preview">
-        <h4>Contexto que se enviará</h4>
+        <h4>Context that will be sent</h4>
         {previewError !== null ? (
           <p className="error" role="alert">
             {previewError}
           </p>
         ) : preview === null ? (
-          <p className="hint">Cargando contexto…</p>
+          <p className="hint">Loading context…</p>
         ) : preview.length === 0 ? (
-          <p className="hint">El módulo aún no tiene requisitos: solo viajará la descripción.</p>
+          <p className="hint">The module has no requirements yet: only the description travels.</p>
         ) : (
           <ul className="pick-list">
             {preview.map((item) => (
@@ -222,7 +222,7 @@ export function GenerationPanel({
                 ) : (
                   <code>{item.artifactId}</code>
                 )}{" "}
-                <code>{item.versionId}</code> · {item.chars} caracteres
+                <code>{item.versionId}</code> · {item.chars} characters
                 <br />
                 <span className="hint">{item.excerpt}</span>
               </li>
@@ -230,10 +230,9 @@ export function GenerationPanel({
           </ul>
         )}
         <p className="notice">
-          El contenido se enviará a Meta: la descripción y los requisitos
-          actuales de este módulo. No se envían archivos, secretos ni otros
-          proyectos. La clave vive solo en Rust y no se llama sin pulsar el
-          botón.
+          The content goes to Meta: the description and this module's current
+          requirements. No files, secrets or other projects travel. The key
+          lives in Rust only and nothing is called without pressing the button.
         </p>
       </div>
 
@@ -243,9 +242,9 @@ export function GenerationPanel({
           className="primary"
           onClick={() => void handlePropose()}
           disabled={generating || acting !== null || description.trim() === "" || moduleArchived}
-          title={moduleArchived ? "Módulo archivado: restaúralo para generar" : undefined}
+          title={moduleArchived ? "Archived module: restore it to generate" : undefined}
         >
-          {generating ? "Proponiendo…" : "Proponer requisitos"}
+          {generating ? "Proposing…" : "Propose requirements"}
         </button>
       </div>
       {generateError && (
@@ -261,11 +260,11 @@ export function GenerationPanel({
 
       {generations.length > 0 && (
         <div className="generations">
-          <h4>Generaciones guardadas</h4>
+          <h4>Saved generations</h4>
           {generations.map((generation) => (
             <article key={generation.id} className="generation-card">
               <header>
-                <code>{generation.id}</code> · {generation.model} · plantilla v
+                <code>{generation.id}</code> · {generation.model} · template v
                 {generation.templateVersion}
                 {generation.usage.totalTokens !== null &&
                   generation.usage.totalTokens !== undefined && (
@@ -279,18 +278,18 @@ export function GenerationPanel({
               </header>
               {generation.stale ? (
                 <p className="notice stale" role="note">
-                  Desactualizada: cambió un requisito usado como contexto. Sus
-                  propuestas están vinculadas al contexto original y no pueden
-                  aceptarse. Genera de nuevo con el contexto actual.
+                  Stale: a requirement used as context changed. Its proposals
+                  are bound to the original context and cannot be accepted.
+                  Generate again with the current context.
                 </p>
               ) : (
                 <p className="hint">
-                  Contexto: {generation.contextVersionIds.join(", ") || "sin requisitos"}.
+                  Context: {generation.contextVersionIds.join(", ") || "no requirements"}.
                 </p>
               )}
               {generation.questions.length > 0 && (
-                <section className="questions" aria-label="Preguntas pendientes">
-                  <h5>Preguntas pendientes</h5>
+                <section className="questions" aria-label="Open questions">
+                  <h5>Open questions</h5>
                   <ul>
                     {generation.questions.map((question, i) => (
                       <li key={i}>{question}</li>
@@ -322,14 +321,14 @@ export function GenerationPanel({
                               proposal.artifactId && onOpenRequirement(proposal.artifactId)
                             }
                           >
-                            Abrir {proposal.artifactId}
+                            Open {proposal.artifactId}
                           </button>
                         )}
                       </header>
                       {proposal.state === "pending" ? (
                         <>
                           <label className="field">
-                            <span>Título</span>
+                            <span>Title</span>
                             <input
                               type="text"
                               value={edit.title}
@@ -340,7 +339,7 @@ export function GenerationPanel({
                             />
                           </label>
                           <label className="field">
-                            <span>Descripción</span>
+                            <span>Description</span>
                             <textarea
                               value={edit.description}
                               onChange={(e) =>
@@ -353,7 +352,7 @@ export function GenerationPanel({
                             />
                           </label>
                           <label className="field">
-                            <span>Criterios de aceptación (uno por línea)</span>
+                            <span>Acceptance criteria (one per line)</span>
                             <textarea
                               value={edit.acceptance}
                               onChange={(e) =>
@@ -366,7 +365,7 @@ export function GenerationPanel({
                             />
                           </label>
                           <label className="field">
-                            <span>Supuestos (uno por línea, opcional)</span>
+                            <span>Assumptions (one per line, optional)</span>
                             <textarea
                               value={edit.assumptions}
                               onChange={(e) =>
@@ -386,11 +385,11 @@ export function GenerationPanel({
                               disabled={!actionable}
                               title={
                                 generation.stale
-                                  ? "Desactualizada: genera de nuevo"
-                                  : "Crea un borrador sin aprobar"
+                                  ? "Stale: generate again"
+                                  : "Creates an unapproved draft"
                               }
                             >
-                              {busyThis ? "Aceptando…" : "Aceptar como borrador"}
+                              {busyThis ? "Accepting…" : "Accept as draft"}
                             </button>
                             <button
                               type="button"
@@ -398,7 +397,7 @@ export function GenerationPanel({
                               onClick={() => void handleDiscard(generation, proposal)}
                               disabled={!actionable}
                             >
-                              Descartar
+                              Discard
                             </button>
                           </div>
                         </>

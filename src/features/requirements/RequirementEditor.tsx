@@ -9,13 +9,13 @@ interface RequirementEditorProps {
   viewing: VersionDto | null;
   busy: boolean;
   error: string | null;
-  /** Archivado efectivo: lectura del historial, sin editar ni guardar. */
+  /** Effectively archived: history reading, no editing or saving. */
   readOnly: boolean;
   onEdit: (content: string) => void;
   onAuthorChange: (author: string) => void;
   onSave: () => void;
   onBackToCurrent: () => void;
-  /** Renombrar el requisito; ausente = sin acción (montaje de lectura). */
+  /** Rename the requirement; absent = no action (reading mount). */
   onRename?: () => void;
 }
 
@@ -40,7 +40,7 @@ export function RequirementEditor({
   if (viewing !== null) {
     const approvals = approvalsForVersion(detail, viewing.id);
     return (
-      <section className="editor" aria-label="Lectura de versión anterior">
+      <section className="editor" aria-label="Earlier version reading">
         <div className="editor-head">
           <h3>
             {title !== null && title !== "" ? (
@@ -50,26 +50,26 @@ export function RequirementEditor({
             ) : (
               <code>{detail.artifact.id}</code>
             )}{" "}
-            · v{viewing.number} <span className="badge">lectura</span>
+            · v{viewing.number} <span className="badge">reading</span>
           </h3>
           <button type="button" className="secondary small" onClick={onBackToCurrent}>
-            Volver a la actual (v{current?.number})
+            Back to current (v{current?.number})
           </button>
         </div>
         <p className="hint">
-          Procedencia: {provenanceLabel(viewing)} ·{" "}
+          Provenance: {provenanceLabel(viewing)} ·{" "}
           {approvals.length === 0
-            ? "sin aprobación"
-            : approvals.map((a) => `aprobada por ${a.approvedBy} el ${a.at}`).join("; ")}
+            ? "unapproved"
+            : approvals.map((a) => `approved by ${a.approvedBy} on ${a.at}`).join("; ")}
         </p>
         <pre className="readonly-box">{viewing.content}</pre>
-        <p className="hint">Las versiones anteriores no se pueden editar ni aprobar como actuales.</p>
+        <p className="hint">Earlier versions cannot be edited or approved as current.</p>
       </section>
     );
   }
 
   return (
-    <section className="editor" aria-label="Editor del requisito">
+    <section className="editor" aria-label="Requirement editor">
       <div className="editor-head">
         <h3>
           {title !== null && title !== "" ? (
@@ -79,9 +79,9 @@ export function RequirementEditor({
           ) : (
             <code>{detail.artifact.id}</code>
           )}{" "}
-          · v{current?.number} <span className="badge">actual</span>
-          {dirty && <span className="badge dirty">sin guardar</span>}
-          {readOnly && <span className="badge">archivado</span>}
+          · v{current?.number} <span className="badge">current</span>
+          {dirty && <span className="badge dirty">unsaved</span>}
+          {readOnly && <span className="badge">archived</span>}
         </h3>
         {onRename !== undefined && (
           <button
@@ -89,37 +89,37 @@ export function RequirementEditor({
             className="secondary small"
             onClick={onRename}
             disabled={busy || readOnly}
-            title={readOnly ? "Restaura el requisito antes de renombrarlo" : "Renombrar requisito"}
+            title={readOnly ? "Restore the requirement before renaming it" : "Rename requirement"}
           >
-            Renombrar
+            Rename
           </button>
         )}
       </div>
       {readOnly && (
         <p className="notice" role="note">
-          Archivado: puedes leer el historial en Revisión, pero no editar ni
-          guardar hasta restaurarlo.
+          Archived: you can read the history in Review, but not edit or
+          save until restored.
         </p>
       )}
       <label className="field">
-        <span>Contenido (borrador local)</span>
+        <span>Content (local draft)</span>
         <textarea
           value={draft}
           onChange={(e) => onEdit(e.target.value)}
           rows={10}
           disabled={busy || readOnly}
-          placeholder="Describe el requisito…"
+          placeholder="Describe the requirement…"
         />
       </label>
       <div className="editor-row">
         <label className="field inline">
-          <span>Autoría de la versión</span>
+          <span>Version authorship</span>
           <input
             type="text"
             value={author}
             onChange={(e) => onAuthorChange(e.target.value)}
             disabled={busy || readOnly}
-            placeholder="Tu nombre"
+            placeholder="Your name"
             autoComplete="off"
           />
         </label>
@@ -130,13 +130,13 @@ export function RequirementEditor({
           disabled={busy || !dirty || readOnly}
           title={
             readOnly
-              ? "Archivado: restaúralo para guardar"
+              ? "Archived: restore it to save"
               : !dirty
-                ? "Sin cambios que guardar"
-                : "Guardar nueva versión (Ctrl+S)"
+                ? "No changes to save"
+                : "Save new version (Ctrl+S)"
           }
         >
-          {busy ? "Guardando…" : "Guardar nueva versión"}
+          {busy ? "Saving…" : "Save new version"}
         </button>
       </div>
       {error && (
@@ -145,8 +145,8 @@ export function RequirementEditor({
         </p>
       )}
       <p className="hint">
-        Guardar crea una versión nueva sin modificar el historial. Registrar un
-        nombre como autoría no equivale a autenticación.
+        Saving creates a new version without touching history. Recording a
+        name as authorship is not authentication.
       </p>
     </section>
   );
@@ -154,6 +154,6 @@ export function RequirementEditor({
 
 function provenanceLabel(version: VersionDto): string {
   return version.provenance.kind === "ai"
-    ? `propuesta de IA (${version.provenance.by})`
+    ? `AI proposal (${version.provenance.by})`
     : version.provenance.by;
 }

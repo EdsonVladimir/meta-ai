@@ -1,5 +1,5 @@
-// Modelo puro del explorador en árbol. Sin React ni Tauri: ids de nodo,
-// construcción del bosque visible y ayudas de navegación por teclado.
+// Pure tree-explorer model. No React, no Tauri: node ids, visible
+// forest building and keyboard navigation helpers.
 import type { DesignLink } from "../design/coordination";
 import type { ArtifactDto, ModuleDto, ProjectDto } from "../requirements/types";
 import { artifactLabel } from "../requirements/names";
@@ -13,49 +13,52 @@ export type ExplorerNodeKind =
   | "requirement"
   | "design"
   | "mockup"
+  | "screen"
   | "status";
 
 export type NodeLoadState = "loading" | "error" | "empty";
 
-/** Metadato conocido de un artefacto cuyo detalle se cargó en la sesión. */
+/** Known metadata of an artifact whose detail loaded this session. */
 export interface ArtifactMeta {
-  /** Primera línea del contenido actual, truncada. */
+  /** First line of the current content, truncated. */
   label: string;
-  /** Aprobación de la versión actual, si se conoce. */
+  /** Current version approval, when known. */
   approved: boolean | null;
 }
 
 export interface FlatNode {
   id: string;
   kind: ExplorerNodeKind;
-  /** Texto principal: nombre real o primera línea cuando se conoce. */
+  /** Main text: real name or first line when known. */
   label: string;
-  /** ID como información secundaria cuando difiere de la etiqueta. */
+  /** ID as secondary info when it differs from the label. */
   secondary: string | null;
   title: string;
   depth: number;
   expandable: boolean;
   expanded: boolean;
   selected: boolean;
-  /** Estado de revisión conocido; null = desconocido (sin badge). */
+  /** Known review state; null = unknown (no badge). */
   approved: boolean | null;
-  /** Subtipo de diseño (`flow`/`data_model`) para su badge. */
+  /** Design subtype (`flow`/`data_model`) for its badge. */
   artifactKind: string | null;
-  /** Vínculo con el requisito padre (solo accesos bajo requisitos). */
+  /** Link to the parent requirement (shortcuts under requirements only). */
   linkKind: "direct" | "transitive" | null;
-  /** El acceso usa versiones que ya no son actuales. */
+  /** The shortcut uses versions that are no longer current. */
   staleLink: boolean;
-  /** Archivado efectivo: propio o por contexto del módulo. */
+  /** Effective archiving: own or by module context. */
   archived: boolean;
-  /** Archivado propio (sin contexto): decide archivar o restaurar. */
+  /** Own archiving (no context): decides archive or restore. */
   archivedOwn: boolean;
   projectId: string | null;
   moduleId: string | null;
   artifactId: string | null;
+  /** Screen (`screen` nodes of the parent mockup only). */
+  screenId: string | null;
   loadState: NodeLoadState | null;
-  /** Nº de artefactos en grupos con datos cargados. */
+  /** Artifact count in groups with loaded data. */
   count: number | null;
-  /** Archivados ocultos en grupos cuando no se muestran. */
+  /** Hidden archived items in groups when not shown. */
   hiddenArchived: number | null;
   children: FlatNode[];
 }
@@ -73,13 +76,19 @@ export interface ForestInput {
     requirementId: string | null;
     designId: string | null;
     mockupId: string | null;
+    screenId: string | null;
   };
   meta: Record<string, ArtifactMeta>;
-  /** Diseños vinculados por requisito (derivados de fuentes exactas). */
+  /** Designs linked per requirement (derived from exact sources). */
   designLinks: Record<string, DesignLink[]>;
-  /** Estado de vínculos por módulo (clave `proyecto/módulo`). */
+  /** Links state per module (`project/module` key). */
   linksStatus: Record<string, { status: "loading" | "error"; error: string | null }>;
-  /** Mostrar archivados; si no, se filtran de las listas activas. */
+  /**
+   * Screens per mockup, derived from the module's already loaded
+   * details (asking nothing more). Missing = graph not ready yet.
+   */
+  mockupScreens: Record<string, { screens: MockupScreenEntry[]; unparsed: boolean }>;
+  /** Show archived; otherwise they filter out of the active lists. */
   showArchived: boolean;
 }
 
@@ -104,26 +113,38 @@ export function artifactNodeId(projectId: string, moduleId: string, artifactId: 
 }
 
 /**
- * Acceso a un diseño bajo un requisito. Mismo artefacto que en el índice
- * del módulo, distinta ubicación: abrir cualquiera abre el mismo detalle.
+ * A design shortcut under a requirement. Same artifact as in the module
+ * index, different place: opening either opens the same detail.
  */
 export function linkNodeId(requirementId: string, designId: string): string {
   return `l:${requirementId}/${designId}`;
 }
 
-/** Fila de estado (carga, error, vacío) bajo un requisito expandido. */
+/** Status row (loading, error, empty) under an expanded requirement. */
 export function linksStatusNodeId(requirementId: string): string {
   return `ls:${requirementId}`;
 }
 
-/** Clave de caché de artefactos de un módulo. */
+/** Screen summary for the tree (derived, not duplicated). */
+export interface MockupScreenEntry {
+  id: string;
+  title: string;
+  components: number;
+}
+
+/** Screen under its mockup: opens the same artifact on that screen. */
+export function screenNodeId(mockupId: string, screenId: string): string {
+  return `s:${mockupId}/${screenId}`;
+}
+
+/** Artifact cache key of a module. */
 export function moduleKey(projectId: string, moduleId: string): string {
   return `${projectId}/${moduleId}`;
 }
 
 /**
- * Primera línea visible de un contenido, truncada. Sin contenido no hay
- * título inventado: el llamador conserva el ID en ese caso.
+ * Visible first line of a content, truncated. Without content there is
+ * no invented title: the caller keeps the ID then.
  */
 export function firstLine(content: string, max = 60): string {
   const line = content.split("\n", 1)[0].trim().replace(/\s+/g, " ");
@@ -138,8 +159,8 @@ export function toggleExpanded(expanded: string[], nodeId: string): string[] {
 }
 
 /**
- * Nodos que deben expandirse para que la selección quede visible:
- * proyecto, módulo y, para artefactos, su grupo.
+ * Nodes that must expand for the selection to show: project, module
+ * and, for artifacts, their group.
  */
 export function ancestorsForSelection(
   projectId: string | null,
@@ -147,6 +168,7 @@ export function ancestorsForSelection(
   requirementId: string | null,
   designId: string | null,
   mockupId: string | null = null,
+  screenId: string | null = null,
 ): string[] {
   if (projectId === null) return [];
   const ids = [projectNodeId(projectId)];
@@ -155,6 +177,9 @@ export function ancestorsForSelection(
   if (requirementId !== null) ids.push(groupNodeId(projectId, moduleId, "req"));
   if (designId !== null) ids.push(groupNodeId(projectId, moduleId, "design"));
   if (mockupId !== null) ids.push(groupNodeId(projectId, moduleId, "mockup"));
+  if (mockupId !== null && screenId !== null) {
+    ids.push(artifactNodeId(projectId, moduleId, mockupId));
+  }
   return ids;
 }
 
@@ -162,7 +187,7 @@ function statusNode(parentId: string, depth: number, loadState: NodeLoadState): 
   return {
     id: `${parentId}#${loadState}`,
     kind: "status",
-    label: loadState === "loading" ? "Cargando…" : loadState === "error" ? "Error" : "Vacío",
+    label: loadState === "loading" ? "Loading…" : loadState === "error" ? "Error" : "Empty",
     secondary: null,
     title: "",
     depth,
@@ -178,6 +203,7 @@ function statusNode(parentId: string, depth: number, loadState: NodeLoadState): 
     projectId: null,
     moduleId: null,
     artifactId: null,
+    screenId: null,
     loadState,
     count: null,
     hiddenArchived: null,
@@ -185,11 +211,11 @@ function statusNode(parentId: string, depth: number, loadState: NodeLoadState): 
   };
 }
 
-/** Contexto de archivado derivado de las listas cargadas. */
+/** Archiving context derived from the loaded lists. */
 interface ArchiveContext {
-  /** Archivado propio por módulo (clave `proyecto/módulo`). */
+  /** Own archiving per module (`project/module` key). */
   moduleArchived: Map<string, boolean>;
-  /** Archivado propio por artefacto (ids globales únicos). */
+  /** Own archiving per artifact (unique global ids). */
   artifactArchived: Map<string, boolean>;
 }
 
@@ -207,14 +233,14 @@ function archiveContext(input: ForestInput): ArchiveContext {
   return { moduleArchived, artifactArchived };
 }
 
-/** Etiqueta de vacío honesta: distingue «no hay» de «hay pero archivados». */
+/** Honest empty label: tells "none" from "some but archived" apart. */
 function emptyLabel(base: string, hidden: number): string {
-  return hidden > 0 ? `${base} (${hidden} archivado${hidden === 1 ? "" : "s"})` : base;
+  return hidden > 0 ? `${base} (${hidden} archived)` : base;
 }
 
 /**
- * Secundaria y tooltip de una fila con nombre: el ID solo aparece cuando la
- * etiqueta lo oculta, y el tooltip muestra el nombre completo.
+ * Secondary and tooltip of a named row: the ID only shows when the label
+ * hides it, and the tooltip shows the full name.
  */
 function namedRow(
   label: string,
@@ -225,10 +251,10 @@ function namedRow(
 }
 
 /**
- * Construye el bosque visible en orden. Solo incluye hijos de nodos
- * expandidos; los contenedores sin datos muestran su estado
- * (carga, error con reintento, o vacío). Sin `showArchived`, los módulos
- * y artefactos archivados se filtran de las listas activas.
+ * Builds the visible forest in order. Only includes children of expanded
+ * nodes; containers without data show their state (loading, error with
+ * retry, or empty). Without `showArchived`, archived modules and
+ * artifacts filter out of the active lists.
  */
 export function buildForest(input: ForestInput): FlatNode[] {
   const expanded = new Set(input.expanded);
@@ -261,6 +287,7 @@ export function buildForest(input: ForestInput): FlatNode[] {
       projectId: project.id,
       moduleId: null,
       artifactId: null,
+      screenId: null,
       loadState: null,
       count: null,
       hiddenArchived: null,
@@ -276,11 +303,9 @@ export function buildForest(input: ForestInput): FlatNode[] {
       return node;
     }
     const visible = input.showArchived ? modules : modules.filter((m) => !m.archived);
-    if (visible.length === 0) {
-      node.children = [statusNode(pid, 1, "empty")];
-      node.children[0].label = emptyLabel("Sin módulos", modules.length - visible.length);
-      return node;
-    }
+    // No placeholder row for a project without (visible) modules:
+    // archived ones stay reachable through "Show archived".
+    if (visible.length === 0) return node;
     node.children = visible.map((module) =>
       buildModule(input, archives, expanded, loading, project.id, module),
     );
@@ -322,6 +347,7 @@ function buildModule(
     projectId,
     moduleId: module.id,
     artifactId: null,
+    screenId: null,
     loadState: null,
     count: null,
     hiddenArchived: null,
@@ -357,7 +383,7 @@ function buildGroup(
         ? a.kind === "mockup"
         : a.kind === "flow" || a.kind === "data_model",
   );
-  // Archivado efectivo = propio o por contexto del módulo.
+  // Effective archiving = own or by module context.
   const items = input.showArchived
     ? candidates
     : candidates.filter((a) => !a.archived && !moduleArchived);
@@ -366,14 +392,14 @@ function buildGroup(
     id: gid,
     kind: group === "req" ? "reqGroup" : group === "mockup" ? "mockupGroup" : "designGroup",
     label:
-      group === "req" ? "Requisitos" : group === "mockup" ? "Mockups del módulo" : "Diseños del módulo",
+      group === "req" ? "Requirements" : group === "mockup" ? "Module mockups" : "Module designs",
     secondary: null,
     title:
       group === "req"
-        ? "Requisitos del módulo"
+        ? "Module requirements"
         : group === "mockup"
-          ? "Mockups del módulo"
-          : "Diseños del módulo",
+          ? "Module mockups"
+          : "Module designs",
     depth,
     expandable: true,
     expanded: expanded.has(gid),
@@ -387,6 +413,7 @@ function buildGroup(
     projectId,
     moduleId,
     artifactId: null,
+    screenId: null,
     loadState: null,
     count: all === undefined ? null : items.length,
     hiddenArchived: all === undefined ? null : hidden,
@@ -404,7 +431,7 @@ function buildGroup(
   if (items.length === 0) {
     const status = statusNode(gid, depth + 1, "empty");
     status.label = emptyLabel(
-      group === "req" ? "Sin requisitos" : group === "mockup" ? "Sin mockups" : "Sin diseños",
+      group === "req" ? "No requirements" : group === "mockup" ? "No mockups" : "No designs",
       hidden,
     );
     node.children = [status];
@@ -448,8 +475,8 @@ function buildArtifact(
     secondary: label !== artifact.id ? artifact.id : null,
     title: label === artifact.id ? artifact.id : `${label} — ${artifact.id}`,
     depth,
-    expandable: isReq,
-    expanded: isReq && expanded.has(id),
+    expandable: isReq || isMockup,
+    expanded: (isReq || isMockup) && expanded.has(id),
     selected,
     approved: known?.approved ?? null,
     artifactKind: isReq ? null : artifact.kind,
@@ -460,6 +487,7 @@ function buildArtifact(
     projectId,
     moduleId,
     artifactId: artifact.id,
+    screenId: null,
     loadState: null,
     count: null,
     hiddenArchived: null,
@@ -476,12 +504,96 @@ function buildArtifact(
       depth + 1,
     );
   }
+  if (isMockup && node.expanded) {
+    node.children = buildMockupScreens(
+      input,
+      projectId,
+      moduleId,
+      moduleCacheKey,
+      artifact.id,
+      effective,
+      depth + 1,
+    );
+  }
   return node;
 }
 
 /**
- * Accesos a diseños vinculados bajo un requisito. Son referencias al mismo
- * artefacto del índice (sin duplicar datos): abrir cualquiera abre igual.
+ * A mockup's screens as shortcuts to the same artifact: opening any of
+ * them opens the mockup on that screen. Derived from the module's already
+ * loaded details (asking nothing more); the detail decides what is
+ * readable and the graph state decides loading and error.
+ */
+function buildMockupScreens(
+  input: ForestInput,
+  projectId: string,
+  moduleId: string,
+  moduleCacheKey: string,
+  mockupId: string,
+  archived: boolean,
+  depth: number,
+): FlatNode[] {
+  const known = input.mockupScreens[mockupId];
+  if (known === undefined) {
+    const info = input.linksStatus[moduleCacheKey];
+    if (info?.status === "error") {
+      const status = statusNode(screenNodeId(mockupId, ""), depth, "error");
+      status.label = info.error ?? "Could not load the screens.";
+      status.projectId = projectId;
+      status.moduleId = moduleId;
+      return [status];
+    }
+    return [statusNode(screenNodeId(mockupId, ""), depth, "loading")];
+  }
+  if (known.unparsed) {
+    const status = statusNode(screenNodeId(mockupId, ""), depth, "error");
+    status.label = "Unreadable content: the detail will tell what fails.";
+    status.projectId = projectId;
+    status.moduleId = moduleId;
+    return [status];
+  }
+  if (known.screens.length === 0) {
+    const status = statusNode(screenNodeId(mockupId, ""), depth, "empty");
+    status.label = "No screens";
+    return [status];
+  }
+  return known.screens.map((screen) => {
+    const selected =
+      input.selection.mockupId === mockupId &&
+      input.selection.screenId === screen.id &&
+      input.selection.moduleId === moduleId &&
+      input.selection.projectId === projectId;
+    return {
+      id: screenNodeId(mockupId, screen.id),
+      kind: "screen" as ExplorerNodeKind,
+      label: screen.title,
+      secondary: screen.title !== screen.id ? screen.id : null,
+      title: `${screen.title} — ${screen.id} · ${screen.components} components`,
+      depth,
+      expandable: false,
+      expanded: false,
+      selected,
+      approved: null,
+      artifactKind: "mockup",
+      linkKind: null,
+      staleLink: false,
+      archived,
+      archivedOwn: false,
+      projectId,
+      moduleId,
+      artifactId: mockupId,
+      screenId: screen.id,
+      loadState: null,
+      count: null,
+      hiddenArchived: null,
+      children: [],
+    };
+  });
+}
+
+/**
+ * Linked-design shortcuts under a requirement. They reference the same
+ * index artifact (no data duplicated): opening any opens alike.
  */
 function buildRequirementLinks(
   input: ForestInput,
@@ -497,14 +609,14 @@ function buildRequirementLinks(
     const info = input.linksStatus[moduleCacheKey];
     if (info?.status === "error") {
       const status = statusNode(linksStatusNodeId(requirementId), depth, "error");
-      status.label = info.error ?? "No se pudieron cargar los vínculos.";
+      status.label = info.error ?? "Could not load the links.";
       status.projectId = projectId;
       status.moduleId = moduleId;
       return [status];
     }
     return [statusNode(linksStatusNodeId(requirementId), depth, "loading")];
   }
-  // Los accesos a diseños archivados se filtran igual que el índice.
+  // Shortcuts to archived designs filter just like the index.
   const moduleArchived = archives.moduleArchived.get(moduleCacheKey) ?? false;
   const visible = input.showArchived
     ? links
@@ -514,10 +626,10 @@ function buildRequirementLinks(
   if (visible.length === 0) {
     const status = statusNode(linksStatusNodeId(requirementId), depth, "empty");
     status.label =
-      links.length === 0 ? "Sin diseños vinculados" : "Sin diseños vinculados (archivados)";
+      links.length === 0 ? "No linked designs" : "No linked designs (archived)";
     return [status];
   }
-  // Títulos del índice del módulo (misma fuente, sin duplicar datos).
+  // Module index titles (same source, no data duplicated).
   const titles = new Map<string, string | null>();
   for (const artifact of input.artifactsByModule[moduleCacheKey] ?? []) {
     titles.set(artifact.id, artifact.title);
@@ -540,9 +652,9 @@ function buildRequirementLinks(
         wanted === link.artifactId &&
         input.selection.moduleId === moduleId &&
         input.selection.projectId === projectId,
-      // Sin badge de aprobación: el acceso informa del vínculo (directo /
-      // transitivo / desactualizado) y la aprobación vive en la fila
-      // canónica del índice. Así la etiqueta conserva espacio legible.
+      // No approval badge: the shortcut reports the link (direct /
+      // transitive / stale) and approval lives on the index's canonical
+      // row. That keeps the label readable.
       approved: null,
       artifactKind: link.kind,
       linkKind: link.link,
@@ -552,6 +664,7 @@ function buildRequirementLinks(
       projectId,
       moduleId,
       artifactId: link.artifactId,
+      screenId: null,
       loadState: null,
       count: null,
       hiddenArchived: null,
@@ -560,7 +673,7 @@ function buildRequirementLinks(
   });
 }
 
-/** Filas visibles en orden de recorrido, para roving tabindex y teclado. */
+/** Visible rows in walk order, for roving tabindex and keyboard. */
 export function flattenVisible(forest: FlatNode[]): FlatNode[] {
   const rows: FlatNode[] = [];
   const visit = (nodes: FlatNode[]) => {
@@ -573,14 +686,14 @@ export function flattenVisible(forest: FlatNode[]): FlatNode[] {
   return rows;
 }
 
-/** ¿La fila admite foco del árbol? Los estados informativos quedan fuera. */
+/** May the row take tree focus? Informative states stay out. */
 export function isFocusable(node: FlatNode): boolean {
   return node.kind !== "status";
 }
 
 /**
- * Siguiente fila visible cuya etiqueta empieza por el buffer (type-ahead),
- * buscando desde después de `fromIndex` y dando la vuelta.
+ * Next visible row whose label starts with the buffer (type-ahead),
+ * searching from after `fromIndex` and wrapping around.
  */
 export function findTypeahead(rows: FlatNode[], fromIndex: number, buffer: string): number {
   const needle = buffer.toLocaleLowerCase();

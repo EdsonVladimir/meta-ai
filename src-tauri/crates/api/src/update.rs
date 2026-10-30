@@ -1,18 +1,18 @@
-//! Propuestas de actualización de diseños afectados (hito 8).
+//! Update proposals for affected designs (milestone 8).
 //!
-//! Reutiliza el sistema de generaciones de diseño: el snapshot fija el
-//! objetivo y las versiones actuales de sus mismas fuentes, la generación
-//! usa el mismo esquema de salida y la aceptación usa el mismo ciclo
-//! atómico e idempotente. Lo nuevo es la vista previa con bloqueos (fuentes
-//! sin aprobar, intermedios desactualizados) y el diff estructural.
+//! Reuses the design-generation system: the snapshot pins the
+//! target and the current versions of its same sources, generation
+//! uses the same output schema and acceptance uses the same atomic,
+//! idempotent cycle. What is new is the preview with blockers (unapproved
+//! sources, stale intermediaries) and the structural diff.
 //!
-//! Reglas:
-//! - Se conserva el conjunto de fuentes del diseño y se actualizan sus
-//!   versiones; nada se añade o elimina silenciosamente.
-//! - Sin etapas saltadas: si una fuente de diseño sigue desactualizada, hay
-//!   que actualizarla primero (la cadena se resuelve en orden).
-//! - La generación y la aceptación revalidan el snapshot; si algo cambió,
-//!   la propuesta se conserva desactualizada y se genera de nuevo.
+//! Rules:
+//! - The design source set is preserved and their versions updated;
+//!   nothing is added or removed silently.
+//! - No skipped stages: when a design source is still stale, it must
+//!   be updated first (the chain resolves in order).
+//! - Generation and acceptance revalidate the snapshot; on change,
+//!   the proposal stays stale and is generated again.
 
 use ruth_core::application::Store;
 use ruth_core::domain::{ArtifactId, ArtifactType, CoreError, ProjectId, VersionId};
@@ -68,42 +68,42 @@ fn target_in_project(
     Ok((project, artifact))
 }
 
-/// Vista previa consultiva del contexto de actualización. No genera nada:
-/// muestra qué viajaría a Meta y qué lo bloquea.
+/// Advisory update-context preview. Generates nothing:
+/// shows what would travel to Meta and what blocks it.
 pub fn update_context_preview(
     store: &Store,
     input: UpdateContextInput,
 ) -> Result<UpdateContextPreview, ApiError> {
     let (project, target) = target_in_project(store, &input.project_id, &input.artifact_id)?;
-    let known = store.artifact(&target).expect("objetivo validado");
+    let known = store.artifact(&target).expect("validated target");
     let Some(kind) = design_kind_of(known.artifact_type()) else {
         return Err(ApiError::coded(
             "not_a_design",
             format!(
-                "{} no es un flujo ni un modelo: solo ellos se actualizan con propuestas",
+                "{} is not a flow or a model: only those update with proposals",
                 target.as_str()
             ),
         ));
     };
     let current = store
         .current_version(&target)
-        .ok_or_else(|| ApiError::internal(format!("{} no tiene versiones", target.as_str())))?;
+        .ok_or_else(|| ApiError::internal(format!("{} has no versions", target.as_str())))?;
     let spec: serde_json::Value =
         serde_json::from_str(current.content().as_str()).map_err(|_| {
             ApiError::coded(
                 "design_invalid",
                 format!(
-                    "El contenido actual de {} no es JSON de diseño válido.",
+                    "The current content of {} is not valid design JSON.",
                     target.as_str()
                 ),
             )
         })?;
-    // Estructural: el diseño actual debe seguir siendo válido del tipo.
+    // Structural: the current design must stay valid of the kind.
     crate::design::validate_spec(kind.as_str(), &spec, None).map_err(|_| {
         ApiError::coded(
             "design_invalid",
             format!(
-                "El contenido actual de {} no es un diseño válido.",
+                "The current content of {} is not a valid design.",
                 target.as_str()
             ),
         )
@@ -112,14 +112,14 @@ pub fn update_context_preview(
     let validity = store.validity(current.id())?;
     let mut sources = Vec::with_capacity(current.sources().len());
     let mut blockers = Vec::new();
-    // Sobre archivados no se genera: el objetivo ni sus fuentes pueden estar
-    // archivados. Como el snapshot autoritativo falla con bloqueos, esto
-    // también protege la generación programática.
+    // Nothing generates over archived items: neither the target nor its
+    // sources may be archived. Since the authoritative snapshot fails with
+    // blockers, this also protects programmatic generation.
     if store.is_effectively_archived(&target) {
         blockers.push(UpdateBlockerDto {
             code: "target_archived".to_string(),
             message: format!(
-                "{} está archivado: restáuralo para proponer su actualización.",
+                "{} is archived: restore it to propose its update.",
                 target.as_str()
             ),
             artifact_id: Some(target.as_str().to_string()),
@@ -129,7 +129,7 @@ pub fn update_context_preview(
         blockers.push(UpdateBlockerDto {
             code: "target_up_to_date".to_string(),
             message: format!(
-                "{} ya usa las fuentes actuales: no hay nada que actualizar.",
+                "{} already uses the current sources: nothing to update.",
                 target.as_str()
             ),
             artifact_id: Some(target.as_str().to_string()),
@@ -140,7 +140,7 @@ pub fn update_context_preview(
             blockers.push(UpdateBlockerDto {
                 code: "source_missing".to_string(),
                 message: format!(
-                    "La fuente {} ya no existe: revisa el estado antes de generar.",
+                    "Source {} no longer exists: review the state before generating.",
                     used.as_str()
                 ),
                 artifact_id: None,
@@ -152,7 +152,7 @@ pub fn update_context_preview(
             blockers.push(UpdateBlockerDto {
                 code: "source_missing".to_string(),
                 message: format!(
-                    "{} no tiene versión actual: revisa el estado antes de generar.",
+                    "{} has no current version: review the state before generating.",
                     source_artifact.as_str()
                 ),
                 artifact_id: Some(source_artifact.as_str().to_string()),
@@ -163,7 +163,7 @@ pub fn update_context_preview(
             blockers.push(UpdateBlockerDto {
                 code: "source_missing".to_string(),
                 message: format!(
-                    "{} ya no existe: revisa el estado antes de generar.",
+                    "{} no longer exists: review the state before generating.",
                     source_artifact.as_str()
                 ),
                 artifact_id: None,
@@ -176,7 +176,7 @@ pub fn update_context_preview(
             blockers.push(UpdateBlockerDto {
                 code: "source_archived".to_string(),
                 message: format!(
-                    "{} está archivada: restáurala antes de actualizar {}.",
+                    "{} is archived: restore it before updating {}.",
                     source_artifact.as_str(),
                     target.as_str()
                 ),
@@ -186,7 +186,7 @@ pub fn update_context_preview(
             blockers.push(UpdateBlockerDto {
                 code: "source_stale".to_string(),
                 message: format!(
-                    "{} usa fuentes antiguas: actualiza primero {} antes de {}.",
+                    "{} uses old sources: update {} first before {}.",
                     source_artifact.as_str(),
                     source_artifact.as_str(),
                     target.as_str()
@@ -194,8 +194,8 @@ pub fn update_context_preview(
                 artifact_id: Some(source_artifact.as_str().to_string()),
             });
         }
-        // Sin bloqueo por falta de revisión (diseño vivo): `current_approved`
-        // viaja como información en cada fuente, no como veto.
+        // No blocker for missing review (living design): `current_approved`
+        // travels as information on each source, not as a veto.
         sources.push(UpdateSourceDto {
             artifact_id: source_artifact.as_str().to_string(),
             kind: kind_str(source_ref.artifact_type()).to_string(),
@@ -229,7 +229,7 @@ pub fn update_context_preview(
         }
         let versions = store.versions_of(&origin_artifact);
         let current_origin = versions.last().ok_or_else(|| CoreError::VersionNotFound {
-            version: VersionId::new("actual").expect("id literal"),
+            version: VersionId::new("current").expect("literal id"),
         })?;
         let from = match input.origin_from_version_id {
             None => versions
@@ -280,8 +280,8 @@ pub fn update_context_preview(
     })
 }
 
-/// Snapshot autoritativo para generar: mismo cálculo que la vista previa,
-/// pero los bloqueos son errores (nada se genera a medias).
+/// Authoritative snapshot for generating: same computation as the preview,
+/// but blockers are errors (nothing generates halfway).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateSnapshot {
     pub kind: DesignKind,
@@ -311,7 +311,7 @@ pub fn snapshot_update_context(
     }
     let kind = DesignKind::parse(&preview.kind).map_err(ApiError::from_meta)?;
     let target = ArtifactId::new(preview.target.id.clone())?;
-    let known = store.artifact(&target).expect("objetivo validado");
+    let known = store.artifact(&target).expect("validated target");
     let mut context: Vec<GenerationContextItem> = preview
         .sources
         .iter()
@@ -353,8 +353,8 @@ pub fn snapshot_update_context(
     })
 }
 
-/// Diff estructural entre dos especificaciones del mismo tipo, ambas
-/// validadas con los contratos existentes. Puro: no toca el dominio.
+/// Structural diff between two specs of the same kind, both
+/// validated with the existing contracts. Pure: touches no domain.
 pub fn design_diff(input: DesignDiffInput) -> Result<DesignDiffDto, ApiError> {
     let old = crate::design::validate_spec(&input.kind, &input.old_spec, None)?;
     let new = crate::design::validate_spec(&input.kind, &input.new_spec, None)?;

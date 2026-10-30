@@ -1,11 +1,10 @@
-// Inspector del modelo ER: entidad seleccionada (nombre, atributos con
-// marca PK, citas, borrado con consecuencias), relación seleccionada
-// (etiqueta, cardinalidades, borrado) y creación accesible por teclado.
-//
-// Esto edita el MODELO de datos (entidades y relaciones del diseño), no
-// filas de ninguna base real: no ejecuta SQL ni migraciones. El subconjunto
-// no representa tipos de atributo, obligatoriedad ni FK por atributo: solo
-// nombre y marca de clave; las relaciones viven como conexiones.
+// ER model inspector: selected entity (name, attributes with PK mark,
+// citations, deletion with consequences), selected relation (label,
+// cardinalities, deletion) and keyboard-accessible creation. This edits
+// the data MODEL (design entities and relations), not rows of any real
+// database: it runs no SQL or migrations. The subset represents no
+// attribute types, requiredness or per-attribute FK: only name and key
+// mark; relations live as connections.
 import { useState } from "react";
 import {
   addAttribute,
@@ -16,12 +15,13 @@ import {
   renameAttribute,
   renameEntity,
   setAttributeKey,
+  setEntityMockups,
   setEntityRequirements,
   updateRelation,
   type Cardinality,
   type ErSpec,
 } from "./specModel";
-import { CommitInput, DeleteConfirm, RefsPicker } from "./inspector";
+import { CommitInput, DeleteConfirm, MockupRefsEditor, RefsPicker } from "./inspector";
 
 const CARDS: Cardinality[] = ["1", "0..1", "N", "0..N"];
 
@@ -60,13 +60,13 @@ export function ErInspector({
   return (
     <div className="inspector-body">
       {entity !== undefined && (
-        <section aria-label={`Entidad ${entity.name}`}>
+        <section aria-label={`Entity ${entity.name}`}>
           <h4>
-            Entidad <code>{entity.name}</code>
+            Entity <code>{entity.name}</code>
           </h4>
           <CommitInput
             key={`name:${entity.name}`}
-            label="Nombre"
+            label="Name"
             value={entity.name}
             maxLength={64}
             onCommit={(next) => {
@@ -74,7 +74,7 @@ export function ErInspector({
               if (trimmed === entity.name) return;
               const renamed = renameEntity(spec, entity.name, trimmed);
               if (!renamed.ok) {
-                setRenameError(renamed.reason ?? "Nombre inválido.");
+                setRenameError(renamed.reason ?? "Invalid name.");
                 return;
               }
               setRenameError(null);
@@ -93,13 +93,18 @@ export function ErInspector({
             selected={entity.requirements}
             onChange={(requirements) => onSpec(setEntityRequirements(spec, entity.name, requirements))}
           />
+          <MockupRefsEditor
+            mockups={allowed.filter((id) => id.startsWith("mockup-"))}
+            selected={entity.mockups}
+            onChange={(mockups) => onSpec(setEntityMockups(spec, entity.name, mockups))}
+          />
           <div className="field">
-            <span>Atributos (nombre y clave; el subconjunto no tiene tipos)</span>
+            <span>Attributes (name and key; the subset has no types)</span>
             <ul className="attr-list">
               {entity.attributes.map((attr) => (
                 <li key={`${entity.name}:${attr.name}`}>
                   <CommitInput
-                    label={`Atributo ${attr.name}`}
+                    label={`Attribute ${attr.name}`}
                     value={attr.name}
                     maxLength={64}
                     onCommit={(next) => {
@@ -107,7 +112,7 @@ export function ErInspector({
                       if (trimmed === attr.name) return;
                       const renamed = renameAttribute(spec, entity.name, attr.name, trimmed);
                       if (!renamed.ok) {
-                        setAttrError(renamed.reason ?? "Atributo inválido.");
+                        setAttrError(renamed.reason ?? "Invalid attribute.");
                         return;
                       }
                       setAttrError(null);
@@ -125,10 +130,10 @@ export function ErInspector({
                   <button
                     type="button"
                     className="secondary small"
-                    aria-label={`Quitar atributo ${attr.name}`}
+                    aria-label={`Remove attribute ${attr.name}`}
                     onClick={() => onSpec(removeAttribute(spec, entity.name, attr.name))}
                   >
-                    Quitar
+                    Remove
                   </button>
                 </li>
               ))}
@@ -143,12 +148,12 @@ export function ErInspector({
               className="secondary small"
               onClick={() => onSpec(addAttribute(spec, entity.name).spec)}
             >
-              Añadir atributo
+              Add attribute
             </button>
           </div>
           {confirming === entity.name ? (
             <DeleteConfirm
-              what={`la entidad ${entity.name}`}
+              what={`entity ${entity.name}`}
               consequences={erDeleteConsequences(spec, entity.name)}
               onConfirm={() => {
                 onSpec(removeEntity(spec, entity.name).spec);
@@ -159,21 +164,21 @@ export function ErInspector({
             />
           ) : (
             <button type="button" className="danger small" onClick={() => setConfirming(entity.name)}>
-              Eliminar entidad…
+              Delete entity…
             </button>
           )}
         </section>
       )}
 
       {selection?.kind === "edge" && relation !== undefined && (
-        <section aria-label={`Relación ${selection.index + 1}`}>
-          <h4>Relación</h4>
+        <section aria-label={`Relation ${selection.index + 1}`}>
+          <h4>Relation</h4>
           <p className="hint">
             <code>{relation.from}</code> → <code>{relation.to}</code>
           </p>
           <CommitInput
             key={`rel:${selection.index}:${relation.label ?? ""}`}
-            label="Etiqueta (vacía = sin etiqueta)"
+            label="Label (empty = no label)"
             value={relation.label ?? ""}
             maxLength={160}
             onCommit={(label) =>
@@ -192,7 +197,7 @@ export function ErInspector({
                 onChange={(e) =>
                   onSpec(updateRelation(spec, selection.index, { fromCard: e.target.value as Cardinality }))
                 }
-                aria-label={`Cardinalidad de ${relation.from}`}
+                aria-label={`Cardinality of ${relation.from}`}
               >
                 {CARDS.map((card) => (
                   <option key={card} value={card}>
@@ -208,7 +213,7 @@ export function ErInspector({
                 onChange={(e) =>
                   onSpec(updateRelation(spec, selection.index, { toCard: e.target.value as Cardinality }))
                 }
-                aria-label={`Cardinalidad de ${relation.to}`}
+                aria-label={`Cardinality of ${relation.to}`}
               >
                 {CARDS.map((card) => (
                   <option key={card} value={card}>
@@ -226,28 +231,28 @@ export function ErInspector({
               onSelect(null);
             }}
           >
-            Eliminar relación
+            Delete relation
           </button>
         </section>
       )}
 
       {selection === null && (
-        <p className="hint">Selecciona una entidad o una relación para editarla. Clic en el fondo para soltar.</p>
+        <p className="hint">Select an entity or a relation to edit it. Click the background to release.</p>
       )}
 
-      <section aria-label="Crear relación">
-        <h4>Crear relación</h4>
+      <section aria-label="Create relation">
+        <h4>Create relation</h4>
         <div className="add-row">
-          <select value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Origen">
-            <option value="">Origen…</option>
+          <select value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Origin">
+            <option value="">Origin…</option>
             {spec.entities.map((entity) => (
               <option key={entity.name} value={entity.name}>
                 {entity.name}
               </option>
             ))}
           </select>
-          <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Destino">
-            <option value="">Destino…</option>
+          <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Target">
+            <option value="">Target…</option>
             {spec.entities.map((entity) => (
               <option key={entity.name} value={entity.name}>
                 {entity.name}
@@ -260,10 +265,10 @@ export function ErInspector({
             disabled={from === "" || to === ""}
             onClick={() => onConnectRequest(from, to)}
           >
-            Relacionar
+            Relate
           </button>
         </div>
-        <p className="hint">La relación nueva nace N:N; ajusta sus cardinalidades aquí.</p>
+        <p className="hint">A new relation is born N:N; adjust its cardinalities here.</p>
       </section>
     </div>
   );

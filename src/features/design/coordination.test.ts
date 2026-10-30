@@ -17,8 +17,8 @@ import type { ArtifactDto, RequirementDetail } from "../requirements/types";
 
 function proposal(overrides: Partial<DesignProposalDto> = {}): DesignProposalDto {
   return {
-    title: "Flujo",
-    spec: { title: "Flujo" },
+    title: "Flow",
+    spec: { title: "Flow" },
     mermaid: "flowchart TD",
     explanation: "E",
     state: "pending",
@@ -45,7 +45,7 @@ function generation(id: string, stale = false): DesignGenerationDto {
 }
 
 describe("upsertDesignGeneration", () => {
-  it("añade al final y sustituye en su posición", () => {
+  it("appends at the end and replaces in place", () => {
     const next = upsertDesignGeneration([generation("gen-1")], generation("gen-2"));
     expect(next.map((g) => g.id)).toEqual(["gen-1", "gen-2"]);
     const updated = upsertDesignGeneration(next, generation("gen-1", true));
@@ -55,7 +55,7 @@ describe("upsertDesignGeneration", () => {
 });
 
 describe("isDesignActionable", () => {
-  it("solo pendiente, fresca y sin trabajo", () => {
+  it("only pending, fresh and idle", () => {
     expect(isDesignActionable(proposal(), false, false)).toBe(true);
     expect(isDesignActionable(proposal(), true, false)).toBe(false);
     expect(isDesignActionable(proposal(), false, true)).toBe(false);
@@ -71,14 +71,14 @@ describe("designTargets", () => {
     { id: "mer-5", projectId: "proy-1", moduleId: "mod-2", kind: "data_model", title: null, archived: false },
   ];
 
-  it("filtra por tipo de diseño", () => {
+  it("filters by design kind", () => {
     expect(designTargets(artifacts, "flow").map((a) => a.id)).toEqual(["flujo-4"]);
     expect(designTargets(artifacts, "data_model").map((a) => a.id)).toEqual(["mer-5"]);
   });
 });
 
-describe("prettySpec y parseSpecText", () => {
-  it("serializa estable y parsea de vuelta", () => {
+describe("prettySpec and parseSpecText", () => {
+  it("serializes stably and parses back", () => {
     const spec = { title: "T", nodes: [] };
     const text = prettySpec(spec);
     expect(text).toContain("\n");
@@ -86,23 +86,23 @@ describe("prettySpec y parseSpecText", () => {
     expect(parsed).toEqual({ ok: true, value: spec });
   });
 
-  it("informa JSON inválido sin lanzar", () => {
-    const parsed = parseSpecText("{ roto");
+  it("reports invalid JSON without throwing", () => {
+    const parsed = parseSpecText("{ broken");
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.error).toContain("JSON");
   });
 });
 
 describe("renderReducer", () => {
-  it("retiene el último SVG válido ante errores", () => {
+  it("retains the last valid SVG on errors", () => {
     const loading = renderReducer(EMPTY_RENDER, { type: "start" });
     expect(loading.status).toBe("loading");
     const ready = renderReducer(loading, { type: "ok", svg: "<svg/>" });
     expect(ready).toEqual({ status: "ready", svg: "<svg/>", error: null });
-    const failed = renderReducer(ready, { type: "fail", error: "sintaxis" });
+    const failed = renderReducer(ready, { type: "fail", error: "syntax" });
     expect(failed.status).toBe("error");
     expect(failed.svg).toBe("<svg/>");
-    expect(failed.error).toBe("sintaxis");
+    expect(failed.error).toBe("syntax");
     expect(renderReducer(failed, { type: "reset" })).toEqual(EMPTY_RENDER);
   });
 });
@@ -116,19 +116,19 @@ describe("update generations", () => {
     };
   }
 
-  it("distingue creaciones de actualizaciones por objetivo", () => {
+  it("tells creations from updates by target", () => {
     expect(isUpdateGeneration(generation("gen-1"))).toBe(false);
     expect(isUpdateGeneration(update("gen-2", "flujo-4"))).toBe(true);
     expect(isUpdateGeneration({ ...update("gen-3", ""), targetArtifactId: "" })).toBe(false);
   });
 
-  it("filtra propuestas por artefacto objetivo", () => {
+  it("filters proposals by target artifact", () => {
     const gens = [generation("gen-1"), update("gen-2", "flujo-4"), update("gen-3", "mer-5")];
     expect(updateGenerationsFor(gens, "flujo-4").map((g) => g.id)).toEqual(["gen-2"]);
     expect(updateGenerationsFor(gens, "flujo-9")).toEqual([]);
   });
 
-  it("retoma la más reciente pendiente y fresca", () => {
+  it("resumes the most recent pending and fresh one", () => {
     const gens = [
       update("gen-1", "flujo-4", true),
       { ...update("gen-2", "flujo-4"), proposal: proposal({ state: "accepted" }) },
@@ -161,8 +161,8 @@ function detail(
 }
 
 describe("buildLinkIndex", () => {
-  // req-1 (v1, v2 actual), req-2 (v1); flujo-1 fija req-1-v2 y req-2-v1;
-  // mer-2 fija req-1-v1 (antigua) y flujo-1-v1 (intermedio).
+  // req-1 (v1, current v2), req-2 (v1); flujo-1 pins req-1-v2 and req-2-v1;
+  // mer-2 pins req-1-v1 (old) and flujo-1-v1 (intermediate).
   const details = [
     detail("req-1", "requirement", [{ id: "req-1-v1" }, { id: "req-1-v2" }], "req-1-v2"),
     detail("req-2", "requirement", [{ id: "req-2-v1" }], "req-2-v1"),
@@ -176,7 +176,7 @@ describe("buildLinkIndex", () => {
     detail("flujo-9", "flow", [{ id: "flujo-9-v1", sources: ["mer-2-v1"] }], "flujo-9-v1"),
   ];
 
-  it("vincula diseños directos con sus versiones fijadas", () => {
+  it("links direct designs with their pinned versions", () => {
     const index = buildLinkIndex(details);
     const links = index.byRequirement["req-1"];
     expect(links.map((l) => [l.artifactId, l.link])).toEqual([
@@ -188,7 +188,7 @@ describe("buildLinkIndex", () => {
     expect(links[0].stale).toBe(false);
   });
 
-  it("marca vínculos a versiones antiguas y la vía transitiva", () => {
+  it("marks links to old versions and the transitive path", () => {
     const index = buildLinkIndex(details);
     const links = index.byRequirement["req-1"];
     const legacy = links.find((l) => l.artifactId === "mer-2");
@@ -199,7 +199,7 @@ describe("buildLinkIndex", () => {
     expect(transitive?.via).toContain("mer-2");
   });
 
-  it("calcula vigencia por diseño desde fuentes exactas", () => {
+  it("computes freshness per design from exact sources", () => {
     const index = buildLinkIndex(details);
     expect(index.freshness["flujo-1"].stale).toBe(false);
     expect(index.freshness["mer-2"].stale).toBe(true);
@@ -212,13 +212,13 @@ describe("buildLinkIndex", () => {
     expect(pins.find((p) => p.versionId === "flujo-1-v1")?.stale).toBe(false);
   });
 
-  it("un diseño compartido aparece bajo cada requisito fuente", () => {
+  it("a shared design appears under each source requirement", () => {
     const index = buildLinkIndex(details);
     expect(index.byRequirement["req-2"].map((l) => l.artifactId)).toContain("flujo-1");
     expect(index.byRequirement["req-1"].map((l) => l.artifactId)).toContain("flujo-1");
   });
 
-  it("ignora versiones desconocidas sin inventar vínculos", () => {
+  it("ignores unknown versions without inventing links", () => {
     const ghost = detail(
       "flujo-x",
       "flow",
@@ -231,9 +231,9 @@ describe("buildLinkIndex", () => {
     expect(index.freshness["flujo-x"].pins[0].artifactId).toBeNull();
   });
 
-  it("requisito sin diseños produce lista vacía", () => {
-    const solo = detail("req-solo", "requirement", [{ id: "req-solo-v1" }], "req-solo-v1");
+  it("a requirement without designs yields an empty list", () => {
+    const solo = detail("req-alone", "requirement", [{ id: "req-alone-v1" }], "req-alone-v1");
     const index = buildLinkIndex([solo]);
-    expect(index.byRequirement["req-solo"]).toEqual([]);
+    expect(index.byRequirement["req-alone"]).toEqual([]);
   });
 });

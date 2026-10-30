@@ -1,6 +1,6 @@
-// Coordinación pura del asistente: historial combinado y envío explícito.
-// Sin React ni Tauri. No hay clasificador: el texto libre jamás elige una
-// acción; solo la alimenta cuando la acción lo admite.
+// Pure assistant coordination: combined history and explicit sending. No
+// React, no Tauri. There is no classifier: free text never picks an action;
+// it only feeds one when the action allows it.
 import type { DesignGenerationDto } from "../design/types";
 import type { GenerationDto } from "../proposals/types";
 import {
@@ -10,14 +10,14 @@ import {
 } from "./types";
 
 function tokensLabel(input?: number | null, output?: number | null, total?: number | null): string {
-  if (total === null || total === undefined) return "tokens n/d";
+  if (total === null || total === undefined) return "tokens n/a";
   return `${input ?? "?"}+${output ?? "?"} = ${total}`;
 }
 
 /**
- * Combina generaciones de requisitos y diseños en un historial único,
- * ordenado por creación descendente y acotado. Las propuestas de
- * actualización se distinguen por su objetivo fijado.
+ * Merges requirement and design generations into one history, ordered by
+ * descending creation and bounded. Update proposals tell apart by their
+ * pinned target.
  */
 export function mergeAssistantHistory(
   requirements: GenerationDto[],
@@ -31,7 +31,7 @@ export function mergeAssistantHistory(
         title:
           generation.proposals.length === 1
             ? (generation.proposals[0]?.title ?? generation.id)
-            : `${generation.proposals.length} propuestas`,
+            : `${generation.proposals.length} proposals`,
         model: generation.model,
         tokens: tokensLabel(
           generation.usage.inputTokens,
@@ -72,9 +72,9 @@ export type SendResolution =
   | { ok: false; reason: "no_action" | "empty" };
 
 /**
- * Qué hace Enviar: exige acción explícita y texto no vacío. El texto solo
- * alimenta Proponer requisitos (`feedComposer`); las demás acciones usan
- * sus fuentes marcadas y lo ignoran (avisando, sin simular).
+ * What Send does: requires an explicit action and non-empty text. The text
+ * only feeds Propose requirements (`feedComposer`); other actions use their
+ * marked sources and ignore it (warning, never faking).
  */
 export function resolveSend(selected: AssistantAction | null, message: string): SendResolution {
   if (selected === null) return { ok: false, reason: "no_action" };
@@ -84,8 +84,8 @@ export function resolveSend(selected: AssistantAction | null, message: string): 
 
 export function assistantActionLabel(action: AssistantAction): string {
   return action === "requirements"
-    ? "Proponer requisitos"
+    ? "Propose requirements"
     : action === "design"
-      ? "Generar flujo o ER"
-      : "Proponer actualización";
+      ? "Generate flow or ER"
+      : "Propose update";
 }

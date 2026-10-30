@@ -1,5 +1,5 @@
-//! Exportación reproducible: paquete completo desde la baseline, ZIP
-//! determinista y hashes verificables. Sin red: núcleo, API y SQLite temporal.
+//! Reproducible export: full package from the baseline, deterministic
+//! ZIP and verifiable hashes. No network: core, API and temp SQLite.
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -57,7 +57,7 @@ fn baby() -> Baby {
     let mut ids = IdGen::new();
     let project = ProjectId::new(
         ruth_api::create_project(&mut store, &mut ids)
-            .expect("proyecto")
+            .expect("project")
             .id,
     )
     .expect("id");
@@ -69,7 +69,7 @@ fn baby() -> Baby {
                 project_id: project.as_str().to_string(),
             },
         )
-        .expect("módulo")
+        .expect("module")
         .id,
     )
     .expect("id");
@@ -84,7 +84,7 @@ fn baby() -> Baby {
                 author: "ana".to_string(),
             },
         )
-        .expect("requisito")
+        .expect("requirement")
         .artifact
         .id,
     )
@@ -102,7 +102,7 @@ fn baby() -> Baby {
 }
 
 fn author() -> Author {
-    Author::Human(HumanId::new("ana").expect("autora"))
+    Author::Human(HumanId::new("ana").expect("author"))
 }
 
 fn save_version(
@@ -124,11 +124,11 @@ fn save_version(
             artifact,
             expected.as_ref(),
             id.clone(),
-            Content::new(content).expect("contenido"),
+            Content::new(content).expect("content"),
             &author(),
             sources,
         )
-        .expect("versión");
+        .expect("version");
     id
 }
 
@@ -141,7 +141,7 @@ fn design(baby: &mut Baby, kind: ArtifactType, content: &str, sources: &[Version
     };
     baby.store
         .create_artifact(&baby.project, &baby.module, id.clone(), kind)
-        .expect("artefacto");
+        .expect("artifact");
     save_version(baby, &id, 1, content, sources);
     id
 }
@@ -157,7 +157,7 @@ fn approve(baby: &mut Baby, artifact: &ArtifactId, expected: &VersionId) {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("aprobar");
+    .expect("approve");
 }
 
 fn flow_json(req_id: &str) -> String {
@@ -181,8 +181,8 @@ fn er_json(req_id: &str) -> String {
             {"name": "Venta", "attributes": [{"name": "id", "key": true}], "requirements": [req_id]}
         ],
         "relations": [],
-        "explanation": "Una venta agrupa líneas.",
-        "questions": ["¿La reserva bloquea stock disponible?"]
+        "explanation": "A sale groups lines.",
+        "questions": ["Does the reservation lock available stock?"]
     })
     .to_string()
 }
@@ -197,8 +197,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-/// Ventas listas: requisito, flujo y ER aprobados; baseline creada y
-/// persistida en la base temporal (que sigue abierta en `db`).
+/// Sales ready: approved requirement, flow and ER; baseline created and
+/// persisted in the temp database (still open in `db`).
 fn sales_baseline(baby: &mut Baby, db: &DbActor) -> String {
     let req_v1 = baby.req_v1.clone();
     let req = baby.req.clone();
@@ -219,8 +219,7 @@ fn sales_baseline(baby: &mut Baby, db: &DbActor) -> String {
     );
     let model_v1 = IdGen::version(&model, 1);
     approve(baby, &model.clone(), &model_v1);
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = ruth_api::prepare_baseline(
         &baby.store,
         BaselinePrepareInput {
@@ -229,7 +228,7 @@ fn sales_baseline(baby: &mut Baby, db: &DbActor) -> String {
             artifact_ids: vec![flow.as_str().to_string(), model.as_str().to_string()],
         },
     )
-    .expect("preparar");
+    .expect("prepare");
     assert!(preview.can_create);
     let entries = preview
         .entries
@@ -246,14 +245,14 @@ fn sales_baseline(baby: &mut Baby, db: &DbActor) -> String {
         db,
         BaselineCreateInput {
             project_id: baby.project.as_str().to_string(),
-            name: "Entrega ventas".to_string(),
-            description: Some("Primera entrega".to_string()),
+            name: "Sales delivery".to_string(),
+            description: Some("First delivery".to_string()),
             scope_module_id: Some(baby.module.as_str().to_string()),
             entries,
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear")
+    .expect("create")
     .id
 }
 
@@ -278,15 +277,15 @@ fn is_safe_path(path: &str) -> bool {
 
 #[test]
 fn export_builds_complete_package() {
-    let tmp = TempDb::new("paquete");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("package");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let baseline = sales_baseline(&mut baby, &db);
     let before = format!("{:?}", baby.store);
     let files =
         ruth_api::build_export_files(&baby.store, &baby.metalog, baby.project.as_str(), &baseline)
-            .expect("paquete");
-    // Consulta pura: el dominio no cambia.
+            .expect("package");
+    // Pure query: the domain does not change.
     assert_eq!(format!("{:?}", baby.store), before);
     let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
     let mut sorted = paths.clone();
@@ -309,22 +308,22 @@ fn export_builds_complete_package() {
         2
     );
     assert!(paths.iter().all(|p| is_safe_path(p)));
-    // Contenido original exacto.
+    // Exact original content.
     let req_file = paths
         .iter()
         .find(|p| p.starts_with("artifacts/requirement-"))
-        .expect("requisito");
+        .expect("requirement");
     assert_eq!(
         text(&files, req_file),
         "Confirmar una venta descuenta stock."
     );
-    // Diagramas derivados del serializador existente.
+    // Diagrams derived from the existing serializer.
     let flow_mmd = text(
         &files,
         paths
             .iter()
             .find(|p| p.starts_with("diagrams/flow-"))
-            .expect("diagrama de flujo"),
+            .expect("flow diagram"),
     );
     assert!(flow_mmd.starts_with("flowchart TD"), "{flow_mmd}");
     assert!(flow_mmd.contains("Venta creada"), "{flow_mmd}");
@@ -333,29 +332,29 @@ fn export_builds_complete_package() {
         paths
             .iter()
             .find(|p| p.starts_with("diagrams/data_model-"))
-            .expect("diagrama ER"),
+            .expect("ER diagram"),
     );
     assert!(er_mmd.starts_with("erDiagram"), "{er_mmd}");
-    // Documentos coherentes.
+    // Coherent documents.
     let readme = text(&files, "README.md");
     assert!(readme.contains(&baseline));
-    assert!(readme.contains("no son una firma digital"));
+    assert!(readme.contains("are not a digital signature"));
     let spec = text(&files, "specification.md");
     assert!(spec.contains("Confirmar una venta descuenta stock."));
     assert!(spec.contains("Flujo de venta"));
     assert!(spec.contains("ana"));
     let context = text(&files, "implementation-context.md");
-    assert!(context.contains("¿La reserva bloquea stock disponible?"));
-    assert!(context.contains("No inventar stack"));
-    // Manifiesto versionado y verificable.
+    assert!(context.contains("Does the reservation lock available stock?"));
+    assert!(context.contains("Do not invent stack"));
+    // Versioned, verifiable manifest.
     let manifest: serde_json::Value =
         serde_json::from_str(&text(&files, "manifest.json")).expect("json");
     assert_eq!(manifest["format"], "ruth-baseline-export");
     assert_eq!(manifest["format_version"], 1);
     assert_eq!(manifest["baseline"]["id"], baseline);
-    assert_eq!(manifest["baseline"]["name"], "Entrega ventas");
-    assert_eq!(manifest["entries"].as_array().expect("entradas").len(), 3);
-    let listed = manifest["files"].as_array().expect("archivos");
+    assert_eq!(manifest["baseline"]["name"], "Sales delivery");
+    assert_eq!(manifest["entries"].as_array().expect("entries").len(), 3);
+    let listed = manifest["files"].as_array().expect("files");
     assert_eq!(listed.len(), files.len() - 1, "el manifiesto se excluye");
     assert!(!listed.iter().any(|f| f["path"] == "manifest.json"));
     for entry in listed {
@@ -364,7 +363,7 @@ fn export_builds_complete_package() {
         assert_eq!(entry["sha256"], sha256_hex(bytes), "{path}");
         assert_eq!(entry["bytes"], bytes.len() as u64);
     }
-    for entry in manifest["entries"].as_array().expect("entradas") {
+    for entry in manifest["entries"].as_array().expect("entries") {
         if entry["kind"] == "requirement" {
             assert_eq!(entry["diagram_file"], serde_json::Value::Null);
             assert_eq!(entry["diagram_ok"], false);
@@ -379,26 +378,26 @@ fn export_builds_complete_package() {
 #[test]
 fn export_zip_is_deterministic_and_readable() {
     let tmp = TempDb::new("zip");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let baseline = sales_baseline(&mut baby, &db);
     let project = baby.project.as_str().to_string();
     let first = ruth_api::build_export_files(&baby.store, &baby.metalog, &project, &baseline)
-        .expect("paquete");
+        .expect("package");
     let second = ruth_api::build_export_files(&baby.store, &baby.metalog, &project, &baseline)
-        .expect("paquete");
+        .expect("package");
     assert_eq!(first, second);
     let zip_a = ruth_api::package_to_zip(&first).expect("zip");
     let zip_b = ruth_api::package_to_zip(&second).expect("zip");
-    assert_eq!(zip_a, zip_b, "mismo paquete, mismos bytes");
+    assert_eq!(zip_a, zip_b, "same package, same bytes");
     assert_eq!(ruth_api::zip_sha256(&zip_a), sha256_hex(&zip_a));
-    // El ZIP se abre con un lector estándar y trae todo.
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_a)).expect("abrir zip");
+    // The ZIP opens with a standard reader and brings everything.
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_a)).expect("open zip");
     assert_eq!(archive.len(), first.len());
     for expected in &first {
         let mut entry = archive.by_name(&expected.path).expect(&expected.path);
         let mut bytes = Vec::new();
-        entry.read_to_end(&mut bytes).expect("leer");
+        entry.read_to_end(&mut bytes).expect("read");
         assert_eq!(bytes, expected.bytes, "{}", expected.path);
     }
     db.close();
@@ -406,11 +405,11 @@ fn export_zip_is_deterministic_and_readable() {
 
 #[test]
 fn export_ignores_current_state() {
-    let tmp = TempDb::new("historica");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("historic");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let baseline = sales_baseline(&mut baby, &db);
-    // El proyecto avanza después de la baseline.
+    // The project advances after the baseline.
     let req_v1 = baby.req_v1.clone();
     ruth_api::save_version(
         &mut baby.store,
@@ -425,12 +424,12 @@ fn export_ignores_current_state() {
     .expect("v2");
     let files =
         ruth_api::build_export_files(&baby.store, &baby.metalog, baby.project.as_str(), &baseline)
-            .expect("paquete");
+            .expect("package");
     let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
     let req_file = paths
         .iter()
         .find(|p| p.starts_with("artifacts/requirement-"))
-        .expect("requisito");
+        .expect("requirement");
     assert_eq!(
         text(&files, req_file),
         "Confirmar una venta descuenta stock.",
@@ -440,18 +439,18 @@ fn export_ignores_current_state() {
         serde_json::from_str(&text(&files, "manifest.json")).expect("json");
     let req_entry = manifest["entries"]
         .as_array()
-        .expect("entradas")
+        .expect("entries")
         .iter()
         .find(|e| e["kind"] == "requirement")
-        .expect("entrada");
+        .expect("entry");
     assert_eq!(req_entry["version"], baby.req_v1.as_str());
     db.close();
 }
 
 #[test]
 fn export_rejects_unknown_baseline() {
-    let tmp = TempDb::new("desconocida");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("unknown");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let baseline = sales_baseline(&mut baby, &db);
     let err = ruth_api::build_export_files(
@@ -460,19 +459,19 @@ fn export_rejects_unknown_baseline() {
         baby.project.as_str(),
         "base-404",
     )
-    .expect_err("inexistente");
+    .expect_err("missing");
     assert_eq!(err.kind, "baseline_not_found");
-    // De otro proyecto: no se exporta aunque exista la baseline.
+    // From another project: never exports even when the baseline exists.
     let err = ruth_api::build_export_files(&baby.store, &baby.metalog, "proj-ajeno", &baseline)
-        .expect_err("ajena");
+        .expect_err("foreign");
     assert_eq!(err.kind, "baseline_not_found");
     db.close();
 }
 
 #[test]
 fn export_neutralizes_malicious_titles_and_ids() {
-    let tmp = TempDb::new("maliciosa");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("malicious");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let req_v1 = baby.req_v1.clone();
     let req = baby.req.clone();
@@ -496,7 +495,7 @@ fn export_neutralizes_malicious_titles_and_ids() {
             evil_id.clone(),
             ArtifactType::Flow,
         )
-        .expect("artefacto");
+        .expect("artifact");
     save_version(
         &mut baby,
         &evil_id,
@@ -507,8 +506,7 @@ fn export_neutralizes_malicious_titles_and_ids() {
     let flow = evil_id;
     let flow_v1 = IdGen::version(&flow, 1);
     approve(&mut baby, &flow.clone(), &flow_v1);
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = ruth_api::prepare_baseline(
         &baby.store,
         BaselinePrepareInput {
@@ -517,7 +515,7 @@ fn export_neutralizes_malicious_titles_and_ids() {
             artifact_ids: vec![flow.as_str().to_string()],
         },
     )
-    .expect("preparar");
+    .expect("prepare");
     assert!(preview.can_create);
     let dto = ruth_api::create_baseline(
         &mut baby.store,
@@ -540,24 +538,24 @@ fn export_neutralizes_malicious_titles_and_ids() {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
+    .expect("create");
     let files =
         ruth_api::build_export_files(&baby.store, &baby.metalog, baby.project.as_str(), &dto.id)
-            .expect("paquete");
+            .expect("package");
     for f in &files {
-        assert!(is_safe_path(&f.path), "ruta insegura: {}", f.path);
+        assert!(is_safe_path(&f.path), "unsafe path: {}", f.path);
         assert!(!f.path.contains(".."), "escape: {}", f.path);
     }
-    // Los títulos libres nunca llegan a los nombres de archivo.
+    // Free titles never reach file names.
     assert!(
         !files
             .iter()
             .any(|f| f.path.contains("etc") || f.path.contains("evil")),
-        "título filtrado a rutas"
+        "title filtered to paths"
     );
-    // El ZIP hereda las rutas seguras.
+    // The ZIP inherits the safe paths.
     let zip = ruth_api::package_to_zip(&files).expect("zip");
-    let archive = zip::ZipArchive::new(std::io::Cursor::new(&zip)).expect("abrir");
+    let archive = zip::ZipArchive::new(std::io::Cursor::new(&zip)).expect("open");
     for name in archive.file_names() {
         assert!(is_safe_path(name), "ruta insegura en zip: {name}");
     }
@@ -566,23 +564,22 @@ fn export_neutralizes_malicious_titles_and_ids() {
 
 #[test]
 fn export_marks_unstructured_designs_without_inventing() {
-    let tmp = TempDb::new("no-estructurado");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("unstructured");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let req_v1 = baby.req_v1.clone();
     let req = baby.req.clone();
     approve(&mut baby, &req, &req_v1);
-    // Contenido heredado: texto libre en un artefacto de diseño.
+    // Legacy content: free text in a design artifact.
     let flow = design(
         &mut baby,
         ArtifactType::Flow,
-        "Borrador antiguo sin JSON.",
+        "Old draft without JSON.",
         std::slice::from_ref(&req_v1),
     );
     let flow_v1 = IdGen::version(&flow, 1);
     approve(&mut baby, &flow.clone(), &flow_v1);
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = ruth_api::prepare_baseline(
         &baby.store,
         BaselinePrepareInput {
@@ -591,7 +588,7 @@ fn export_marks_unstructured_designs_without_inventing() {
             artifact_ids: vec![flow.as_str().to_string()],
         },
     )
-    .expect("preparar");
+    .expect("prepare");
     let dto = ruth_api::create_baseline(
         &mut baby.store,
         &mut baby.ids,
@@ -599,7 +596,7 @@ fn export_marks_unstructured_designs_without_inventing() {
         &db,
         BaselineCreateInput {
             project_id: baby.project.as_str().to_string(),
-            name: "Legado".to_string(),
+            name: "Legacy".to_string(),
             description: None,
             scope_module_id: None,
             entries: preview
@@ -613,15 +610,15 @@ fn export_marks_unstructured_designs_without_inventing() {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
+    .expect("create");
     let files =
         ruth_api::build_export_files(&baby.store, &baby.metalog, baby.project.as_str(), &dto.id)
-            .expect("paquete");
+            .expect("package");
     let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
     let diagram = paths
         .iter()
         .find(|p| p.starts_with("diagrams/"))
-        .expect("diagrama");
+        .expect("diagram");
     let body = text(&files, diagram);
     assert!(body.starts_with("%%"), "{body}");
     assert!(body.contains("artifacts/"), "{body}");
@@ -629,28 +626,28 @@ fn export_marks_unstructured_designs_without_inventing() {
         serde_json::from_str(&text(&files, "manifest.json")).expect("json");
     let flow_entry = manifest["entries"]
         .as_array()
-        .expect("entradas")
+        .expect("entries")
         .iter()
         .find(|e| e["kind"] == "flow")
-        .expect("flujo");
+        .expect("flow");
     assert_eq!(flow_entry["diagram_ok"], false);
     let spec = text(&files, "specification.md");
-    assert!(spec.contains("no estructurado"));
+    assert!(spec.contains("Unstructured content"));
     db.close();
 }
 
 #[test]
 fn export_preview_matches_package() {
-    let tmp = TempDb::new("vista-previa");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("preview");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let baseline = sales_baseline(&mut baby, &db);
     let preview =
         ruth_api::export_preview(&baby.store, &baby.metalog, baby.project.as_str(), &baseline)
-            .expect("vista previa");
+            .expect("preview");
     let files =
         ruth_api::build_export_files(&baby.store, &baby.metalog, baby.project.as_str(), &baseline)
-            .expect("paquete");
+            .expect("package");
     assert_eq!(preview.baseline_id, baseline);
     assert_eq!(preview.exporter_version, ruth_api::EXPORTER_VERSION);
     assert_eq!(preview.files.len(), files.len());
@@ -668,8 +665,8 @@ fn export_preview_matches_package() {
 
 #[test]
 fn export_enforces_size_limits() {
-    let tmp = TempDb::new("limites");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("limits");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let req_v1 = baby.req_v1.clone();
     let req = baby.req.clone();
@@ -683,8 +680,7 @@ fn export_enforces_size_limits() {
     );
     let flow_v1 = IdGen::version(&flow, 1);
     approve(&mut baby, &flow.clone(), &flow_v1);
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = ruth_api::prepare_baseline(
         &baby.store,
         BaselinePrepareInput {
@@ -693,7 +689,7 @@ fn export_enforces_size_limits() {
             artifact_ids: vec![flow.as_str().to_string()],
         },
     )
-    .expect("preparar");
+    .expect("prepare");
     assert!(preview.can_create);
     let dto = ruth_api::create_baseline(
         &mut baby.store,
@@ -716,10 +712,10 @@ fn export_enforces_size_limits() {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
+    .expect("create");
     let err =
         ruth_api::build_export_files(&baby.store, &baby.metalog, baby.project.as_str(), &dto.id)
-            .expect_err("demasiado grande");
+            .expect_err("too large");
     assert_eq!(err.kind, "export_too_large");
     db.close();
 }
@@ -727,10 +723,10 @@ fn export_enforces_size_limits() {
 #[test]
 fn export_freezes_titles_and_never_reads_latest() {
     use ruth_api::{RenameArtifactInput, RenameModuleInput, RenameProjectInput};
-    let tmp = TempDb::new("titulos");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("titles");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
-    // Título del requisito antes de la baseline; el flujo se titula después.
+    // Requirement title before the baseline; the flow titles after.
     ruth_api::rename_requirement(
         &mut baby.store,
         RenameArtifactInput {
@@ -742,9 +738,9 @@ fn export_freezes_titles_and_never_reads_latest() {
         },
         "2026-10-28T11:00:00Z",
     )
-    .expect("título");
+    .expect("title");
     let baseline = sales_baseline(&mut baby, &db);
-    // Tras la baseline cambian todos los nombres, incluidos proyecto y módulo.
+    // After the baseline all names change, including project and module.
     let req = baby.req.clone();
     ruth_api::rename_requirement(
         &mut baby.store,
@@ -757,37 +753,37 @@ fn export_freezes_titles_and_never_reads_latest() {
         },
         "2026-10-28T13:00:00Z",
     )
-    .expect("retítulo");
+    .expect("retitle");
     ruth_api::rename_module(
         &mut baby.store,
         RenameModuleInput {
             project_id: baby.project.as_str().to_string(),
             module_id: baby.module.as_str().to_string(),
             expected_name: baby.module.as_str().to_string(),
-            name: "Ventas renombrado".to_string(),
+            name: "Ventas renamed".to_string(),
         },
     )
-    .expect("módulo");
+    .expect("module");
     ruth_api::rename_project(
         &mut baby.store,
         RenameProjectInput {
             project_id: baby.project.as_str().to_string(),
             expected_name: baby.project.as_str().to_string(),
-            name: "Tienda renombrado".to_string(),
+            name: "Shop renamed".to_string(),
         },
     )
-    .expect("proyecto");
+    .expect("project");
     let files =
         ruth_api::build_export_files(&baby.store, &baby.metalog, baby.project.as_str(), &baseline)
-            .expect("paquete");
+            .expect("package");
     let spec = text(&files, "specification.md");
     assert!(
         spec.contains("## Confirmar venta — req-"),
-        "encabezado con título fijado: {spec}"
+        "heading with pinned title: {spec}"
     );
     assert!(
         !spec.contains("reservas"),
-        "el título vigente no se filtra: {spec}"
+        "the current title does not leak: {spec}"
     );
     let context = text(&files, "implementation-context.md");
     assert!(context.contains("### Confirmar venta — req-"), "{context}");
@@ -796,45 +792,45 @@ fn export_freezes_titles_and_never_reads_latest() {
         serde_json::from_str(&text(&files, "manifest.json")).expect("json");
     let req_entry = manifest["entries"]
         .as_array()
-        .expect("entradas")
+        .expect("entries")
         .iter()
         .find(|e| e["kind"] == "requirement")
-        .expect("entrada");
+        .expect("entry");
     assert_eq!(req_entry["title"], "Confirmar venta");
     let flow_entry = manifest["entries"]
         .as_array()
-        .expect("entradas")
+        .expect("entries")
         .iter()
         .find(|e| e["kind"] == "flow")
-        .expect("flujo");
+        .expect("flow");
     assert!(
         flow_entry["title"].is_null(),
-        "sin título al crear: {flow_entry}"
+        "no title at creation: {flow_entry}"
     );
-    // Ni nombres de proyecto/módulo vigentes ni títulos tardíos en el paquete.
+    // Neither current project/module names nor late titles in the package.
     let all = files
         .iter()
         .map(|f| String::from_utf8_lossy(&f.bytes).into_owned())
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(!all.contains("renombrado"), "sin nombres latest: {all}");
+    assert!(!all.contains("renamed"), "no latest names: {all}");
     db.close();
 }
 
 fn mockup_json(req_id: &str) -> String {
     serde_json::json!({
-        "title": "Nueva reserva",
+        "title": "New booking",
         "screens": [{
-            "id": "nueva_reserva",
-            "title": "Nueva reserva",
+            "id": "new_booking",
+            "title": "New booking",
             "requirements": [req_id],
             "designs": [],
             "components": [
-                {"id": "f_cliente", "kind": "field", "label": "Cliente",
+                {"id": "f_customer", "kind": "field", "label": "Customer",
                  "field_type": "text", "required": true, "origin": "persisted",
                  "requirements": [req_id], "designs": []},
-                {"id": "b_ok", "kind": "button", "label": "Confirmar",
-                 "action": "confirmar_reserva", "requirements": [], "designs": []}
+                {"id": "b_ok", "kind": "button", "label": "Confirm",
+                 "action": "confirm_booking", "requirements": [], "designs": []}
             ]
         }]
     })
@@ -844,7 +840,7 @@ fn mockup_json(req_id: &str) -> String {
 #[test]
 fn export_renders_mockup_summary_without_diagram() {
     let tmp = TempDb::new("mockup");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let req_v1 = baby.req_v1.clone();
     let req = baby.req.clone();
@@ -857,8 +853,7 @@ fn export_renders_mockup_summary_without_diagram() {
     );
     let mockup_v1 = IdGen::version(&mockup, 1);
     approve(&mut baby, &mockup.clone(), &mockup_v1);
-    db.save(&baby.store, baby.ids.checkpoint())
-        .expect("dominio");
+    db.save(&baby.store, baby.ids.checkpoint()).expect("domain");
     let preview = ruth_api::prepare_baseline(
         &baby.store,
         BaselinePrepareInput {
@@ -867,7 +862,7 @@ fn export_renders_mockup_summary_without_diagram() {
             artifact_ids: vec![mockup.as_str().to_string()],
         },
     )
-    .expect("preparar");
+    .expect("prepare");
     assert!(preview.can_create);
     let dto = ruth_api::create_baseline(
         &mut baby.store,
@@ -890,30 +885,30 @@ fn export_renders_mockup_summary_without_diagram() {
         },
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
+    .expect("create");
     let files =
         ruth_api::build_export_files(&baby.store, &baby.metalog, baby.project.as_str(), &dto.id)
-            .expect("paquete");
-    // JSON original + resumen legible, sin diagrama inventado.
+            .expect("package");
+    // Original JSON + readable summary, no invented diagram.
     let artifact_path = format!("artifacts/mockup-{}.json", mockup.as_str());
     assert!(
         files.iter().any(|f| f.path == artifact_path),
-        "falta {artifact_path}"
+        "missing {artifact_path}"
     );
     assert!(
         files
             .iter()
             .all(|f| !f.path.starts_with("diagrams/mockup-")),
-        "sin diagramas de mockup"
+        "no mockup diagrams"
     );
     let spec = text(&files, "specification.md");
-    assert!(spec.contains("### Nueva reserva"), "{spec}");
-    assert!(spec.contains("1 pantalla"), "{spec}");
-    assert!(spec.contains("2 componentes"), "{spec}");
-    assert!(spec.contains("Confirmar"), "{spec}");
-    assert!(spec.contains("origen persisted"), "{spec}");
+    assert!(spec.contains("### New booking"), "{spec}");
+    assert!(spec.contains("1 screen"), "{spec}");
+    assert!(spec.contains("2 components"), "{spec}");
+    assert!(spec.contains("Confirm"), "{spec}");
+    assert!(spec.contains("origin persisted"), "{spec}");
     let context = text(&files, "implementation-context.md");
     assert!(context.contains(mockup.as_str()), "{context}");
-    assert!(context.contains("1 pantalla"), "{context}");
+    assert!(context.contains("1 screen"), "{context}");
     db.close();
 }

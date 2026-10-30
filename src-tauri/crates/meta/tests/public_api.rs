@@ -1,14 +1,14 @@
-//! Superficie pública de `ruth-meta` que consume `src-tauri/src/lib.rs`.
+//! Public surface of `ruth-meta` consumed by `src-tauri/src/lib.rs`.
 //!
-//! Regresión de E0603: `MetaError` debe vivir en la raíz del crate. Si el
-//! re-export se pierde, este test ni siquiera compila.
+//! E0603 regression: `MetaError` must live at the crate root. If the
+//! re-export is lost, this test does not even compile.
 
 #[test]
 fn meta_error_is_public_at_crate_root() {
     let err = ruth_meta::MetaError::busy();
     assert_eq!(err.kind, ruth_meta::MetaErrorKind::Busy);
     assert!(!err.retryable);
-    assert!(err.message.contains("prueba de conexión"));
+    assert!(err.message.contains("connection test"));
 }
 
 #[test]

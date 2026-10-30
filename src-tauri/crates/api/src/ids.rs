@@ -1,13 +1,13 @@
-//! Identificadores y fechas generados fuera del dominio.
+//! Identifiers and dates generated outside the domain.
 //!
-//! El dominio recibe ambos como entradas; nunca los genera ni lee el reloj.
+//! The domain receives both as inputs; it never generates them nor reads the clock.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ruth_core::domain::{ArtifactId, BaselineId, DeliveryId, ModuleId, ProjectId, VersionId};
 
-/// Generador secuencial de identificadores legibles (`proy-1`, `mod-2`…).
-/// Vive junto al `Store` en el estado gestionado por Tauri.
+/// Sequential readable-identifier generator (`proy-1`, `mod-2`...).
+/// Lives next to the `Store` in the Tauri-managed state.
 #[derive(Debug, Clone, Default)]
 pub struct IdGen {
     next: u64,
@@ -18,12 +18,12 @@ impl IdGen {
         Self::default()
     }
 
-    /// Valor actual del contador, para persistirlo junto a la instantánea.
+    /// Current counter value, for persisting it with the snapshot.
     pub fn checkpoint(&self) -> u64 {
         self.next
     }
 
-    /// Restaura el contador leído de la base. Solo lo usa la persistencia.
+    /// Restores the counter read from the database. Only persistence uses it.
     pub fn restore(next: u64) -> Self {
         Self { next }
     }
@@ -34,54 +34,82 @@ impl IdGen {
     }
 
     pub fn project(&mut self) -> ProjectId {
-        ProjectId::new(format!("proy-{}", self.take())).expect("id generado nunca vacío")
+        ProjectId::new(format!("proy-{}", self.take())).expect("generated id never empty")
     }
 
-    /// Identidad definitiva de una generación asistida (`gen-N`). Comparte el
-    /// contador persistido: nunca colisiona ni se reutiliza.
+    /// Definitive identity of an assisted generation (`gen-N`). Shares the
+    /// persisted counter: never collides nor gets reused.
     pub fn generation(&mut self) -> String {
         format!("gen-{}", self.take())
     }
 
     pub fn module(&mut self) -> ModuleId {
-        ModuleId::new(format!("mod-{}", self.take())).expect("id generado nunca vacío")
+        ModuleId::new(format!("mod-{}", self.take())).expect("generated id never empty")
     }
 
     pub fn requirement(&mut self) -> ArtifactId {
-        ArtifactId::new(format!("req-{}", self.take())).expect("id generado nunca vacío")
+        ArtifactId::new(format!("req-{}", self.take())).expect("generated id never empty")
     }
 
-    /// Identidad definitiva de un flujo de operación (`flujo-N`).
+    /// Definitive identity of an operation flow (`flujo-N`).
     pub fn flow(&mut self) -> ArtifactId {
-        ArtifactId::new(format!("flujo-{}", self.take())).expect("id generado nunca vacío")
+        ArtifactId::new(format!("flujo-{}", self.take())).expect("generated id never empty")
     }
 
-    /// Identidad definitiva de un modelo entidad-relación (`mer-N`).
+    /// Definitive identity of an entity-relationship model (`mer-N`).
     pub fn data_model(&mut self) -> ArtifactId {
-        ArtifactId::new(format!("mer-{}", self.take())).expect("id generado nunca vacío")
+        ArtifactId::new(format!("mer-{}", self.take())).expect("generated id never empty")
     }
 
-    /// Identidad definitiva de un mockup (`mockup-N`).
+    /// Stable identity of a code root (`root-N`). Shares the
+    /// persisted counter: never collides nor gets reused.
+    pub fn code_root(&mut self) -> String {
+        format!("root-{}", self.take())
+    }
+
+    /// Stable identity of a code↔knowledge link (`link-N`).
+    pub fn code_link(&mut self) -> String {
+        format!("link-{}", self.take())
+    }
+
+    /// Stable identity of a structure snapshot (`snap-N`).
+    pub fn snapshot(&mut self) -> String {
+        format!("snap-{}", self.take())
+    }
+
+    /// Stable identity of a code generation (`cgen-N`).
+    pub fn code_generation(&mut self) -> String {
+        format!("cgen-{}", self.take())
+    }
+
+    /// Stable identity of a saved workspace (`ws-N`). Shares the
+    /// persisted counter: never collides nor gets reused.
+    pub fn workspace(&mut self) -> String {
+        format!("ws-{}", self.take())
+    }
+
+    /// Definitive identity of a mockup (`mockup-N`).
     pub fn mockup(&mut self) -> ArtifactId {
-        ArtifactId::new(format!("mockup-{}", self.take())).expect("id generado nunca vacío")
+        ArtifactId::new(format!("mockup-{}", self.take())).expect("generated id never empty")
     }
 
     pub fn baseline(&mut self) -> BaselineId {
-        BaselineId::new(format!("base-{}", self.take())).expect("id generado nunca vacío")
+        BaselineId::new(format!("base-{}", self.take())).expect("generated id never empty")
     }
 
-    /// Identidad definitiva de una entrega de trabajo (`entrega-N`).
+    /// Definitive identity of a work delivery (`entrega-N`).
     pub fn delivery(&mut self) -> DeliveryId {
-        DeliveryId::new(format!("entrega-{}", self.take())).expect("id generado nunca vacío")
+        DeliveryId::new(format!("entrega-{}", self.take())).expect("generated id never empty")
     }
 
-    /// Identificador estable de versión a partir de su artefacto y número.
+    /// Stable version identifier from its artifact and number.
     pub fn version(artifact: &ArtifactId, number: u32) -> VersionId {
-        VersionId::new(format!("{}-v{number}", artifact.as_str())).expect("id generado nunca vacío")
+        VersionId::new(format!("{}-v{number}", artifact.as_str()))
+            .expect("generated id never empty")
     }
 }
 
-/// Fecha actual en UTC con formato `YYYY-MM-DDTHH:MM:SSZ`, sin dependencias.
+/// Current UTC date in `YYYY-MM-DDTHH:MM:SSZ` format, no dependencies.
 pub fn now_utc_iso8601() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -90,7 +118,7 @@ pub fn now_utc_iso8601() -> String {
     iso8601_from_unix_secs(secs)
 }
 
-/// Parte pura y testeable del reloj de frontera.
+/// Pure, testable part of the boundary clock.
 pub fn iso8601_from_unix_secs(secs: u64) -> String {
     let days = (secs / 86_400) as i64;
     let time = secs % 86_400;
@@ -103,7 +131,7 @@ pub fn iso8601_from_unix_secs(secs: u64) -> String {
     )
 }
 
-/// Días desde 1970-01-01 a fecha civil (algoritmo de Howard Hinnant).
+/// Days since 1970-01-01 to civil date (Howard Hinnant's algorithm).
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);

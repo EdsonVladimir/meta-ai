@@ -1,6 +1,6 @@
-//! Entregas de trabajo/borrador: preparar sin exigir revisión, crear
-//! atómico, listar con pendientes honestos y exportar identificando
-//! desactualizaciones. Sin red: núcleo, API y SQLite temporal.
+//! Work/draft deliveries: prepare without requiring review, create
+//! atomically, list with honest pendings and export identifying
+//! staleness. No network: core, API and temp SQLite.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -52,7 +52,7 @@ fn baby() -> Baby {
     let mut ids = IdGen::new();
     let project = ProjectId::new(
         ruth_api::create_project(&mut store, &mut ids)
-            .expect("proyecto")
+            .expect("project")
             .id,
     )
     .expect("id");
@@ -64,7 +64,7 @@ fn baby() -> Baby {
                 project_id: project.as_str().to_string(),
             },
         )
-        .expect("módulo")
+        .expect("module")
         .id,
     )
     .expect("id");
@@ -79,7 +79,7 @@ fn baby() -> Baby {
                 author: "ana".to_string(),
             },
         )
-        .expect("requisito")
+        .expect("requirement")
         .artifact
         .id,
     )
@@ -104,7 +104,7 @@ fn prepare_input(baby: &Baby) -> DeliveryPrepareInput {
 fn create_input(baby: &Baby, version: &VersionId) -> DeliveryCreateInput {
     DeliveryCreateInput {
         project_id: baby.project.as_str().to_string(),
-        name: "Trabajo del lunes".to_string(),
+        name: "Monday work".to_string(),
         description: None,
         scope_module_id: Some(baby.module.as_str().to_string()),
         entries: vec![BaselineEntryInput {
@@ -117,19 +117,19 @@ fn create_input(baby: &Baby, version: &VersionId) -> DeliveryCreateInput {
 fn current_version(baby: &Baby) -> VersionId {
     baby.store
         .current_version(&baby.req)
-        .expect("actual")
+        .expect("current")
         .id()
         .clone()
 }
 
 #[test]
 fn prepare_and_create_without_review() {
-    let tmp = TempDb::new("sin-revision");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("no-review");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
-    // Sin revisar: la preparación lo cuenta, no lo veta.
+    // Unreviewed: preparation counts it, never vetoes it.
     let preview =
-        ruth_api::prepare_work_delivery(&baby.store, prepare_input(&baby)).expect("preparar");
+        ruth_api::prepare_work_delivery(&baby.store, prepare_input(&baby)).expect("prepare");
     assert!(preview.can_create);
     assert!(preview.blockers.is_empty());
     assert_eq!(preview.unreviewed_count, 1);
@@ -144,12 +144,12 @@ fn prepare_and_create_without_review() {
         input,
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
-    assert_eq!(dto.name, "Trabajo del lunes");
+    .expect("create");
+    assert_eq!(dto.name, "Monday work");
     assert_eq!(dto.entries.len(), 1);
     assert_eq!(dto.scope_module_id.as_deref(), Some(baby.module.as_str()));
-    // Recién creada, sin avance y con un pendiente honesto.
-    let list = ruth_api::list_work_deliveries(&baby.store, baby.project.as_str()).expect("listar");
+    // Just created, no advancement and one honest pending.
+    let list = ruth_api::list_work_deliveries(&baby.store, baby.project.as_str()).expect("list");
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].unreviewed_count, 1);
     assert!(!list[0].advanced);
@@ -158,10 +158,10 @@ fn prepare_and_create_without_review() {
 
 #[test]
 fn prepare_reports_stale_sources_without_blocking() {
-    let tmp = TempDb::new("desactualizadas");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("stale");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
-    // Un flujo con la v1 como fuente; luego el requisito avanza a v2.
+    // A flow with v1 as a source; then the requirement advances to v2.
     let req_v1 = current_version(&baby);
     let flow = baby.ids.flow();
     baby.store
@@ -171,7 +171,7 @@ fn prepare_reports_stale_sources_without_blocking() {
             flow.clone(),
             ruth_core::domain::ArtifactType::Flow,
         )
-        .expect("flujo");
+        .expect("flow");
     let flow_v1 = IdGen::version(&flow, 1);
     baby.store
         .create_version(
@@ -179,14 +179,14 @@ fn prepare_reports_stale_sources_without_blocking() {
             &flow,
             None,
             flow_v1.clone(),
-            Content::new("{}".to_string()).expect("contenido"),
-            &ruth_core::domain::Author::Human(HumanId::new("ana").expect("autora")),
+            Content::new("{}".to_string()).expect("content"),
+            &ruth_core::domain::Author::Human(HumanId::new("ana").expect("author")),
             std::slice::from_ref(&req_v1),
         )
-        .expect("versión");
+        .expect("version");
     save_req_version(&mut baby, "Permitir reservas antes de confirmar.");
-    // Preparar con requisito v2 + flujo v1: el flujo señala su fuente
-    // desactualizada, pero la entrega no se veta.
+    // Prepare with requirement v2 + flow v1: the flow flags its
+    // stale source, but the delivery is not vetoed.
     let preview = ruth_api::prepare_work_delivery(
         &baby.store,
         DeliveryPrepareInput {
@@ -195,7 +195,7 @@ fn prepare_reports_stale_sources_without_blocking() {
             artifact_ids: vec![baby.req.as_str().to_string(), flow.as_str().to_string()],
         },
     )
-    .expect("preparar");
+    .expect("prepare");
     assert!(preview.can_create);
     assert!(preview.blockers.is_empty());
     assert_eq!(preview.stale_count, 1);
@@ -203,7 +203,7 @@ fn prepare_reports_stale_sources_without_blocking() {
         .entries
         .iter()
         .find(|e| e.artifact.id == flow.as_str())
-        .expect("flujo");
+        .expect("flow");
     assert_eq!(flow_entry.stale_sources, vec![req_v1.as_str().to_string()]);
     db.close();
 }
@@ -220,17 +220,17 @@ fn save_req_version(baby: &mut Baby, content: &str) {
             author: "ana".to_string(),
         },
     )
-    .expect("guardar");
+    .expect("save");
 }
 
 #[test]
 fn create_rejects_changed_since_preview() {
-    let tmp = TempDb::new("cambio");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("change");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let v1 = current_version(&baby);
     let input = create_input(&baby, &v1);
-    // El proyecto avanza antes de crear: conflicto honesto, sin entrega.
+    // The project advances before creating: honest conflict, no delivery.
     save_req_version(&mut baby, "Permitir reservas antes de confirmar.");
     let err = ruth_api::create_work_delivery(
         &mut baby.store,
@@ -239,11 +239,11 @@ fn create_rejects_changed_since_preview() {
         input,
         "2026-10-28T12:00:00Z",
     )
-    .expect_err("cambió");
+    .expect_err("changed");
     assert_eq!(err.kind, "changed_since_preview");
     assert!(
         ruth_api::list_work_deliveries(&baby.store, baby.project.as_str())
-            .expect("listar")
+            .expect("list")
             .is_empty()
     );
     db.close();
@@ -251,8 +251,8 @@ fn create_rejects_changed_since_preview() {
 
 #[test]
 fn delivery_blocks_delete_and_survives_reopen() {
-    let tmp = TempDb::new("reabrir");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("reopen");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let v1 = current_version(&baby);
     let input = create_input(&baby, &v1);
@@ -263,35 +263,35 @@ fn delivery_blocks_delete_and_survives_reopen() {
         input,
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
-    // Incluido en la entrega: borrado bloqueado con código propio.
+    .expect("create");
+    // Included in the delivery: deletion blocked with its own code.
     let err = baby
         .store
         .delete_artifact(&baby.project, &baby.req)
-        .expect_err("protegido");
+        .expect_err("protected");
     assert!(matches!(
         err,
         ruth_core::domain::CoreError::DeleteInDelivery { .. }
     ));
     db.close();
-    // Reabrir conserva la entrega íntegra.
-    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reabrir");
+    // Reopening preserves the whole delivery.
+    let (db2, loaded) = DbActor::spawn(&tmp.path).expect("reopen");
     assert_eq!(loaded.store.deliveries().len(), 1);
     let dto = ruth_api::get_work_delivery(
         &loaded.store,
         baby.project.as_str(),
         loaded.store.deliveries()[0].id().as_str(),
     )
-    .expect("detalle");
-    assert_eq!(dto.name, "Trabajo del lunes");
+    .expect("detail");
+    assert_eq!(dto.name, "Monday work");
     assert_eq!(dto.entries.len(), 1);
     db2.close();
 }
 
 #[test]
 fn delivery_export_identifies_pending_work() {
-    let tmp = TempDb::new("exportar");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("export");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let v1 = current_version(&baby);
     let input = create_input(&baby, &v1);
@@ -302,27 +302,27 @@ fn delivery_export_identifies_pending_work() {
         input,
         "2026-10-28T12:00:00Z",
     )
-    .expect("crear");
+    .expect("create");
     let files = ruth_api::build_delivery_files(&baby.store, baby.project.as_str(), &dto.id)
-        .expect("paquete");
+        .expect("package");
     let text = |path: &str| {
         let file = files.iter().find(|f| f.path == path).expect(path);
         String::from_utf8(file.bytes.clone()).expect("utf8")
     };
     let readme = text("README.md");
-    assert!(readme.contains("Entrega de trabajo"), "{readme}");
-    assert!(readme.contains("Estado del trabajo"), "{readme}");
+    assert!(readme.contains("Work delivery"), "{readme}");
+    assert!(readme.contains("Work status"), "{readme}");
     assert!(
-        readme.contains("No es una entrega coherente ni verificada"),
+        readme.contains("Not a coherent or verified delivery"),
         "{readme}"
     );
     let manifest: serde_json::Value = serde_json::from_str(&text("manifest.json")).expect("json");
     assert_eq!(manifest["delivery"]["kind"], "work_draft");
     assert_eq!(manifest["counts"]["unreviewed_entries"], 1);
     assert!(manifest.get("baseline").is_none());
-    // La vista previa usa su propia identidad.
+    // The preview uses its own identity.
     let preview = ruth_api::export_delivery_preview(&baby.store, baby.project.as_str(), &dto.id)
-        .expect("previa");
+        .expect("preview");
     assert_eq!(preview.delivery_id, dto.id);
     assert!(!preview.files.is_empty());
     db.close();
@@ -330,8 +330,8 @@ fn delivery_export_identifies_pending_work() {
 
 #[test]
 fn approve_still_marks_reviewed() {
-    let tmp = TempDb::new("revision");
-    let (db, _) = DbActor::spawn(&tmp.path).expect("abrir");
+    let tmp = TempDb::new("review");
+    let (db, _) = DbActor::spawn(&tmp.path).expect("open");
     let mut baby = baby();
     let v1 = current_version(&baby);
     ruth_api::approve_version(
@@ -344,9 +344,9 @@ fn approve_still_marks_reviewed() {
         },
         "2026-10-28",
     )
-    .expect("revisar");
+    .expect("review");
     let preview =
-        ruth_api::prepare_work_delivery(&baby.store, prepare_input(&baby)).expect("preparar");
+        ruth_api::prepare_work_delivery(&baby.store, prepare_input(&baby)).expect("prepare");
     assert_eq!(preview.unreviewed_count, 0);
     assert!(preview.entries[0].approved_by.is_some());
     db.close();

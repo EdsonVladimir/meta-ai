@@ -1,5 +1,5 @@
-// Archivo y borrado puros: archivado efectivo, limpieza de selección y
-// protección de borradores.
+// Pure archive and delete: effective archiving, selection cleanup and
+// draft protection.
 import { describe, expect, test } from "vitest";
 import {
   archiveDraftGuard,
@@ -14,11 +14,11 @@ const FULL: Selection = {
   moduleId: "mod-1",
   requirementId: "req-1",
   designId: "flujo-1",
-  mockupId: "mockup-1",
+  mockupId: "mockup-1", screenId: null,
 };
 
-describe("archivado efectivo", () => {
-  test("basta el propio o el del módulo", () => {
+describe("effective archiving", () => {
+  test("its own or the module one suffices", () => {
     expect(isEffectivelyArchived(false, false)).toBe(false);
     expect(isEffectivelyArchived(true, false)).toBe(true);
     expect(isEffectivelyArchived(false, true)).toBe(true);
@@ -26,8 +26,8 @@ describe("archivado efectivo", () => {
   });
 });
 
-describe("selección tras eliminar", () => {
-  test("eliminar un requisito limpia solo el requisito", () => {
+describe("selection after deleting", () => {
+  test("deleting a requirement clears only the requirement", () => {
     const target: ArchiveTarget = {
       kind: "requirement",
       projectId: "proy-1",
@@ -37,7 +37,7 @@ describe("selección tras eliminar", () => {
     expect(selectionAfterDelete(FULL, target)).toEqual({ ...FULL, requirementId: null });
   });
 
-  test("eliminar otro requisito no toca la selección", () => {
+  test("deleting another requirement does not touch the selection", () => {
     const target: ArchiveTarget = {
       kind: "requirement",
       projectId: "proy-1",
@@ -47,7 +47,7 @@ describe("selección tras eliminar", () => {
     expect(selectionAfterDelete(FULL, target)).toBe(FULL);
   });
 
-  test("eliminar el módulo limpia módulo, requisito, diseño y mockup", () => {
+  test("deleting the module clears module, requirement, design and mockup", () => {
     const target: ArchiveTarget = { kind: "module", projectId: "proy-1", moduleId: "mod-1" };
     expect(selectionAfterDelete(FULL, target)).toEqual({
       projectId: "proy-1",
@@ -55,17 +55,35 @@ describe("selección tras eliminar", () => {
       requirementId: null,
       designId: null,
       mockupId: null,
+      screenId: null,
     });
   });
 
-  test("eliminar otro módulo no toca la selección", () => {
+  test("deleting another module does not touch the selection", () => {
     const target: ArchiveTarget = { kind: "module", projectId: "proy-1", moduleId: "mod-9" };
+    expect(selectionAfterDelete(FULL, target)).toBe(FULL);
+  });
+
+  test("deleting the project clears everything", () => {
+    const target: ArchiveTarget = { kind: "project", projectId: "proy-1" };
+    expect(selectionAfterDelete(FULL, target)).toEqual({
+      projectId: null,
+      moduleId: null,
+      requirementId: null,
+      designId: null,
+      mockupId: null,
+      screenId: null,
+    });
+  });
+
+  test("deleting another project does not touch the selection", () => {
+    const target: ArchiveTarget = { kind: "project", projectId: "proy-9" };
     expect(selectionAfterDelete(FULL, target)).toBe(FULL);
   });
 });
 
-describe("protección de borradores", () => {
-  test("un requisito solo protege su propio borrador", () => {
+describe("draft protection", () => {
+  test("a requirement only protects its own draft", () => {
     const target: ArchiveTarget = {
       kind: "requirement",
       projectId: "proy-1",
@@ -98,7 +116,7 @@ describe("protección de borradores", () => {
     ).toBeNull();
   });
 
-  test("un módulo protege el borrador seleccionado dentro, requisito primero", () => {
+  test("a module protects the selected draft inside, requirement first", () => {
     const target: ArchiveTarget = { kind: "module", projectId: "proy-1", moduleId: "mod-1" };
     expect(
       archiveDraftGuard({
@@ -130,6 +148,55 @@ describe("protección de borradores", () => {
         selection: { ...FULL, moduleId: "mod-9" },
         requirementDirty: true,
         visualDirty: true,
+      }),
+    ).toBeNull();
+  });
+
+  test("a project protects any draft inside the project", () => {
+    const target: ArchiveTarget = { kind: "project", projectId: "proy-1" };
+    // Even from another module: still inside the project.
+    expect(
+      archiveDraftGuard({
+        target,
+        selection: { ...FULL, moduleId: "mod-9" },
+        requirementDirty: true,
+        visualDirty: true,
+      }),
+    ).toBe("requirement");
+    expect(
+      archiveDraftGuard({
+        target,
+        selection: { ...FULL, requirementId: null },
+        requirementDirty: false,
+        visualDirty: true,
+      }),
+    ).toBe("visual");
+    expect(
+      archiveDraftGuard({
+        target,
+        selection: { ...FULL, requirementId: null, designId: null },
+        requirementDirty: false,
+        visualDirty: false,
+        mockupDirty: true,
+      }),
+    ).toBe("mockup");
+    // Outside the project or without drafts: clear to go.
+    expect(
+      archiveDraftGuard({
+        target,
+        selection: { ...FULL, projectId: "proy-9" },
+        requirementDirty: true,
+        visualDirty: true,
+        mockupDirty: true,
+      }),
+    ).toBeNull();
+    expect(
+      archiveDraftGuard({
+        target,
+        selection: FULL,
+        requirementDirty: false,
+        visualDirty: false,
+        mockupDirty: false,
       }),
     ).toBeNull();
   });

@@ -1,31 +1,61 @@
-// Tipos de mockups versionados. Reflejan los DTOs de `ruth-api`
-// (camelCase) y el subconjunto de `ruth-meta/src/mockup.rs`.
-// Puros: sin React, sin Tauri. El adaptador vive en client.ts.
+// Versioned mockup types. They mirror the `ruth-api` DTOs (camelCase)
+// and the `ruth-meta/src/mockup.rs` subset. Pure: no React, no Tauri.
+// The adapter lives in client.ts.
 import type { DesignContextPreview, DesignGenerationDto, DesignKind } from "../design/types";
 
-export type MockupKind = "mockup";
-
-export type MockupComponentKind = "text" | "field" | "selector" | "button" | "table";
+export type MockupComponentKind =
+  | "text"
+  | "field"
+  | "selector"
+  | "button"
+  | "table"
+  | "container"
+  | "icon";
 
 export type MockupFieldType = "text" | "number" | "date" | "boolean";
 
 export type MockupOrigin = "persisted" | "calculated" | "temporary" | "external" | "undefined";
+
+export type MockupActionKind = "navigate" | "submit" | "open_dialog" | "cancel" | "business";
+
+export type MockupButtonState = "enabled" | "disabled" | "loading" | "error";
+
+export type MockupDirection = "vertical" | "horizontal";
+
+export type MockupIconRole = "decorative" | "button" | "indicator";
 
 export interface MockupComponent {
   id: string;
   kind: MockupComponentKind;
   text?: string;
   label?: string;
+  name?: string;
   fieldType?: MockupFieldType;
   required: boolean;
-  validation?: string;
+  validations: string[];
+  dataRef?: string;
   options: string[];
   columns: string[];
-  action?: string;
+  columnTypes: MockupFieldType[];
+  previewRows: string[][];
+  rowActions: string[];
+  actionKind?: MockupActionKind;
+  operation?: string;
   target?: string;
+  buttonState?: MockupButtonState;
   origin?: MockupOrigin;
+  icon?: string;
+  iconRole?: MockupIconRole;
+  tooltip?: string;
+  children: string[];
+  direction?: MockupDirection;
   requirements: string[];
   designs: string[];
+}
+
+export interface MockupScreenState {
+  id: string;
+  label: string;
 }
 
 export interface MockupScreen {
@@ -33,6 +63,7 @@ export interface MockupScreen {
   title: string;
   requirements: string[];
   designs: string[];
+  states: MockupScreenState[];
   components: MockupComponent[];
 }
 
@@ -49,43 +80,109 @@ export interface MockupContextPreview {
 
 export type { DesignGenerationDto, DesignKind };
 
-/** Etiquetas legibles para los componentes. */
+/** Readable labels for components. */
 export const MOCKUP_COMPONENT_LABELS: Record<MockupComponentKind, string> = {
-  text: "Texto",
-  field: "Campo",
+  text: "Text",
+  field: "Field",
   selector: "Selector",
-  button: "Botón",
-  table: "Tabla",
+  button: "Button",
+  table: "Table",
+  container: "Container",
+  icon: "Icon",
 };
 
-/** Etiquetas legibles para los tipos de campo visual. */
+/** Readable labels for declarative actions. */
+export const MOCKUP_ACTION_LABELS: Record<MockupActionKind, string> = {
+  navigate: "Navigate",
+  submit: "Submit form",
+  open_dialog: "Open dialog",
+  cancel: "Cancel",
+  business: "Business operation",
+};
+
+/** Readable labels for button states. */
+export const MOCKUP_BUTTON_STATE_LABELS: Record<MockupButtonState, string> = {
+  enabled: "Enabled",
+  disabled: "Disabled",
+  loading: "Loading",
+  error: "Error",
+};
+
+/** Readable labels for container direction. */
+export const MOCKUP_DIRECTION_LABELS: Record<MockupDirection, string> = {
+  vertical: "Vertical",
+  horizontal: "Horizontal",
+};
+
+/** Readable labels for icon roles. */
+export const MOCKUP_ICON_ROLE_LABELS: Record<MockupIconRole, string> = {
+  decorative: "Decorative",
+  button: "Button",
+  indicator: "Indicator",
+};
+
+/** Readable labels for visual field types. */
 export const MOCKUP_FIELD_TYPE_LABELS: Record<MockupFieldType, string> = {
-  text: "Texto",
-  number: "Número",
-  date: "Fecha",
-  boolean: "Sí/no",
+  text: "Text",
+  number: "Number",
+  date: "Date",
+  boolean: "Yes/no",
 };
 
-/** Etiquetas legibles para el origen declarado del dato. */
+/** Readable labels for the declared data origin. */
 export const MOCKUP_ORIGIN_LABELS: Record<MockupOrigin, string> = {
-  persisted: "Guardado",
-  calculated: "Calculado",
-  temporary: "Temporal",
-  external: "Externo",
-  undefined: "Sin definir",
+  persisted: "Saved",
+  calculated: "Calculated",
+  temporary: "Temporary",
+  external: "External",
+  undefined: "Undefined",
 };
 
-/** Crear/guardar sin fuentes declaradas pero con referencias citadas. */
+/** Create/save without declared sources but with cited references. */
 export const MOCKUP_NO_SOURCES = "mockup_no_sources";
 
-/** Fuentes declaradas obsoletas al guardar. */
+/** Declared sources stale on save. */
 export const MOCKUP_STALE_SOURCES = "mockup_stale_sources";
 
-/** Fuente declarada inexistente al guardar. */
+/** Declared source missing on save. */
 export const MOCKUP_SOURCE_MISSING = "mockup_source_missing";
 
-/** Contenido que no es un mockup válido. */
+/** Content that is not a valid mockup. */
 export const MOCKUP_INVALID = "mockup_invalid";
 
-/** El artefacto no es un mockup. */
+/** The artifact is not a mockup. */
 export const NOT_A_MOCKUP = "not_a_mockup";
+
+/** Proposed screen: canonical spec of a ONE-screen mockup. */
+export interface MockupScreenProposal {
+  tempId: string;
+  title: string;
+  /** Canonical JSON ready to preview and incorporate. */
+  spec: unknown;
+  explanation: string;
+  state: "pending" | "accepted" | "discarded";
+  artifactId: string | null;
+}
+
+export interface MockupGenerationUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+}
+
+/** Screen generation recorded with its exact original context. */
+export interface MockupGeneration {
+  id: string;
+  projectId: string;
+  moduleId: string;
+  model: string;
+  contextVersionIds: string[];
+  templateVersion: number;
+  usage: MockupGenerationUsage;
+  createdAt: string;
+  stale: boolean;
+  questions: string[];
+  proposals: MockupScreenProposal[];
+}
+
+export const MOCKUP_GENERATION_STALE = "mockup_generation_stale";

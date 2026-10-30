@@ -1,26 +1,26 @@
-// Estado del borrador visual, elevado al workspace para sobrevivir a
-// cambios de pestaña. Puro: sin React. La especificación viaja como texto
-// canónico (comparable por igualdad) y la disposición aparte: mover
-// elementos o el zoom nunca ensucian la semántica.
+// Visual draft state, lifted to the workspace to survive tab switches.
+// Pure: no React. The spec travels as canonical text (equality
+// comparable) and the layout separately: moving elements or zooming
+// never dirties semantics.
 //
-// dirty semántico = spec ≠ base → guardar crea versión nueva.
-// dirty de disposición = layout ≠ baseLayout → guardar solo dispone.
+// semantic dirty = spec ≠ base → saving creates a new version.
+// layout dirty = layout ≠ baseLayout → saving only lays out.
 import type { DesignKind } from "../types";
 import { createHistory, pushHistory, redoHistory, undoHistory, type SpecHistory } from "./specHistory";
 import type { Layout } from "./specModel";
 
 export interface VisualDraftState {
-  /** `${artifactId}:${versionId}` de la versión editada. */
+  /** `${artifactId}:${versionId}` of the edited version. */
   key: string;
   kind: DesignKind;
-  /** Especificación canónica de la versión actual (punto de partida). */
+  /** Canonical spec of the current version (starting point). */
   base: string;
   history: SpecHistory;
   layout: Layout;
   baseLayout: Layout;
-  /** Artefactos citables (fuentes declaradas). */
+  /** Citable artifacts (declared sources). */
   allowed: string[];
-  /** Versiones exactas declaradas para el guardado. */
+  /** Exact versions declared for saving. */
   pins: string[];
 }
 
@@ -44,7 +44,7 @@ export type VisualDraftAction =
   | { type: "savedLayout"; layout: Layout }
   | { type: "reset" };
 
-/** Sin borrador (null) hasta que el editor lo inicia para una versión. */
+/** No draft (null) until the editor starts one for a version. */
 export function visualDraftReducer(
   state: VisualDraftState | null,
   action: VisualDraftAction,
@@ -85,9 +85,9 @@ export function visualDraftReducer(
     case "pins":
       return { ...state, pins: action.pins, allowed: action.allowed };
     case "saved":
-      // Solo limpia si nada cambió durante la petición: lo editado
-      // mientras tanto se conserva (y el detalle avanzado lo marca como
-      // separado para resolverlo en el panel de conflicto, no a ciegas).
+      // Only clears when nothing changed during the request: edits made
+      // meanwhile are kept (and the moved-on detail marks them as
+      // detached for conflict-panel resolution, not blindly).
       if (
         state.history.present !== action.present ||
         !sameList(state.pins, action.pins) ||
@@ -97,8 +97,8 @@ export function visualDraftReducer(
       }
       return null;
     case "savedLayout":
-      // Igual para la disposición: solo adopta la base si sigue siendo la
-      // que se guardó; lo movido durante la petición sigue pendiente.
+      // Same for layout: only adopts the base when it is still the one
+      // that was saved; moves made during the request stay pending.
       if (layoutKey(state.layout) !== layoutKey(action.layout)) return state;
       return { ...state, baseLayout: state.layout };
   }
@@ -109,8 +109,8 @@ function sameList(left: string[], right: string[]): boolean {
 }
 
 /**
- * ¿Hay que confirmar antes de navegar? Borrador visual con cambios y el
- * destino abandona el diseño (otro diseño, módulo o proyecto).
+ * Must navigation confirm first? Visual draft with changes and the
+ * target leaves the design (another design, module or project).
  */
 export function needsVisualConfirm(
   state: VisualDraftState | null,
@@ -122,7 +122,7 @@ export function needsVisualConfirm(
   return currentDesignId !== targetDesignId;
 }
 
-/** ¿Cambió la semántica respecto a la versión guardada? */
+/** Did semantics change vs the saved version? */
 export function visualSemanticDirty(state: VisualDraftState | null): boolean {
   return state !== null && state.history.present !== state.base;
 }
@@ -137,12 +137,7 @@ function layoutKey(layout: Layout): string {
     .join("|");
 }
 
-/** ¿Cambió solo la disposición? */
+/** Did only the layout change? */
 export function visualLayoutDirty(state: VisualDraftState | null): boolean {
   return state !== null && layoutKey(state.layout) !== layoutKey(state.baseLayout);
-}
-
-/** Borrador actual como texto canónico (o null sin borrador). */
-export function visualSpec(state: VisualDraftState | null): string | null {
-  return state?.history.present ?? null;
 }

@@ -11,9 +11,9 @@ interface ReviewPanelProps {
   approveAllowed: boolean;
   approveError: string | null;
   viewingVersionId: string | null;
-  /** Versiones fuente de la versión actual (diseños): se muestran, no se editan. */
+  /** Source versions of the current one (designs): shown, not edited. */
   sources?: string[] | null;
-  /** Archivado efectivo: historial consultable, sin aprobar. */
+  /** Effectively archived: history stays readable, no approving. */
   archived: boolean;
   onToggleReview: (versionId: string, checked: boolean) => void;
   onApproverChange: (approver: string) => void;
@@ -42,44 +42,44 @@ export function ReviewPanel({
   const ordered = [...detail.versions].reverse();
 
   return (
-    <aside className="review" aria-label="Revisión e historial">
+    <aside className="review" aria-label="Review and history">
       <section>
-        <h3>Revisión (opcional)</h3>
+        <h3>Review (optional)</h3>
         <p className="hint">
-          Informativa: nada exige revisar para seguir trabajando. Las
-          revisiones históricas se conservan.
+          Informational: nothing requires reviewing to keep working. Past
+          reviews are kept.
         </p>
         {archived && (
           <p className="notice" role="note">
-            Archivado: el historial sigue consultable, pero no se puede revisar
-            hasta restaurarlo.
+            Archived: history stays readable, but nothing can be reviewed
+            until restored.
           </p>
         )}
         {current === undefined ? (
-          <p className="hint">Sin versiones.</p>
+          <p className="hint">No versions.</p>
         ) : (
           <>
             <dl className="facts">
               <div>
-                <dt>Actual</dt>
+                <dt>Current</dt>
                 <dd>
                   <code>{current.id}</code> (v{current.number})
                 </dd>
               </div>
               <div>
-                <dt>Revisión</dt>
+                <dt>Review</dt>
                 <dd>
                   {currentApprovals.length === 0
-                    ? "Sin revisar"
+                    ? "Not reviewed"
                     : currentApprovals.map((a) => `${a.approvedBy} · ${a.at}`).join("; ")}
                 </dd>
               </div>
               {sources !== undefined && sources !== null && (
                 <div>
-                  <dt>Fuentes</dt>
+                  <dt>Sources</dt>
                   <dd>
                     {sources.length === 0 ? (
-                      "Sin dependencias"
+                      "No dependencies"
                     ) : (
                       sources.map((s) => <code key={s}>{s}</code>).reduce<ReactNode[]>(
                         (acc, el, i) => (i === 0 ? [el] : [...acc, ", ", el]),
@@ -98,17 +98,17 @@ export function ReviewPanel({
                 disabled={busy || archived}
               />
               <span>
-                He revisado la versión <code>{current.id}</code>
+                I reviewed version <code>{current.id}</code>
               </span>
             </label>
             <label className="field">
-              <span>Persona que revisa</span>
+              <span>Reviewer</span>
               <input
                 type="text"
                 value={approver}
                 onChange={(e) => onApproverChange(e.target.value)}
                 disabled={busy || archived}
-                placeholder="Tu nombre"
+                placeholder="Your name"
                 autoComplete="off"
               />
             </label>
@@ -119,15 +119,15 @@ export function ReviewPanel({
               disabled={!approveAllowed}
               title={
                 archived
-                  ? "Archivado: restaúralo para revisar"
+                  ? "Archived: restore it to review"
                   : dirty
-                  ? "Guarda o descarta el borrador antes de revisar"
+                  ? "Save or discard the draft before reviewing"
                   : reviewedVersionId !== current.id
-                    ? "Confirma la revisión de esta versión concreta"
+                    ? "Confirm the review of this exact version"
                     : undefined
               }
             >
-              {busy ? "Revisando…" : "Registrar revisión"}
+              {busy ? "Reviewing…" : "Record review"}
             </button>
             {approveError && (
               <p className="error" role="alert">
@@ -135,15 +135,15 @@ export function ReviewPanel({
               </p>
             )}
             <p className="hint">
-              Solo se puede revisar la versión actual y vigente. La confirmación
-              corresponde a esa versión concreta.
+              Only the current, live version can be reviewed. The confirmation
+              belongs to that exact version.
             </p>
           </>
         )}
       </section>
 
       <section>
-        <h3>Historial</h3>
+        <h3>History</h3>
         <ul className="pick-list">
           {ordered.map((v) => {
             const approvals = approvalsForVersion(detail, v.id);
@@ -160,10 +160,10 @@ export function ReviewPanel({
                     v{v.number} · {v.id}
                   </code>
                   <span className="hint">
-                    {isCurrent ? "actual · " : ""}
+                    {isCurrent ? "current · " : ""}
                     {approvals.length === 0
-                      ? "sin aprobar"
-                      : `aprobada por ${approvals.map((a) => a.approvedBy).join(", ")}`}
+                      ? "unapproved"
+                      : `approved by ${approvals.map((a) => a.approvedBy).join(", ")}`}
                   </span>
                 </button>
               </li>

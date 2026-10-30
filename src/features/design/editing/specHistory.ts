@@ -1,6 +1,6 @@
-// Historial acotado de deshacer/rehacer para cambios SEMÁNTICOS del
-// borrador. Puro: sin React. Solo guarda especificaciones; mover elementos
-// o cambiar el zoom nunca entra aquí (la disposición vive aparte).
+// Bounded undo/redo history for SEMANTIC draft changes. Pure: no
+// React. It only stores specs; moving elements or changing zoom never
+// enters here (layout lives separately).
 export interface SpecHistory {
   past: string[];
   present: string;
@@ -9,14 +9,14 @@ export interface SpecHistory {
 
 export const HISTORY_CAP = 50;
 
-/** Historial nuevo sobre la especificación base (versión actual). */
+/** New history over the base spec (current version). */
 export function createHistory(base: string): SpecHistory {
   return { past: [], present: base, future: [] };
 }
 
 /**
- * Registra una especificación nueva. Sin cambios (igual a la actual) no
- * hace nada; un cambio nuevo descarta el futuro de rehacer.
+ * Records a new spec. Without changes (equal to the current one) it
+ * does nothing; a new change discards the redo future.
  */
 export function pushHistory(history: SpecHistory, next: string): SpecHistory {
   if (next === history.present) return history;
@@ -25,7 +25,7 @@ export function pushHistory(history: SpecHistory, next: string): SpecHistory {
   return { past, present: next, future: [] };
 }
 
-/** Deshace un paso. Sin pasado, devuelve el mismo historial. */
+/** Undoes one step. Without past, returns the same history. */
 export function undoHistory(history: SpecHistory): SpecHistory {
   if (history.past.length === 0) return history;
   const past = [...history.past];
@@ -33,7 +33,7 @@ export function undoHistory(history: SpecHistory): SpecHistory {
   return { past, present, future: [history.present, ...history.future] };
 }
 
-/** Rehace un paso. Sin futuro, devuelve el mismo historial. */
+/** Redoes one step. Without future, returns the same history. */
 export function redoHistory(history: SpecHistory): SpecHistory {
   if (history.future.length === 0) return history;
   const [present, ...future] = history.future;

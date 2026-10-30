@@ -1,5 +1,5 @@
-// Tipos de generación asistida. Reflejan los DTOs de `ruth-api` (camelCase).
-// Puros: sin React, sin Tauri. El adaptador vive en client.ts.
+// Assisted-generation types. They mirror the `ruth-api` DTOs (camelCase).
+// Pure: no React, no Tauri. The adapter lives in client.ts.
 
 export interface UsageDto {
   inputTokens?: number | null;
@@ -42,10 +42,10 @@ export interface GenerationContextPreview {
   title: string | null;
 }
 
-/** La generación caducó: cambió el contexto; hay que generar de nuevo. */
+/** The generation went stale: context changed; generate again. */
 export const GENERATION_STALE = "generation_stale";
 
-/** Ya hay una generación en curso para este módulo. */
+/** A generation is already running for this module. */
 export const GENERATION_BUSY = "generation_busy";
 
 export interface AcceptProposalFields {

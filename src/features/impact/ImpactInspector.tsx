@@ -1,6 +1,6 @@
-// Inspector de impacto (derecha): por qué está afectado lo seleccionado,
-// con qué fuentes cuenta y navegación real al artefacto. Sin chat ni
-// botones de reparación simulados: solo lectura y navegación.
+// Impact inspector (right): why the selection is affected, which sources
+// it has and real navigation to the artifact. No chat or fake repair
+// buttons: reading and navigation only.
 import { useEffect, useRef, useState } from "react";
 import { getRequirement } from "../requirements/client";
 import {
@@ -33,7 +33,7 @@ export function ImpactInspector(props: Props) {
       ? null
       : (report.affected.find((a) => a.artifact.id === selectedId) ?? null);
 
-  // Diseño en modo actualización (las ediciones viven arriba y sobreviven).
+  // Design in update mode (edits live above and survive).
   const [updating, setUpdating] = useState<string | null>(null);
   const updateTarget =
     updating !== null && selected?.artifact.id === updating ? selected : null;
@@ -45,7 +45,7 @@ export function ImpactInspector(props: Props) {
   const [diffOpen, setDiffOpen] = useState(false);
   const wanted = useRef<string | null>(null);
 
-  // Al cambiar de nodo se repliega lo cargado: cada diferencia es de su nodo.
+  // Switching nodes folds what was loaded: each diff belongs to its node.
   useEffect(() => {
     wanted.current = selectedId;
     setDiff(null);
@@ -74,15 +74,15 @@ export function ImpactInspector(props: Props) {
 
   if (selectedId === null) {
     return (
-      <aside className="review" aria-label="Inspector de impacto">
-        <h3>Impacto</h3>
+      <aside className="review" aria-label="Impact inspector">
+        <h3>Impact</h3>
         <p className="hint">
-          Selecciona un nodo del mapa o una fila de la tabla para ver por qué está afectado, con
-          qué fuentes cuenta y cómo navegar a su diseño.
+          Select a map node or a table row to see why it is affected, which
+          sources it has and how to navigate to its design.
         </p>
         <dl className="facts">
           <div>
-            <dt>Origen</dt>
+            <dt>Origin</dt>
             <dd>
               {origin.artifact.title !== null && origin.artifact.title !== ""
                 ? `${origin.artifact.title} (${origin.artifact.id})`
@@ -90,19 +90,19 @@ export function ImpactInspector(props: Props) {
             </dd>
           </div>
           <div>
-            <dt>Cambio</dt>
+            <dt>Change</dt>
             <dd>
               v{origin.fromVersion.number} → v{origin.currentVersion.number}
             </dd>
           </div>
           <div>
-            <dt>Relacionados</dt>
+            <dt>Related</dt>
             <dd>{report.affected.length}</dd>
           </div>
         </dl>
         <p className="hint">
-          Estar relacionado no es un error: significa que el cambio alcanza al artefacto por sus
-          dependencias registradas.
+          Related is not an error: it means the change reaches the artifact through
+          its registered dependencies.
         </p>
       </aside>
     );
@@ -110,7 +110,7 @@ export function ImpactInspector(props: Props) {
 
   if (isOrigin) {
     return (
-      <aside className="review" aria-label="Inspector de impacto">
+      <aside className="review" aria-label="Impact inspector">
         <h3>
           {origin.artifact.title !== null && origin.artifact.title !== "" ? (
             <>
@@ -121,7 +121,7 @@ export function ImpactInspector(props: Props) {
           )}
         </h3>
         <p>
-          <span className="badge">◉ Origen del cambio</span>
+          <span className="badge">◉ Change origin</span>
         </p>
         <p className="hint">
           {kindName(origin.artifact.kind)} · v{origin.fromVersion.number} → v
@@ -129,17 +129,17 @@ export function ImpactInspector(props: Props) {
         </p>
         <div className="button-row">
           <button type="button" className="secondary small" onClick={onShowDiff}>
-            Ver diferencias
+            View differences
           </button>
           <button
             type="button"
             className="secondary small"
             onClick={() => onOpenArtifact(origin.artifact.id, origin.artifact.kind)}
           >
-            Abrir requisito
+            Open requirement
           </button>
           <button type="button" className="secondary small" onClick={() => onSelectNode(null)}>
-            Soltar selección
+            Drop selection
           </button>
         </div>
       </aside>
@@ -148,14 +148,14 @@ export function ImpactInspector(props: Props) {
 
   if (selected === null) {
     return (
-      <aside className="review" aria-label="Inspector de impacto">
-        <h3>Impacto</h3>
+      <aside className="review" aria-label="Impact inspector">
+        <h3>Impact</h3>
         <p className="error" role="alert">
-          La selección ({selectedId}) ya no está en el informe: el informe cambió. Vuelve a
-          seleccionar un nodo.
+          The selection ({selectedId}) is no longer in the report: the report changed. Select
+          a node again.
         </p>
         <button type="button" className="secondary small" onClick={() => onSelectNode(null)}>
-          Limpiar selección
+          Clear selection
         </button>
       </aside>
     );
@@ -163,10 +163,10 @@ export function ImpactInspector(props: Props) {
 
   const openLabel =
     selected.artifact.kind === "requirement"
-      ? "Abrir requisito"
+      ? "Open requirement"
       : selected.artifact.kind === "mockup"
-        ? "Abrir mockup"
-        : "Abrir diseño";
+        ? "Open mockup"
+        : "Open design";
   const versions = diff?.versions ?? [];
   const prev = versions.length >= 2 ? versions[versions.length - 2] : null;
   const curr = versions.length >= 1 ? versions[versions.length - 1] : null;
@@ -176,7 +176,7 @@ export function ImpactInspector(props: Props) {
 
   if (updateTarget !== null) {
     return (
-      <aside className="review" aria-label="Inspector de impacto">
+      <aside className="review" aria-label="Impact inspector">
         <UpdateProposal
           projectId={props.projectId}
           moduleId={props.moduleId}
@@ -212,16 +212,16 @@ export function ImpactInspector(props: Props) {
       {selected.approvedBefore && (
         <p className="hint">
           {selected.approvals.length > 0
-            ? `Aprobado: ${selected.approvals.map((a) => `${a.versionId} por ${a.approvedBy}`).join(", ")}.`
-            : "Aprobado históricamente en una versión anterior."}{" "}
+            ? `Approved: ${selected.approvals.map((a) => `${a.versionId} by ${a.approvedBy}`).join(", ")}.`
+            : "Historically approved in an earlier version."}{" "}
           {selected.requiresReview &&
-            "La aprobación histórica se conserva, pero la versión actual usa fuentes antiguas."}
+            "The historical approval is kept, but the current version uses old sources."}
         </p>
       )}
 
-      <h4>Por qué está afectado</h4>
+      <h4>Why it is affected</h4>
       {selected.paths.length === 0 ? (
-        <p className="hint">Sin caminos registrados.</p>
+        <p className="hint">No recorded paths.</p>
       ) : (
         <ol className="path-list">
           {selected.paths.map((path, i) => (
@@ -233,7 +233,7 @@ export function ImpactInspector(props: Props) {
                     type="button"
                     className="linklike"
                     onClick={() => onSelectNode(node)}
-                    title="Seleccionar en el mapa"
+                    title="Select on the map"
                   >
                     {node}
                   </button>
@@ -251,7 +251,7 @@ export function ImpactInspector(props: Props) {
           onClick={() => void loadDiff(selected.artifact.id)}
           disabled={diffBusy}
         >
-          {diffBusy ? "Cargando…" : "Ver diferencias"}
+          {diffBusy ? "Loading…" : "View differences"}
         </button>
         <button
           type="button"
@@ -259,7 +259,7 @@ export function ImpactInspector(props: Props) {
           onClick={() => setShowSources((v) => !v)}
           aria-pressed={showSources}
         >
-          {showSources ? "Ocultar fuentes" : "Ver fuentes"}
+          {showSources ? "Hide sources" : "View sources"}
         </button>
         <button
           type="button"
@@ -273,20 +273,20 @@ export function ImpactInspector(props: Props) {
             type="button"
             className="primary small"
             onClick={() => setUpdating(selected.artifact.id)}
-            title="Solicitar a Meta un ajuste del diseño, para revisar y aceptar como borrador"
+            title="Ask Meta for a design tweak, to review and accept as a draft"
           >
-            Proponer actualización
+            Propose update
           </button>
         )}
       </div>
 
       {showSources && (
-        <section aria-label="Fuentes utilizadas frente a actuales">
+        <section aria-label="Used versus current sources">
           <h4>
-            Fuentes ({selected.pins.filter((p) => !p.stale).length}/{selected.pins.length} al día)
+            Sources ({selected.pins.filter((p) => !p.stale).length}/{selected.pins.length} current)
           </h4>
           {selected.pins.length === 0 ? (
-            <p className="hint">La versión actual no declara fuentes.</p>
+            <p className="hint">The current version declares no sources.</p>
           ) : (
             <ul className="pin-list">
               {selected.pins.map((pin) => (
@@ -296,12 +296,12 @@ export function ImpactInspector(props: Props) {
                   pin.currentVersionId !== pin.usedVersionId ? (
                     <span className="hint">
                       {" "}
-                      → actual: <span className="mono">{pin.currentVersionId}</span>
+                      → current: <span className="mono">{pin.currentVersionId}</span>
                     </span>
                   ) : (
-                    <span className="hint"> · es la actual</span>
+                    <span className="hint"> · is current</span>
                   )}
-                  {pin.stale && <span className="badge warn">antigua</span>}
+                  {pin.stale && <span className="badge warn">stale</span>}
                 </li>
               ))}
             </ul>
@@ -310,11 +310,11 @@ export function ImpactInspector(props: Props) {
       )}
 
       {diffOpen && (
-        <section aria-label="Diferencias del artefacto">
+        <section aria-label="Artifact differences">
           <h4>
-            Diferencias · {selected.artifact.id}
+            Differences · {selected.artifact.id}
           </h4>
-          {diffBusy && diff === null && <p className="hint">Cargando historial…</p>}
+          {diffBusy && diff === null && <p className="hint">Loading history…</p>}
           {diffError !== null && (
             <p className="error" role="alert">
               {diffError}
@@ -323,18 +323,18 @@ export function ImpactInspector(props: Props) {
           {diff !== null && curr !== null && (
             <>
               <h5>
-                Antes · {prev === null ? "—" : `v${prev.number} (${prev.id})`}
+                Before · {prev === null ? "—" : `v${prev.number} (${prev.id})`}
               </h5>
               <pre className="readonly-box">
-                {prev === null ? "Sin versión anterior: es la primera." : prev.content}
+                {prev === null ? "No earlier version: it is the first." : prev.content}
               </pre>
               <h5>
-                Ahora · v{curr.number} ({curr.id})
+                Now · v{curr.number} ({curr.id})
               </h5>
               <pre className="readonly-box">{curr.content}</pre>
               <p className="hint">
-                Resolver el pendiente requiere guardar una versión revisada con las fuentes
-                correctas desde su vista; este informe no modifica nada.
+                Resolving the pending item requires saving a reviewed version with the
+                right sources from its view; this report modifies nothing.
               </p>
             </>
           )}

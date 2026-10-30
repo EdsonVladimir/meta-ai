@@ -1,10 +1,10 @@
-//! Comandos de entregas de trabajo/borrador: envoltorios finos sobre
+//! Work/draft delivery commands: thin wrappers over
 //! `ruth-api`.
 //!
-//! La entrega de trabajo es una foto de versiones guardadas SIN exigir
-//! aprobación (diseño vivo). Reutiliza el guardado atómico del ZIP de las
-//! baselines; el paquete identifica pendientes y nunca se presenta como
-//! coherente ni verificado.
+//! A work delivery is a snapshot of saved versions WITHOUT requiring
+//! approval (living design). Reuses the baselines' atomic ZIP saving;
+//! the package identifies pendings and never presents itself as
+//! coherent or verified.
 
 use std::path::PathBuf;
 
@@ -77,11 +77,11 @@ pub fn core_export_delivery_save(
 ) -> Result<DeliveryExportSaveDto, ApiError> {
     if input.dest_path.trim().is_empty() {
         return Err(invalid_path(
-            "Sin destino no hay guardado: vuelve a elegir dónde guardar el ZIP.",
+            "No destination, no saving: pick again where to save the ZIP.",
         ));
     }
-    // Bloqueo corto: el paquete se construye desde la memoria y el bloqueo
-    // se suelta antes de tocar el disco.
+    // Short lock: the package builds from memory and the lock
+    // releases before touching disk.
     let (zip, sha256) = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
@@ -95,7 +95,7 @@ pub fn core_export_delivery_save(
     if dest.exists() && !input.overwrite {
         return Err(ApiError::coded(
             "export_exists",
-            format!("Ya existe {}. Confirma para reemplazarlo.", dest.display()),
+            format!("{} already exists. Confirm to replace it.", dest.display()),
         ));
     }
     write_zip_atomic(&dest, &zip)?;
