@@ -1451,7 +1451,7 @@ with them.
   hop). Paths anchor to facing card borders and render
   behind cards; a legend names every kind, and
   `references` stays a type/value use, never a call.
-- **Viewport (`BoardViewport.tsx`).** The wheel zooms around
+- **Viewport (`BoardViewport.tsx`).** The wheel scrolls; Ctrl+wheel zooms around
   the cursor (shared level, per-board scroll anchoring),
   dragging the background pans, and each board carries a
   Fit button. Without a zoom setter the wheel scrolls
@@ -1487,7 +1487,7 @@ duplicated.
   parameter properties. Cards list every member with an
   explicit collapse toggle (never a silent "+N"), one
   bordered row each; the card grows to hold every row
-  (the wheel zooms the board, so an inner scroll area could
+  (the wheel scrolls the board, so an inner scroll area could
   not be scrolled). Heights derive from rendered rows in one
   pure pass (`layoutSymbolBoard`, shared stacker, no DOM
   measuring); see §28.1 for the card anatomy.

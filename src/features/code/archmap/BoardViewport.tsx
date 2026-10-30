@@ -1,8 +1,8 @@
-// Board viewport: the scrollable canvas frame. The wheel zooms around
-// the cursor, dragging the background pans, and a discreet floating
-// cluster (-/percent/+/Fit) drives the shared zoom without taking
-// toolbar space. Without a zoom setter the wheel keeps scrolling
-// natively (no dead controls).
+// Board viewport: the scrollable canvas frame. The wheel scrolls,
+// Ctrl+wheel (or a trackpad pinch) zooms around the cursor, dragging the
+// background pans, and a discreet floating cluster (-/percent/+/Fit)
+// drives the shared zoom without taking toolbar space. Without a zoom
+// setter Ctrl+wheel does nothing special (no dead controls).
 import { useEffect, useRef, type ReactNode } from "react";
 import { anchoredScroll, fitZoomStep } from "./boardLayout";
 import { boardZoomPercent, BOARD_ZOOM_STEPS, stepBoardZoom } from "./boardZoom";
@@ -42,12 +42,13 @@ export function BoardViewport({
   changeRef.current = onZoomChange;
   const anchorRef = useRef<Anchor | null>(null);
 
-  // Cursor-anchored wheel zoom (native listener: React wheel handlers
-  // cannot preventDefault the scroll).
+  // Cursor-anchored Ctrl+wheel zoom (native listener: React wheel handlers
+  // cannot preventDefault the scroll). A plain wheel stays native scroll.
   useEffect(() => {
     const node = scrollRef.current;
     if (node === null || changeRef.current === undefined) return;
     const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       const rect = node.getBoundingClientRect();
       anchorRef.current = {

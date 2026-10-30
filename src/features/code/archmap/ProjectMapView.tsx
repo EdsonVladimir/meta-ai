@@ -207,7 +207,7 @@ interface ProjectMapViewProps {
   edgeOpts?: BoardEdgeOpts;
   /** Board zoom level (CSS zoom over layout-constant geometry). */
   zoom?: number;
-  /** Zoom setter (wheel zoom and Fit; absent = display only). */
+  /** Zoom setter (Ctrl+wheel zoom and Fit; absent = display only). */
   onZoomChange?: (zoom: number) => void;
   /** Card granularity: symbol cards, or files as a secondary view. */
   groupBy?: "symbols" | "files";

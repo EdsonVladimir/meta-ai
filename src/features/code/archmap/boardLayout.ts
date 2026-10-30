@@ -92,8 +92,8 @@ export function openMemberCount(file: ArchMapFile, expansion: BoardExpansion): n
 
 /**
  * Deterministic symbol-card height: members open by default, one row
- * each, all of them (the extractor caps lists at 50). Wheel input
- * zooms the board, so cards grow instead of scrolling inside. Reference
+ * each, all of them (the extractor caps lists at 50). The wheel
+ * scrolls the board, so cards grow instead of scrolling inside. Reference
  * cards (external module dependencies shown on request) render head,
  * sub line and meta only: no members, no toggle.
  */

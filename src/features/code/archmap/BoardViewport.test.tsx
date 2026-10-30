@@ -34,13 +34,21 @@ function region(): HTMLElement {
 }
 
 describe("BoardViewport", () => {
-  it("steps the shared zoom with the wheel", () => {
+  it("steps the shared zoom with Ctrl+wheel", () => {
     const onZoomChange = vi.fn();
     renderViewport({ zoom: 1, onZoomChange });
-    fireEvent.wheel(region(), { deltaY: -100, clientX: 60, clientY: 40 });
+    fireEvent.wheel(region(), { deltaY: -100, clientX: 60, clientY: 40, ctrlKey: true });
     expect(onZoomChange).toHaveBeenCalledWith(1.25);
-    fireEvent.wheel(region(), { deltaY: 120, clientX: 60, clientY: 40 });
+    fireEvent.wheel(region(), { deltaY: 120, clientX: 60, clientY: 40, ctrlKey: true });
     expect(onZoomChange).toHaveBeenCalledWith(0.8);
+  });
+
+  it("leaves the plain wheel to native scroll", () => {
+    const onZoomChange = vi.fn();
+    renderViewport({ zoom: 1, onZoomChange });
+    // fireEvent returns false when the handler called preventDefault.
+    expect(fireEvent.wheel(region(), { deltaY: 100 })).toBe(true);
+    expect(onZoomChange).not.toHaveBeenCalled();
   });
 
   it("keeps native scroll without a zoom setter", () => {

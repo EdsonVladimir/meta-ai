@@ -4567,7 +4567,7 @@ button.code-crumb:focus-visible {
   margin: 0;
 }
 
-/* Board viewport: scroll frame with wheel zoom, drag pan and Fit. */
+/* Board viewport: scroll frame with Ctrl+wheel zoom, drag pan and Fit. */
 .board-viewport-wrap {
   position: relative;
 }
