@@ -20,7 +20,7 @@ import {
   pendingBoxKey,
   type FlowLayout,
 } from "./flowLayout";
-import type { FlowGraph, FlowHttpNode, FlowNode, FlowPending } from "./flowModel";
+import type { FlowChange, FlowGraph, FlowHttpNode, FlowNode, FlowPending } from "./flowModel";
 
 export interface FlowBoardProps {
   graph: FlowGraph;
@@ -141,6 +141,7 @@ function ChainRow({
           selected={selected}
           onSelect={onSelect}
           listItem
+          change={node.memberChanges?.[name]}
         />
       )}
       {signals.map((line, index) => (
@@ -173,9 +174,10 @@ function FlowNodeCard({
   const language = languageBadge(symbol.rel);
   const decorators = (symbol.decorators ?? []).map((name) => `@${name}`).join(" ");
   const isSelected = selected?.nodeId === node.id;
+  const proposed = node.change !== undefined;
   return (
     <div
-      className={`archboard-card role-${node.layer}${isSelected ? " selected" : ""}`}
+      className={`archboard-card role-${node.layer}${isSelected ? " selected" : ""}${proposed ? " proposed" : ""}`}
       style={{ width: ARCH_CARD_W, height }}
     >
       <button
@@ -190,6 +192,19 @@ function FlowNodeCard({
           {KIND_BADGE[symbol.kind] ?? "?"}
         </span>
         <span className="archboard-card-name">{symbol.name}</span>
+        {proposed && (
+          <span className="archboard-badge flowboard-muse" title="Proposed by Muse">
+            Muse
+          </span>
+        )}
+        {node.change !== undefined && (
+          <span
+            className="archboard-badge flowboard-muse"
+            title={CHANGE_TITLE[node.change]}
+          >
+            {CHANGE_BADGE[node.change]}
+          </span>
+        )}
         <span className={`archboard-lang lang-${language.toLowerCase()}`}>{language}</span>
       </button>
       <div className="archboard-card-sub" title={symbol.rel}>
@@ -249,6 +264,14 @@ function HttpCard({ http, height }: { http: FlowHttpNode; height: number }) {
     </div>
   );
 }
+
+const CHANGE_BADGE: Record<FlowChange, string> = { added: "A", modified: "M", removed: "R" };
+
+const CHANGE_TITLE: Record<FlowChange, string> = {
+  added: "Added by the proposal",
+  modified: "Modified by the proposal",
+  removed: "Removed by the proposal",
+};
 
 const PENDING_TITLE: Record<FlowPending["kind"], string> = {
   unresolved: "Unresolved",

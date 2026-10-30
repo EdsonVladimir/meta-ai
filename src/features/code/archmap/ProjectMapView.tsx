@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fnv1aHex } from "../model";
 import { listCodeDir, listProjectLinks, normalizeCodeError, readCodeFile } from "../client";
-import type { CodeFileDto, CodeRootDto, CodeTab } from "../types";
+import type { CodeFileDto, CodeProposalFileDto, CodeRootDto, CodeTab } from "../types";
 import { listModules } from "../../requirements/client";
 import { defaultAnalyzeTs } from "../structure/tsWorkerClient";
 import { combineResults, emptyResult } from "../structure/structureMerge";
@@ -35,7 +35,7 @@ import {
   type DetectedCodeProject,
   type RootProjects,
 } from "../detectProjects";
-import type { ArchLayer } from "./archLayers";
+import { ARCH_LAYER_BY_ID, classifySymbol, type ArchLayer } from "./archLayers";
 import {
   buildArchMap,
   MAX_MAP_EDGES,
@@ -69,6 +69,11 @@ import {
   type FlowProject,
   type FlowStart,
 } from "./flowModel";
+import {
+  applyChangesToGraph,
+  buildProposalOverlay,
+  type ProposalOverlay,
+} from "./proposalOverlay";
 import {
   ArchitectureToolbar,
   type ToolbarDetailRow,
@@ -199,7 +204,18 @@ interface ProjectMapViewProps {
   onShowAllProjects: () => void;
   /** Restores one hidden project (Details panel; absent = Show all only). */
   onToggleProject?: (key: string) => void;
+  /** Muse proposal files overlaid on Flow mode (absent = no overlay). */
+  proposalFiles?: CodeProposalFileDto[] | null;
+  /** Reopens the proposal dialog from the X-ray. */
+  onOpenProposal?: () => void;
+  /** Ends the proposal: its marks leave the X-ray. */
+  onCloseProposal?: () => void;
+  /** Reports the files of the chain on screen, the context offered to Muse. */
+  onChainFiles?: (files: Array<{ rootId: string; rel: string }>) => void;
 }
+
+/** Scope a proposal can read (`MAX_CODE_SCOPE_FILES` in `ruth-meta`). */
+const MAX_PROPOSAL_SCOPE = 8;
 
 function baseName(rel: string): string {
   const slash = rel.lastIndexOf("/");
@@ -218,6 +234,58 @@ export function flowProjectsOf(
     projects.push({ key: section.key, label: section.title, result: found.result });
   }
   return projects;
+}
+
+/**
+ * Re-finds a flow start in overlaid projects: symbol ids come from
+ * analysis order, so a proposal can shift them. Matches by project
+ * key, rel and name; keeps the base name when the symbol is gone.
+ */
+function refindStart(
+  baseProjects: FlowProject[],
+  overlayProjects: FlowProject[],
+  start: FlowStart,
+): { start: FlowStart; name: string | null } {
+  const baseSymbol = baseProjects
+    .find((project) => project.key === start.projectKey)
+    ?.result.symbols.find((symbol) => symbol.id === start.symbolId);
+  if (baseSymbol === undefined) return { start, name: null };
+  const found = overlayProjects
+    .find((project) => project.key === start.projectKey)
+    ?.result.symbols.find(
+      (symbol) => symbol.rel === baseSymbol.rel && symbol.name === baseSymbol.name,
+    );
+  if (found === undefined) return { start, name: baseSymbol.name };
+  return { start: { ...start, symbolId: found.id }, name: found.name };
+}
+
+/** The change closest to the user: UI before services, services before contracts. */
+function firstChangeStart(
+  projects: FlowProject[],
+  overlay: ProposalOverlay,
+): { start: FlowStart; name: string } | null {
+  let best: { start: FlowStart; name: string; order: number } | null = null;
+  for (const project of projects) {
+    for (const symbol of project.result.symbols) {
+      if (symbol.kind !== "class" && symbol.kind !== "component") continue;
+      const found = overlay.changes.get(`${symbol.rootId}:${symbol.rel}:${symbol.name}`);
+      if (found === undefined) continue;
+      const { layer } = classifySymbol(symbol.rel, {
+        kind: symbol.kind,
+        name: symbol.name,
+        decorators: symbol.decorators ?? [],
+      });
+      const order = ARCH_LAYER_BY_ID[layer].order;
+      if (best === null || order < best.order) {
+        best = {
+          start: { projectKey: project.key, symbolId: symbol.id, member: null },
+          name: symbol.name,
+          order,
+        };
+      }
+    }
+  }
+  return best;
 }
 
 export function indexSymbols(symbols: StructureSymbol[]): Map<string, SymbolRef> {
@@ -301,6 +369,10 @@ export function ProjectMapView({
   hiddenProjects,
   onShowAllProjects,
   onToggleProject,
+  proposalFiles = null,
+  onOpenProposal,
+  onCloseProposal,
+  onChainFiles,
 }: ProjectMapViewProps) {
   // Canvas filters live here (the toolbar renders here too). Provided
   // props pin values from the outside (tests, embeds); otherwise the
@@ -352,6 +424,14 @@ export function ProjectMapView({
     nodeId: string;
     member: string | null;
   } | null>(null);
+  /** Leaving Flow mode suppresses the proposal auto-start until a new proposal. */
+  const [flowDismissed, setFlowDismissed] = useState(false);
+  useEffect(() => {
+    setFlowDismissed(false);
+  }, [proposalFiles]);
+  useEffect(() => {
+    setFlowSelected(null);
+  }, [flowStart, proposalFiles]);
   /** Expansion is keyed by globally unique ids, so it survives project switches. */
   const [expansion, setExpansion] = useState<BoardExpansion>(emptyExpansion);
   /** Symbol cards with their member list collapsed (open by default). */
@@ -955,6 +1035,7 @@ export function ProjectMapView({
   function handleLeaveFlow(): void {
     setFlowStart(null);
     setFlowSelected(null);
+    setFlowDismissed(true);
   }
 
   /** "Analyze all": every section with pending files gets the batches it needs. */
@@ -1024,22 +1105,91 @@ export function ProjectMapView({
     graph: FlowGraph;
     layout: FlowLayout;
     name: string | null;
+    member: string | null;
+    removed: Array<{ rootId: string; rel: string; name: string }>;
+    otherChanges: string[];
   } | null => {
-    if (flowStart === null) return null;
-    const projects = flowProjectsOf(sections, mergedRef.current);
-    const graph = buildFlowGraph(projects, flowStart);
+    const baseProjects = flowProjectsOf(sections, mergedRef.current);
+    const overlay =
+      proposalFiles === null || proposalFiles.length === 0
+        ? null
+        : buildProposalOverlay(baseProjects, proposalFiles);
+    const projects = overlay === null ? baseProjects : overlay.projects;
+    let start: FlowStart | null = flowStart;
     let name: string | null = null;
-    for (const project of projects) {
-      const symbol = project.result.symbols.find((entry) => entry.id === flowStart.symbolId);
-      if (symbol !== undefined) {
-        name = symbol.name;
-        break;
+    if (start === null) {
+      if (overlay === null || flowDismissed) return null;
+      const auto = firstChangeStart(projects, overlay);
+      if (auto === null) return null;
+      start = auto.start;
+      name = auto.name;
+    } else if (overlay === null) {
+      const current: FlowStart = start;
+      for (const project of projects) {
+        const symbol = project.result.symbols.find((entry) => entry.id === current.symbolId);
+        if (symbol !== undefined) {
+          name = symbol.name;
+          break;
+        }
+      }
+    } else {
+      ({ start, name } = refindStart(baseProjects, projects, start));
+    }
+    const drawn = (from: FlowStart): FlowGraph => {
+      const plain = buildFlowGraph(projects, from);
+      return overlay === null ? plain : applyChangesToGraph(plain, overlay);
+    };
+    let graph = drawn(start);
+    if (overlay !== null && !graph.nodes.some((node) => node.change !== undefined)) {
+      // The open chain does not touch the proposal: show the proposal.
+      const auto = firstChangeStart(projects, overlay);
+      if (auto !== null) {
+        start = auto.start;
+        name = auto.name;
+        graph = drawn(start);
       }
     }
-    return { graph, layout: layoutFlowBoard(graph), name };
+    const onChain = new Set(
+      graph.nodes.map((node) => `${node.symbol.rootId}:${node.symbol.rel}:${node.symbol.name}`),
+    );
+    const otherChanges =
+      overlay === null
+        ? []
+        : [...overlay.changes.keys()]
+            .filter((key) => !onChain.has(key))
+            .map((key) => key.slice(key.lastIndexOf(":") + 1));
+    return {
+      graph,
+      layout: layoutFlowBoard(graph),
+      name,
+      member: start.member,
+      removed: overlay?.removed ?? [],
+      otherChanges,
+    };
     // Merged results accumulate in a ref; states change on every batch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flowStart, sections, states]);
+  }, [flowStart, flowDismissed, proposalFiles, sections, states]);
+
+  // The chain on screen is what Muse reads; a proposal's own files
+  // do not exist on disk yet, so they never count as context.
+  const chainFilesSig =
+    flowMode === null || proposalFiles !== null
+      ? null
+      : JSON.stringify(
+          [
+            ...new Map(
+              flowMode.graph.nodes.map((node) => [
+                `${node.symbol.rootId}::${node.symbol.rel}`,
+                { rootId: node.symbol.rootId, rel: node.symbol.rel },
+              ]),
+            ).values(),
+          ].slice(0, MAX_PROPOSAL_SCOPE),
+        );
+  const onChainFilesRef = useRef(onChainFiles);
+  onChainFilesRef.current = onChainFiles;
+  useEffect(() => {
+    if (chainFilesSig !== null) onChainFilesRef.current?.(JSON.parse(chainFilesSig));
+  }, [chainFilesSig]);
 
   const detailRows = useMemo((): ToolbarDetailRow[] => {
     const rows: ToolbarDetailRow[] = sections.map((section) =>
@@ -1246,7 +1396,7 @@ export function ProjectMapView({
       {sections.length > 0 && (
         <div className="project-map-boards">
           <div className="project-map-sections">
-            {flowMode !== null && flowStart !== null ? (
+            {flowMode !== null ? (
               <section
                 className="project-map-root"
                 aria-label={
@@ -1262,10 +1412,20 @@ export function ProjectMapView({
                   >
                     {flowMode.name === null
                       ? "Flow ×"
-                      : flowStart.member === null
+                      : flowMode.member === null
                         ? `Flow: ${flowMode.name} ×`
-                        : `Flow: ${flowMode.name}.${flowStart.member}() ×`}
+                        : `Flow: ${flowMode.name}.${flowMode.member}() ×`}
                   </button>
+                  {proposalFiles !== null && onOpenProposal !== undefined && (
+                    <button type="button" className="secondary small" onClick={onOpenProposal}>
+                      Back to proposal
+                    </button>
+                  )}
+                  {proposalFiles !== null && onCloseProposal !== undefined && (
+                    <button type="button" className="secondary small" onClick={onCloseProposal}>
+                      Close proposal
+                    </button>
+                  )}
                   {totals.pending > 0 && (
                     <span className="hint" role="status">
                       {`Partial chain: ${countLabel(totals.pending, "file", "files")} not analyzed`}
@@ -1370,7 +1530,12 @@ export function ProjectMapView({
             flow={
               flowMode === null
                 ? null
-                : { graph: flowMode.graph, selected: flowSelected }
+                : {
+                    graph: flowMode.graph,
+                    selected: flowSelected,
+                    removed: flowMode.removed,
+                    otherChanges: flowMode.otherChanges,
+                  }
             }
           />
         </div>
@@ -1680,6 +1845,8 @@ function BoardInspector({
   flow: {
     graph: FlowGraph;
     selected: { nodeId: string; member: string | null } | null;
+    removed: Array<{ rootId: string; rel: string; name: string }>;
+    otherChanges: string[];
   } | null;
 }) {
   const width = useRequirementsUi((s) => s.archInspectorWidth);
@@ -1725,7 +1892,36 @@ function BoardInspector({
       </div>
       <div className="project-map-inspector-scroll">
         {flow !== null ? (
-          <FlowInspector graph={flow.graph} selected={flow.selected} />
+          <>
+            <FlowInspector graph={flow.graph} selected={flow.selected} />
+            {flow.removed.length > 0 && (
+              <section className="archmap-section" aria-label="Removed by the proposal">
+                <h5 className="flow-inspector-title">Removed</h5>
+                <ul className="archmap-list">
+                  {flow.removed.map((entry) => (
+                    <li
+                      key={`${entry.rootId}::${entry.rel}::${entry.name}`}
+                      title={`${entry.rootId}/${entry.rel}`}
+                    >
+                      <code>{entry.name}</code> <span className="hint">{entry.rel}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {flow.otherChanges.length > 0 && (
+              <section className="archmap-section" aria-label="Also in this proposal">
+                <h5 className="flow-inspector-title">Also in this proposal</h5>
+                <ul className="archmap-list">
+                  {flow.otherChanges.map((name) => (
+                    <li key={name}>
+                      <code>{name}</code>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
         ) : (
           <ArchMapInspector
             file={data?.file ?? null}

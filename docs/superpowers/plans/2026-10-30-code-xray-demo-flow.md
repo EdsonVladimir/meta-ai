@@ -625,7 +625,7 @@ In `ProjectMapView.test.tsx`: passing `proposalFiles` and then `null` shows and 
 ### Task 7: Read the code and decide from the box
 
 **Files:**
-- Modify: `src/features/code/archmap/FlowInspector.tsx`, `FlowInspector.test.tsx`, `ProjectMapView.tsx`
+- Modify: `src/features/code/archmap/FlowInspector.tsx`, `FlowInspector.test.tsx`, `ProjectMapView.tsx`, `ProjectMapView.test.tsx`, `ArchitectureView.tsx`, `ArchitectureView.test.tsx`
 
 **Interfaces:**
 - Consumes: `CodeConflictDiff`, `readCodeFile`, `acceptCodeFile`, `discardCodeFile`, `onFileAccepted` behavior from the dialog.
@@ -667,7 +667,7 @@ Add `staleReason: string | null` to the `proposal` prop.
 
 - [ ] **Step 2: Run:** `npx vitest run src/features/code/archmap/FlowInspector.test.tsx`. Expected: FAIL.
 
-- [ ] **Step 3: Implement.** The diff sits in a modal, using the same `CodeConflictDiff` props as the proposal dialog. After Accept, the file's state updates in `proposalFiles`, the section re-analyzes through the existing retry path, and the card loses `.proposed`.
+- [ ] **Step 3: Implement.** The diff sits in a modal, using the same `CodeConflictDiff` props as the proposal dialog. `ArchitectureView` keeps the whole `CodeGenerationDto`, not only its files, so the inspector has the generation id and `stale`. After Accept, from the inspector or from the dialog, the file's state updates, the owning section re-analyzes through the existing retry path, and the card loses `.proposed`. The dialog's `onReanalyze` in `ArchitectureView` must trigger that same re-analysis; it is a no-op today. Pin it in `ProjectMapView.test.tsx` with a prop that requests re-analysis of one file: the view reads it again and shows the new content.
 
 - [ ] **Step 4: Run** the test file, then `npm test` and `npx tsc --noEmit`. Expected: PASS.
 

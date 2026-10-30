@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Flow board: chain-only rows, ordered edges, pending boxes, row selection.
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import { combineResults } from "../structure/structureMerge";
 import { STRUCTURE_LIMITS } from "../structure/structureTypes";
@@ -105,6 +105,24 @@ it("selects a member row", () => {
   expect(onSelect).toHaveBeenCalledWith({ nodeId: CHAIN.nodes[0].id, member: "guardar" });
 });
 
+function markModified(graph: FlowGraph): FlowGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node, index) =>
+      index === 0
+        ? { ...node, change: "modified", memberChanges: { guardar: "modified" } }
+        : node,
+    ),
+  };
+}
+
+it("draws proposed changes with a label, not only a color", () => {
+  const { container } = render(<Board graph={markModified(CHAIN)} />);
+  const card = container.querySelector(".archboard-card.proposed")!;
+  expect(within(card as HTMLElement).getByText("Muse")).toBeTruthy();
+  expect(within(card as HTMLElement).getAllByText("M").length).toBeGreaterThan(0);
+});
+
 it("names what the repository does to an entity", () => {
   const be = project("be3", {
     "s.ts": `export class S {
@@ -121,5 +139,16 @@ it("points every edge with an arrow", () => {
   const { container } = render(<Board graph={CHAIN} />);
   const edges = Array.from(container.querySelectorAll(".flow-edge"));
   expect(edges.every((edge) => edge.getAttribute("marker-end") === "url(#flow-arrow)")).toBe(true);
+});
+
+it("marks changed member rows, not only the card", () => {
+  const node = CHAIN.nodes[0];
+  const graph = {
+    ...CHAIN,
+    nodes: [{ ...node, change: "modified" as const, memberChanges: { guardar: "modified" as const } }, ...CHAIN.nodes.slice(1)],
+  };
+  render(<Board graph={graph} />);
+  const row = screen.getByRole("button", { name: /^Method: guardar/ });
+  expect(within(row).getByText("M")).toBeTruthy();
 });
 

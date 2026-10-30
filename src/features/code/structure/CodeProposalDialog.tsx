@@ -4,7 +4,7 @@
 // discard). Accepting writes to disk with a fingerprint; re-analyzing
 // shows what changed in the analysis. It never generates alone or
 // writes without an explicit click.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ArtifactDto } from "../../requirements/types";
 import { listRequirements } from "../../requirements/client";
 import { useRequirementsUi } from "../../requirements/uiStore";
@@ -79,6 +79,12 @@ interface CodeProposalDialogProps {
   onReanalyze: () => Promise<void>;
   /** Notify the workspace: reloads the clean tab and refreshes the tree. */
   onFileAccepted: (rootId: string, rel: string) => void;
+  /** Reports the current generation (null when cleared or closed) for overlays. */
+  onGeneration?: (generation: CodeGenerationDto | null) => void;
+  /** Steps aside so the proposal can be read on the X-ray; keeps its state. */
+  onViewOnXray?: () => void;
+  /** Mounted but out of the way: nothing is lost while the X-ray is on screen. */
+  hidden?: boolean;
   onClose: () => void;
   prefs: CodeEditorPrefs;
   loader?: () => Promise<MonacoApi>;
@@ -98,6 +104,9 @@ export function CodeProposalDialog({
   current,
   onReanalyze,
   onFileAccepted,
+  onGeneration,
+  onViewOnXray,
+  hidden = false,
   onClose,
   prefs,
   loader,
@@ -134,13 +143,24 @@ export function CodeProposalDialog({
     };
   }, []);
 
+  const onGenerationRef = useRef(onGeneration);
+  onGenerationRef.current = onGeneration;
+  useEffect(() => {
+    onGenerationRef.current?.(generation);
+  }, [generation]);
+
+  const close = useCallback((): void => {
+    onGeneration?.(null);
+    onClose();
+  }, [onGeneration, onClose]);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !hidden) close();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close, hidden]);
 
   useEffect(() => {
     let stale = false;
@@ -324,7 +344,7 @@ export function CodeProposalDialog({
       : "";
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={close} hidden={hidden}>
       <div
         className="modal wide code-proposal"
         role="dialog"
@@ -334,9 +354,16 @@ export function CodeProposalDialog({
       >
         <div className="modal-head">
           <h3>Propose code</h3>
-          <button type="button" className="secondary small" onClick={onClose}>
-            Close
-          </button>
+          <div className="button-row">
+            {generation !== null && onViewOnXray !== undefined && (
+              <button type="button" className="primary small" onClick={onViewOnXray}>
+                View on X-ray
+              </button>
+            )}
+            <button type="button" className="secondary small" onClick={close}>
+              Close
+            </button>
+          </div>
         </div>
 
         {generation === null && (

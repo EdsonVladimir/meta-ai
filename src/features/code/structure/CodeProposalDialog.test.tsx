@@ -116,7 +116,28 @@ function fakeApi(overrides: Partial<CodeGenApi> = {}): CodeGenApi {
   };
 }
 
-function renderDialog(api: CodeGenApi, extra: Record<string, unknown> = {}) {
+type DialogExtra = Record<string, unknown>;
+
+function renderDialog(api: CodeGenApi, extra?: DialogExtra): {
+  onFileAccepted: ReturnType<typeof vi.fn>;
+  onReanalyze: ReturnType<typeof vi.fn>;
+  onClose: ReturnType<typeof vi.fn>;
+};
+function renderDialog(extra: DialogExtra): {
+  onFileAccepted: ReturnType<typeof vi.fn>;
+  onReanalyze: ReturnType<typeof vi.fn>;
+  onClose: ReturnType<typeof vi.fn>;
+};
+function renderDialog(
+  apiOrExtra: CodeGenApi | DialogExtra = fakeApi(),
+  extra: DialogExtra = {},
+) {
+  const isApi = typeof (apiOrExtra as CodeGenApi).generate === "function";
+  // The single-arg form reports generations as "gen-1" for the reporting test.
+  const api = isApi
+    ? (apiOrExtra as CodeGenApi)
+    : fakeApi({ generate: async () => generationDto({ id: "gen-1" }) });
+  const props = isApi ? extra : (apiOrExtra as DialogExtra);
   const onFileAccepted = vi.fn();
   const onReanalyze = vi.fn(async () => {});
   const onClose = vi.fn();
@@ -134,13 +155,41 @@ function renderDialog(api: CodeGenApi, extra: Record<string, unknown> = {}) {
       prefs={DEFAULT_CODE_EDITOR_PREFS}
       loader={() => Promise.reject(new Error("no monaco"))}
       api={api}
-      {...extra}
+      {...props}
     />,
   );
   return { onFileAccepted, onReanalyze, onClose };
 }
 
+async function generate(): Promise<void> {
+  fireEvent.change(await screen.findByLabelText("Requirement", { selector: "select" }), {
+    target: { value: "req-1" },
+  });
+  fireEvent.click(screen.getByText("Preview"));
+  fireEvent.click(await screen.findByText("Generate proposal"));
+  await screen.findByText(/Proposal gen-1/);
+}
+
 describe("code proposal dialog", () => {
+  it("steps aside for the X-ray and keeps the proposal", async () => {
+    const onViewOnXray = vi.fn();
+    const { onClose } = renderDialog({ onViewOnXray });
+    expect(screen.queryByRole("button", { name: "View on X-ray" })).toBeNull();
+    await generate();
+    fireEvent.click(screen.getByRole("button", { name: "View on X-ray" }));
+    expect(onViewOnXray).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("ignores Escape while hidden", async () => {
+    const onGeneration = vi.fn();
+    const { onClose } = renderDialog({ hidden: true, onGeneration });
+    onGeneration.mockClear();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onGeneration).not.toHaveBeenCalledWith(null);
+  });
+
   it("picks a requirement, previews and generates the proposal", async () => {
     const api = fakeApi();
     renderDialog(api);
@@ -318,5 +367,14 @@ describe("code proposal dialog", () => {
     fireEvent.click(await screen.findByText("Generate proposal"));
     expect(await screen.findByText("Limit exceeded.")).toBeDefined();
     expect(screen.getByText("Generate proposal")).toBeDefined();
+  });
+
+  it("reports each generation and clears on discard", async () => {
+    const onGeneration = vi.fn();
+    renderDialog({ onGeneration });
+    await generate();
+    expect(onGeneration).toHaveBeenLastCalledWith(expect.objectContaining({ id: "gen-1" }));
+    fireEvent.click(screen.getByRole("button", { name: /Close/ }));
+    expect(onGeneration).toHaveBeenLastCalledWith(null);
   });
 });

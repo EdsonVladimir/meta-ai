@@ -5240,6 +5240,17 @@ button.archboard-member:hover {
   color: var(--board-text-2);
 }
 
+/* Proposed changes: dashed fuchsia border plus Muse and A/M/R badges. */
+.archboard-card.proposed {
+  border: 1px dashed #ff4fd8;
+}
+
+.flowboard-muse {
+  color: #ff4fd8;
+  border-color: rgba(255, 79, 216, 0.45);
+  background: rgba(255, 79, 216, 0.08);
+}
+
 .archmap-inspector {
   padding: 8px;
 }
@@ -5930,8 +5941,13 @@ button.archboard-member:hover {
 
 /* Manual scope analysis: on-demand, below the boards. */
 .architecture-manual-toggle {
-  margin-top: 10px;
   color: var(--muted);
+}
+
+.architecture-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .architecture-manual-toggle[aria-expanded="true"] {

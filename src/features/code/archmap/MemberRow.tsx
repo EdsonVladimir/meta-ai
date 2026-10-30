@@ -13,6 +13,7 @@ import {
   type LifecycleHook,
   type MemberRole,
 } from "./memberRoles";
+import type { FlowChange } from "./flowModel";
 
 export interface MemberRowProps {
   member: StructureMember;
@@ -26,7 +27,11 @@ export interface MemberRowProps {
   onSelect?: () => void;
   /** Rendered inside a `role="list"` container. */
   listItem?: boolean;
+  /** Change a proposal makes to this member. */
+  change?: FlowChange;
 }
+
+const CHANGE_MARK: Record<FlowChange, string> = { added: "A", modified: "M", removed: "R" };
 
 export function memberTooltip(member: StructureMember, role: MemberRole, hook?: LifecycleHook | null): string {
   const lines = [`${MEMBER_ROLE_LABEL[role]}: ${memberLabel(member)}`];
@@ -34,7 +39,7 @@ export function memberTooltip(member: StructureMember, role: MemberRole, hook?: 
   return lines.join("\n");
 }
 
-export function MemberRow({ member, role, hook, indent, selected, onSelect, listItem }: MemberRowProps) {
+export function MemberRow({ member, role, hook, indent, selected, onSelect, listItem, change }: MemberRowProps) {
   const modifiers = memberModifiers(member);
   const tooltip = memberTooltip(member, role, hook);
   const className = `archboard-member mrole-${role}${selected === true ? " selected" : ""}`;
@@ -53,6 +58,9 @@ export function MemberRow({ member, role, hook, indent, selected, onSelect, list
         )}
       </span>
       <span className="archboard-mem-tags">
+        {change !== undefined && (
+          <span className="archboard-tag flowboard-muse">{CHANGE_MARK[change]}</span>
+        )}
         {role === "lifecycle" && <span className="archboard-tag hook">hook</span>}
         {member.visibility !== undefined && (
           <span className={`archboard-tag vis-${member.visibility}`}>{member.visibility}</span>

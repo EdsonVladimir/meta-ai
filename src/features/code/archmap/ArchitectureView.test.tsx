@@ -77,4 +77,10 @@ describe("ArchitectureView", () => {
     const panel = screen.getByLabelText("Manual scope stub", { selector: "section" });
     expect(panel.closest("[hidden]")).not.toBeNull();
   });
+
+  it("offers Propose with Muse outside the manual panel", async () => {
+    const { ArchitectureView } = await import("./ArchitectureView");
+    render(<ArchitectureView />);
+    expect(screen.getByRole("button", { name: "Propose with Muse" })).toBeTruthy();
+  });
 });

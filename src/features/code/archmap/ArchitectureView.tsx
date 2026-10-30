@@ -3,10 +3,12 @@
 // toolbar (filters, search, edges, module, details); this view only
 // keeps the shared zoom so scope switches never reset it. Saved
 // content only; drafts warn where analyzed.
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useCodeWorkspace } from "../useCodeWorkspace";
 import { useRequirementsUi } from "../../requirements/uiStore";
-import { StructureView, scopeKey } from "../structure/StructureView";
+import { StructureView, scopeKey, type ScopeFile } from "../structure/StructureView";
+import { CodeProposalDialog } from "../structure/CodeProposalDialog";
+import type { CodeGenerationDto, CodeProposalFileDto } from "../types";
 import { ProjectMapView } from "./ProjectMapView";
 
 export function ArchitectureView() {
@@ -41,6 +43,17 @@ export function ArchitectureView() {
   // mounted (hidden when closed) so its selection and results survive.
   const [manualOpen, setManualOpen] = useState(false);
   const [manualMounted, setManualMounted] = useState(false);
+  // Muse proposal: the dialog reports each generation; its pending
+  // files overlay the boards until the dialog closes or clears.
+  const [proposeOpen, setProposeOpen] = useState(false);
+  /** The dialog steps aside for the X-ray but stays mounted with its proposal. */
+  const [proposeHidden, setProposeHidden] = useState(false);
+  /** Files of the chain on screen: what Muse reads when no scope was chosen. */
+  const [chainFiles, setChainFiles] = useState<ScopeFile[]>([]);
+  const [proposalFiles, setProposalFiles] = useState<CodeProposalFileDto[] | null>(null);
+  const handleGeneration = useCallback((generation: CodeGenerationDto | null): void => {
+    setProposalFiles(generation === null ? null : generation.files);
+  }, []);
 
   if (!desktop) {
     return <p className="hint">Architecture needs the Ruth IDE desktop app.</p>;
@@ -49,6 +62,8 @@ export function ArchitectureView() {
     return <p className="hint">Select a project to see its architecture.</p>;
   }
   const rootNames = Object.fromEntries(roots.map((root) => [root.id, root.name]));
+  const canPropose = selectedProjectId !== null && selectedModuleId !== null;
+  const proposalScope = scope.length > 0 ? scope : chainFiles;
   return (
     <div className="architecture">
       <ProjectMapView
@@ -64,20 +79,64 @@ export function ArchitectureView() {
         hiddenProjects={hiddenProjects}
         onShowAllProjects={showAllMapProjects}
         onToggleProject={toggleMapProject}
-      />
-      <button
-        type="button"
-        className="secondary small architecture-manual-toggle"
-        aria-expanded={manualOpen}
-        aria-controls="architecture-manual"
-        title="Analyze chosen files by hand, propose code, link symbols and keep snapshots."
-        onClick={() => {
-          setManualMounted(true);
-          setManualOpen((prev) => !prev);
+        proposalFiles={proposalFiles}
+        onOpenProposal={() => setProposeHidden(false)}
+        onCloseProposal={() => {
+          setProposeOpen(false);
+          setProposeHidden(false);
+          setProposalFiles(null);
         }}
-      >
-        <span aria-hidden="true">{manualOpen ? "▾" : "▸"}</span> Manual analysis
-      </button>
+        onChainFiles={setChainFiles}
+      />
+      <div className="architecture-actions">
+        <button
+          type="button"
+          className="secondary small architecture-manual-toggle"
+          aria-expanded={manualOpen}
+          aria-controls="architecture-manual"
+          title="Analyze chosen files by hand, propose code, link symbols and keep snapshots."
+          onClick={() => {
+            setManualMounted(true);
+            setManualOpen((prev) => !prev);
+          }}
+        >
+          <span aria-hidden="true">{manualOpen ? "▾" : "▸"}</span> Manual analysis
+        </button>
+        <button
+          type="button"
+          className="secondary small"
+          disabled={!canPropose}
+          title={
+            canPropose
+              ? `Muse reads ${proposalScope.length} file(s): the chain on screen, or your manual scope`
+              : "Select a project and a module to propose with Muse"
+          }
+          onClick={() => {
+            setProposeOpen(true);
+            setProposeHidden(false);
+          }}
+        >
+          Propose with Muse
+        </button>
+      </div>
+      {proposeOpen && canPropose && (
+        <CodeProposalDialog
+          projectId={selectedProjectId}
+          moduleId={selectedModuleId}
+          scope={proposalScope}
+          rootNames={rootNames}
+          baseline={null}
+          current={null}
+          onReanalyze={async () => {}}
+          onFileAccepted={notifyFileChanged}
+          onGeneration={handleGeneration}
+          onViewOnXray={() => setProposeHidden(true)}
+          hidden={proposeHidden}
+          onClose={() => setProposeOpen(false)}
+          prefs={prefs}
+          loader={loader}
+        />
+      )}
       {manualMounted && (
         <section
           id="architecture-manual"

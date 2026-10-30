@@ -12,7 +12,7 @@ import { ProjectMapView, type ProjectMapDeps } from "./ProjectMapView";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import { useRequirementsUi, type ArchScope } from "../../requirements/uiStore";
 import { clearDiscoveryCache } from "../detectProjects";
-import type { CodeListingDto, CodeRootDto, CodeTab } from "../types";
+import type { CodeListingDto, CodeProposalFileDto, CodeRootDto, CodeTab } from "../types";
 
 afterEach(() => cleanup());
 
@@ -38,6 +38,17 @@ export class SalesController {
 }`;
 const SVC = `export class SalesService { all() { return []; } }`;
 const APP = `export class AppComponent { title = "shop"; }`;
+const CTRL_WITH_LIST = `import { SalesService } from "./sales.service";
+export class SalesController {
+  constructor(private readonly svc: SalesService) {}
+  list() { return this.svc.all(); }
+}`;
+const CTRL_PREPENDED = `export class Above {}
+import { SalesService } from "./sales.service";
+export class SalesController {
+  constructor(private readonly svc: SalesService) {}
+  list() { return this.svc.all(); }
+}`;
 
 function root(overrides: Partial<CodeRootDto> & { id: string }): CodeRootDto {
   return {
@@ -109,6 +120,24 @@ function tab(overrides: Partial<CodeTab> & { rootId: string; rel: string }): Cod
   };
 }
 
+function proposalFile(
+  rel: string,
+  content: string,
+  operation = "modify",
+  rootId = "be",
+): CodeProposalFileDto {
+  return {
+    pos: 0,
+    rootId,
+    rel,
+    operation,
+    state: "pending",
+    decidedAt: null,
+    content,
+    expectedFingerprint: null,
+  };
+}
+
 function renderView(options: {
   roots?: CodeRootDto[];
   tabs?: CodeTab[];
@@ -125,12 +154,17 @@ function renderView(options: {
   hiddenProjects?: Record<string, boolean>;
   onShowAllProjects?: () => void;
   groupBy?: "symbols" | "files";
+  proposalFiles?: CodeProposalFileDto[] | null;
+  onOpenProposal?: () => void;
+  onCloseProposal?: () => void;
+  onChainFiles?: (files: Array<{ rootId: string; rel: string }>) => void;
 }) {
   const api: {
     setScope: (scope: ArchScope) => void;
     setHiddenProjects: (hidden: Record<string, boolean>) => void;
     setHidden: (hidden: Record<string, boolean>) => void;
-  } = { setScope: () => {}, setHiddenProjects: () => {}, setHidden: () => {} };
+    setProposalFiles: (files: CodeProposalFileDto[] | null) => void;
+  } = { setScope: () => {}, setHiddenProjects: () => {}, setHidden: () => {}, setProposalFiles: () => {} };
   const onToggleRoot = options.onToggleRoot ?? (() => {});
   function Harness() {
     const [hidden, setHidden] = useState<Record<string, boolean>>(options.hidden ?? {});
@@ -138,9 +172,13 @@ function renderView(options: {
     const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>(
       options.hiddenProjects ?? {},
     );
+    const [proposalFiles, setProposalFiles] = useState<CodeProposalFileDto[] | null>(
+      options.proposalFiles ?? null,
+    );
     api.setScope = setScope;
     api.setHiddenProjects = setHiddenProjects;
     api.setHidden = setHidden;
+    api.setProposalFiles = setProposalFiles;
     return (
       <ProjectMapView
         projectId="p1"
@@ -168,6 +206,10 @@ function renderView(options: {
           options.onShowAllProjects?.();
           setHiddenProjects({});
         }}
+        proposalFiles={options.proposalFiles ?? proposalFiles}
+        onOpenProposal={options.onOpenProposal}
+        onCloseProposal={options.onCloseProposal}
+        onChainFiles={options.onChainFiles}
       />
     );
   }
@@ -177,6 +219,7 @@ function renderView(options: {
     setScope: (scope: ArchScope) => act(() => api.setScope(scope)),
     setHiddenProjects: (hidden: Record<string, boolean>) => act(() => api.setHiddenProjects(hidden)),
     setHidden: (hidden: Record<string, boolean>) => act(() => api.setHidden(hidden)),
+    setProposalFiles: (files: CodeProposalFileDto[] | null) => act(() => api.setProposalFiles(files)),
   };
 }
 
@@ -374,6 +417,112 @@ describe("ProjectMapView", () => {
     expect(screen.queryByLabelText("Architecture board")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Leave flow/ }));
     expect(await screen.findByLabelText("Diagram of backend")).toBeTruthy();
+  });
+
+  it("shows proposal marks in Flow mode and removes them with the proposal", async () => {
+    const { container, setProposalFiles } = renderView({ groupBy: "symbols" });
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow of SalesController" }));
+    expect(await screen.findByRole("button", { name: /^Leave flow/ })).toBeTruthy();
+    expect(container.querySelector(".archboard-card.proposed")).toBeNull();
+    setProposalFiles([proposalFile("src/sales.controller.ts", CTRL_WITH_LIST)]);
+    expect(container.querySelector(".archboard-card.proposed")).not.toBeNull();
+    setProposalFiles(null);
+    expect(container.querySelector(".archboard-card.proposed")).toBeNull();
+  });
+
+  it("builds the proposal overlay without reading or analyzing again", async () => {
+    const readFile = vi.fn(async (rootId: string, rel: string) => {
+      const text = CONTENTS[`${rootId}::${rel}`];
+      if (text === undefined) throw { kind: "code_not_found", message: "missing" };
+      return { text, fingerprint: "h", size: text.length };
+    });
+    const analyzeTs = vi.fn((files) => Promise.resolve(analyzeTsFiles(files)));
+    const { container, setProposalFiles } = renderView({
+      groupBy: "symbols",
+      deps: makeDeps({ readFile, analyzeTs }),
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow of SalesController" }));
+    expect(await screen.findByRole("button", { name: /^Leave flow/ })).toBeTruthy();
+    readFile.mockClear();
+    analyzeTs.mockClear();
+    setProposalFiles([proposalFile("src/sales.controller.ts", CTRL_WITH_LIST)]);
+    expect(container.querySelector(".archboard-card.proposed")).not.toBeNull();
+    expect(readFile).not.toHaveBeenCalled();
+    expect(analyzeTs).not.toHaveBeenCalled();
+  });
+
+  it("keeps the flow start when the proposal shifts symbol ids", async () => {
+    const { container, setProposalFiles } = renderView({ groupBy: "symbols" });
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow of SalesController" }));
+    expect(await screen.findByRole("button", { name: /^Leave flow/ })).toBeTruthy();
+    setProposalFiles([proposalFile("src/sales.controller.ts", CTRL_PREPENDED)]);
+    expect(screen.getByText(/Flow: SalesController/)).toBeTruthy();
+    expect(container.querySelector(".archboard-card.proposed")).not.toBeNull();
+    const board = screen.getByLabelText("Flow board");
+    expect(within(board).getByTitle(/^Method: list/)).toBeTruthy();
+  });
+
+  it("starts Flow mode at the first proposed class without opening it", async () => {
+    const { setProposalFiles } = renderView({ groupBy: "symbols" });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    setProposalFiles([proposalFile("src/report.ts", `export class Report {}`, "create")]);
+    expect(await screen.findByRole("button", { name: /^Leave flow/ })).toBeTruthy();
+    expect(screen.getByText(/Flow: Report/)).toBeTruthy();
+  });
+});
+
+describe("proposal on the X-ray", () => {
+  it("starts at the frontmost change, not the first file", async () => {
+    const { setProposalFiles } = renderView({ groupBy: "symbols" });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    setProposalFiles([
+      proposalFile("src/report.service.ts", `export class ReportService {}`, "create"),
+      proposalFile("src/report.controller.ts", `export class ReportController {}`, "create"),
+    ]);
+    expect(await screen.findByText(/Flow: ReportController/)).toBeTruthy();
+  });
+
+  it("moves to the change when the open chain does not contain it", async () => {
+    const { setProposalFiles } = renderView({ groupBy: "symbols" });
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow of SalesController" }));
+    await screen.findByRole("button", { name: /^Leave flow/ });
+    setProposalFiles([proposalFile("src/report.ts", `export class Report {}`, "create")]);
+    expect(await screen.findByText(/Flow: Report/)).toBeTruthy();
+  });
+
+  it("lists changes that are off the drawn chain", async () => {
+    const { setProposalFiles } = renderView({ groupBy: "symbols" });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    setProposalFiles([
+      proposalFile("src/report.controller.ts", `export class ReportController {}`, "create"),
+      proposalFile("src/other.service.ts", `export class OtherService {}`, "create"),
+    ]);
+    const list = await screen.findByLabelText("Also in this proposal");
+    expect(within(list).getByText("OtherService")).toBeTruthy();
+  });
+
+  it("offers the way back to the proposal only while one is open", async () => {
+    const onOpenProposal = vi.fn();
+    const onCloseProposal = vi.fn();
+    const { setProposalFiles } = renderView({ groupBy: "symbols", onOpenProposal, onCloseProposal });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    expect(screen.queryByRole("button", { name: "Back to proposal" })).toBeNull();
+    setProposalFiles([proposalFile("src/report.ts", `export class Report {}`, "create")]);
+    fireEvent.click(await screen.findByRole("button", { name: "Back to proposal" }));
+    expect(onOpenProposal).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close proposal" }));
+    expect(onCloseProposal).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers the open chain as the context for Muse", async () => {
+    const onChainFiles = vi.fn();
+    renderView({ groupBy: "symbols", onChainFiles });
+    fireEvent.click(await screen.findByRole("button", { name: "Show flow of SalesController" }));
+    await waitFor(() =>
+      expect(onChainFiles).toHaveBeenLastCalledWith([
+        { rootId: "be", rel: "src/sales.controller.ts" },
+      ]),
+    );
   });
 });
 
