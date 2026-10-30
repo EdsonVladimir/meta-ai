@@ -7,7 +7,7 @@ import { CodeTree } from "./CodeTree";
 import type { CodeRootDto } from "./types";
 
 vi.mock("./client", () => ({
-  listCodeDir: vi.fn(),
+  listCodeDir: vi.fn(async () => ({ entries: [], truncated: false })),
   normalizeCodeError: (raw: unknown) => ({ kind: "unknown", message: String(raw) }),
 }));
 

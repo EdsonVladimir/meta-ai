@@ -27,7 +27,7 @@
 - No network in tests. Tests must not read outside this repository.
 - No client names, code or paths in anything published. Use `examples/reservas` for demo fixtures.
 - Do not commit or push unless the task prompt says so.
-- Done means `npm test` and `npx tsc --noEmit` pass, plus `cargo test --workspace` from `src-tauri/` when Rust changes.
+- Done means `npm test` exits 0 (an unhandled error fails the run even when every test passes) and `npx tsc --noEmit` passes, plus `cargo test --workspace` from `src-tauri/` when Rust changes.
 
 ## Review Focus
 
@@ -165,7 +165,8 @@ it("reads setGlobalPrefix", () => {
 ### Task 2: Flow model
 
 **Files:**
-- Create: `src/features/code/archmap/flowModel.ts`, `src/features/code/archmap/flowModel.test.ts`
+- Create: `src/features/code/archmap/flowModel.ts`, `src/features/code/archmap/flowModel.test.ts`, `src/features/code/structure/tsAngularFacts.ts`, `src/features/code/structure/tsAngularFacts.test.ts`
+- Modify: `src/features/code/structure/tsAnalyze.ts`
 
 **Interfaces:**
 - Consumes: `SymbolFlowFacts`, `StructureResult`, `classifySymbol` from `archLayers.ts`, `normalizeApi` from `apiLinks.ts`.
@@ -324,6 +325,21 @@ it("stops at the node cap and says so", () => {
 ```
 
 `project(key, files)` calls `analyzeTsFiles`, splitting files into groups of `STRUCTURE_LIMITS.maxFiles` and joining with `combineResults`. `startAt` finds the symbol by name.
+
+In `src/features/code/structure/tsAngularFacts.test.ts` (new), pin the one Angular collector the demo needs, taken from Task 5 of the Stage 2 plan:
+
+```ts
+it("reads withInterceptors in order", () => {
+  const result = analyze(`bootstrapApplication(App, { providers: [
+  provideHttpClient(withInterceptors([authInterceptor, errorInterceptor])),
+] });`);
+  expect(result.pipeline).toEqual([
+    expect.objectContaining({ scope: "http-client", names: ["authInterceptor", "errorInterceptor"] }),
+  ]);
+});
+```
+
+Add `src/features/code/structure/tsAngularFacts.ts` with `collectHttpInterceptors(source, evidence): PipelineFact[]`, wired into `analyzeTsFiles`, and pin in `flowModel.test.ts` that an HTTP node lists those interceptors.
 
 - [ ] **Step 2: Run:** `npx vitest run src/features/code/archmap/flowModel.test.ts`. Expected: FAIL.
 
@@ -809,7 +825,7 @@ it("keeps Send adjustment disabled when empty", async () => {
 
 On `examples/reservas`, in the desktop app, confirm:
 
-- A chain runs from `ReservasPageComponent` through the store and service, across HTTP, to the controller, service and `Reserva` entity.
+- A chain runs from `ReservaFormComponent.submit` through the store and service, across HTTP, to the controller, service and `Reserva` entity.
 - A requirement sent to Muse draws dashed fuchsia cards before any file changes on disk (`git status` stays clean).
 - The Verification panel shows the model, the context sent, and Ruth's checks.
 - Viewing the code shows the diff; Accept writes the file and the card turns solid.

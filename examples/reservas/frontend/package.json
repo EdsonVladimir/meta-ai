@@ -1,0 +1,17 @@
+{
+  "name": "reservas-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Room-booking UI. Demo target for Ruth.",
+  "scripts": {
+    "start": "ng serve"
+  },
+  "dependencies": {
+    "@angular/common": "^18.0.0",
+    "@angular/core": "^18.0.0",
+    "@angular/forms": "^18.0.0",
+    "@angular/platform-browser": "^18.0.0",
+    "@angular/router": "^18.0.0",
+    "rxjs": "^7.8.0"
+  }
+}
