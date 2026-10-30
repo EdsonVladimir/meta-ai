@@ -4577,6 +4577,8 @@ button.code-crumb:focus-visible {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #0d1115;
+  /* Room for the floating zoom control over short boards. */
+  min-height: 260px;
   max-height: 60vh;
 }
 
@@ -5189,6 +5191,53 @@ button.archboard-member:hover {
 
 .archboard-more:hover {
   color: var(--accent);
+}
+
+/* Static card heads (HTTP and pending boxes): no pointer. */
+.archboard-card-head:not(button) {
+  cursor: default;
+}
+
+/* Flow edges: solid for proven links, dashed for pending ones. */
+.flow-edge {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.flow-edge.pending {
+  stroke: #8fa0b3;
+  stroke-dasharray: 5 4;
+}
+
+.flow-arrow {
+  fill: var(--accent);
+  stroke: none;
+}
+
+/* Collapsed chain members ("+2 methods"): the toggle row height. */
+.flowboard-more {
+  flex: none;
+  height: 26px;
+  padding-top: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: var(--board-text-2);
+  text-align: left;
+}
+
+/* Signal accesses under a member row ("writes reservas"). */
+.flowboard-sig {
+  flex: none;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  padding-left: 31px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  color: var(--board-text-2);
 }
 
 .archmap-inspector {

@@ -57,6 +57,8 @@ export interface FlowEdge {
   /** Order inside the calling member. */
   order: number;
   evidence: string;
+  /** Repository method on `entity` edges. */
+  label?: string;
 }
 export interface FlowPending {
   kind: "unresolved" | "ambiguous" | "no-destination" | "cycle";
@@ -398,6 +400,7 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
         toMember: null,
         order: index,
         evidence: call.evidence,
+        label: call.method,
       });
       return;
     }

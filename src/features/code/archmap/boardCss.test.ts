@@ -62,4 +62,11 @@ describe("board CSS constants", () => {
     // Toggle = 6px gap above + the button text line.
     expect(px(rule(".archboard-more"), "height")).toBe(ARCH_MORE_ROW_H);
   });
+
+  it("matches flow board rows", () => {
+    // The collapsed-members row reuses the toggle height; signal
+    // lines reuse the meta height. No new row heights.
+    expect(px(rule(".flowboard-more"), "height")).toBe(ARCH_MORE_ROW_H);
+    expect(px(rule(".flowboard-sig"), "height")).toBe(ARCH_META_ROW_H);
+  });
 });

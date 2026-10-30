@@ -268,6 +268,18 @@ export function classifySymbol(rel: string, symbol: SymbolIdentity): ClassifiedF
   for (const name of symbol.decorators) {
     const layer = DECORATOR_LAYER[name];
     if (layer === undefined) continue;
+    // `@Injectable` only marks DI; a store or guard name says more.
+    if (name === "Injectable") {
+      const specific = SYMBOL_NAME_RULES.find(
+        (rule) => rule.layer !== "services" && rule.suffix.test(symbol.name),
+      );
+      if (specific !== undefined) {
+        return {
+          layer: specific.layer,
+          reason: `name suffix "${specific.label}" on an @Injectable ${symbol.kind}`,
+        };
+      }
+    }
     return { layer, reason: `decorator @${name} on this ${symbol.kind}` };
   }
   if (symbol.kind === "interface" || symbol.kind === "enum") {

@@ -181,3 +181,14 @@ describe("classifySymbol", () => {
     ).toEqual({ layer: "unassigned", reason: "no rule matched" });
   });
 });
+
+describe("specific names beat the generic @Injectable", () => {
+  it("keeps stores in State and guards in Cross-cutting", () => {
+    const verdict = (name: string) =>
+      classifySymbol("a.ts", { kind: "class", name, decorators: ["Injectable"] }).layer;
+    expect(verdict("ReservasStore")).toBe("state");
+    expect(verdict("AuthGuard")).toBe("crosscutting");
+    expect(verdict("ReservasService")).toBe("services");
+    expect(verdict("Plain")).toBe("services");
+  });
+});
