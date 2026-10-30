@@ -431,7 +431,7 @@ it("selects a member row", () => {
 
 - [ ] **Step 2: Run** both test files. Expected: FAIL.
 
-- [ ] **Step 3: Implement.** Column key: project plus layer, with one shared "HTTP" column per hop. Cards reuse the `.archboard-card` classes and heights. Edges go row to row: from `rowY` of the source to `rowY` of the target, in the same SVG layer order as the board. Order numbers are small labels at the source end. Solid lines for proven edges; `.flow-edge.pending` is dashed. Add CSS constants to `boardCss.test.ts` for any new row height.
+- [ ] **Step 3: Implement.** Column key: project plus layer, with one shared "HTTP" column per hop. Cards reuse the `.archboard-card` classes and heights. Edges go row to row: from `rowY` of the source to `rowY` of the target, in the same SVG layer order as the board. Order numbers are small labels at the source end. Rows also list the member's signal accesses from `symbol.flow.signals` ("writes reservas"), because stores are part of the chain. Solid lines for proven edges; `.flow-edge.pending` is dashed. Add CSS constants to `boardCss.test.ts` for any new row height.
 
 - [ ] **Step 4: Run** the test files, then `npm test` and `npx tsc --noEmit`. Expected: PASS.
 

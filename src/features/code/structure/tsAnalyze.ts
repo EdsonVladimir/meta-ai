@@ -52,6 +52,7 @@ import ts from "ts-compiler";
 import { fnv1aHex } from "../model";
 import { STRUCTURE_LIMITS } from "./structureTypes";
 import { collectFlowFacts, httpClientFieldsOf } from "./tsFlowFacts";
+import { collectHttpInterceptors } from "./tsAngularFacts";
 import { collectNestPipeline } from "./tsNestFacts";
 import type {
   ApiCall,
@@ -77,6 +78,7 @@ interface PendingRef {
 interface RawImport {
   raw: string;
   line: number;
+  names: string[];
 }
 
 interface FileSymbols {
@@ -607,6 +609,17 @@ export function resolveImportSpec(
   return null;
 }
 
+/** Local names an import binds; re-exports and namespaces bind none here. */
+function importedNames(stmt: ts.Statement): string[] {
+  if (!ts.isImportDeclaration(stmt) || stmt.importClause === undefined) return [];
+  const clause = stmt.importClause;
+  const names = clause.name === undefined ? [] : [clause.name.text];
+  if (clause.namedBindings !== undefined && ts.isNamedImports(clause.namedBindings)) {
+    for (const element of clause.namedBindings.elements) names.push(element.name.text);
+  }
+  return names;
+}
+
 function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbols {
   const isTsx = input.rel.toLowerCase().endsWith(".tsx");
   const source = ts.createSourceFile(input.rel, input.content, ts.ScriptTarget.Latest, true);
@@ -779,7 +792,7 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
         : undefined;
     if (spec !== undefined && ts.isStringLiteral(spec) && spec.text.trim() !== "") {
       const pos = source.getLineAndCharacterOfPosition(stmt.getStart(source));
-      rawImports.push({ raw: spec.text, line: pos.line + 1 });
+      rawImports.push({ raw: spec.text, line: pos.line + 1, names: importedNames(stmt) });
     }
   }
 
@@ -873,9 +886,10 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
   }
 
   for (const stmt of source.statements) visitCalls(stmt);
-  const pipeline = collectNestPipeline(source, (target, what) =>
-    evidenceOf(source, target, what),
-  );
+  const pipeline = [
+    ...collectNestPipeline(source, (target, what) => evidenceOf(source, target, what)),
+    ...collectHttpInterceptors(source, (target, what) => evidenceOf(source, target, what)),
+  ];
   return { symbols, refs, endpoints, calls, rawImports, partial, message, pipeline };
 }
 
@@ -931,6 +945,7 @@ export function analyzeTsFiles(inputs: StructureInput[]): StructureResult {
             ? "missing"
             : "external") as "resolved" | "external" | "missing",
         line: found.line,
+        ...(found.names.length > 0 ? { names: found.names } : {}),
       };
     });
     return {

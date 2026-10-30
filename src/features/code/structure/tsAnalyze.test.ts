@@ -247,7 +247,7 @@ export * from "./reexported";`,
       input("root-1", "deep/c.ts", `import { Y } from "../../nope";`),
     ]);
     expect(result.files[0].imports).toEqual([
-      { raw: "./b", resolvedRel: null, status: "missing", line: 1 },
+      { raw: "./b", resolvedRel: null, status: "missing", line: 1, names: ["X"] },
     ]);
     expect(result.files[2].imports?.[0].status).toBe("missing");
   });
@@ -313,7 +313,7 @@ export class Car {
       input("root-1", "b.ts", "export const x = 1;"),
     ]);
     expect(result.files[0].imports).toEqual([
-      { raw: "./b.js", resolvedRel: "b.ts", status: "resolved", line: 1 },
+      { raw: "./b.js", resolvedRel: "b.ts", status: "resolved", line: 1, names: ["x"] },
     ]);
   });
 });

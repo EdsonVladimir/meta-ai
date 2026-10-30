@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { combineResults } from "../structure/structureMerge";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
+import { buildFlowGraph, type FlowProject } from "./flowModel";
 import { STRUCTURE_LIMITS } from "../structure/structureTypes";
 import type { StructureInput, StructureResult } from "../structure/structureTypes";
 
@@ -70,3 +71,33 @@ it("reaches the POST from a form method, not from a template", () => {
   expect(link(flow("backend", "ReservasController"), "create")).toEqual(["create"]);
   expect(flow("backend", "ReservasService").repositoryCalls.map((c) => c.method)).toContain("save");
 });
+
+it("draws the whole chain the video shows", () => {
+  const side = (key: string): FlowProject => ({
+    key,
+    label: key,
+    result: analyzeTsFiles(collectInputs(key)),
+  });
+  const projects = [side("frontend"), side("backend")];
+  const form = projects[0].result.symbols.find((s) => s.name === "ReservaFormComponent")!;
+  const graph = buildFlowGraph(projects, {
+    projectKey: "frontend",
+    symbolId: form.id,
+    member: "submit",
+  });
+  expect(graph.nodes.map((n) => `${n.projectKey}:${n.symbol.name}`)).toEqual([
+    "frontend:ReservaFormComponent",
+    "frontend:ReservasStore",
+    "frontend:ReservasService",
+    "backend:ReservasController",
+    "backend:ReservasService",
+    "backend:Reserva",
+  ]);
+  expect(graph.httpNodes[0]).toMatchObject({
+    verb: "POST",
+    url: "{apiUrl}reservas",
+    interceptors: ["authInterceptor"],
+  });
+  expect(graph.pending).toEqual([]);
+});
+

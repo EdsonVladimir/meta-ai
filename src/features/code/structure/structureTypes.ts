@@ -257,6 +257,8 @@ export interface FileImport {
   status: "resolved" | "external" | "missing";
   /** 1-based line of the import statement. */
   line: number;
+  /** Local names it binds (default and named). */
+  names?: string[];
 }
 
 export interface StructureFile {
