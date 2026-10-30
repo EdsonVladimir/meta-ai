@@ -2,6 +2,7 @@
 // toggles, plus a search matching file paths, symbol names and member
 // names. File and symbol projections filter separately; manual layer
 // overrides apply to symbols only. Pure and tested.
+import { isInExternalFolder, type ExternalFolder } from "./externalLibraries";
 import { ARCH_LAYER_BY_ID, ARCH_LAYERS, type ArchLayer } from "./archLayers";
 import type { ArchMap, ArchMapFile, ArchMapNode } from "./archModel";
 import { fileKey, type BoardColumn, type SymbolColumn } from "./boardLayout";
@@ -54,6 +55,8 @@ export interface MapFilterOpts {
    * symbol, listing only those). Null disables the filter.
    */
   onlyIds?: Set<string> | null;
+  /** Marked as libraries: listed as references, never as cards. */
+  externalFolders?: readonly ExternalFolder[];
 }
 
 export function filterMapColumns(
@@ -78,6 +81,7 @@ export function filterMapColumns(
   const columns = ARCH_LAYERS.map((def) => ({
     layer: def.id,
     files: map.files.flatMap((file) => {
+      if (isInExternalFolder(file.rootId, file.rel, opts.externalFolders ?? [])) return [];
       const symbols =
         onlyIds === null ? file.symbols : file.symbols.filter((s) => onlyIds.has(s.id));
       if (onlyIds !== null && symbols.length === 0) return [];
@@ -181,6 +185,7 @@ export function filterSymbolNodes(
   const columns = ARCH_LAYERS.map((def) => ({
     layer: def.id,
     nodes: map.nodes.filter((node) => {
+      if (isInExternalFolder(node.rootId, node.rel, opts.externalFolders ?? [])) return false;
       // Out-of-module nodes are not "hidden by filters": the module
       // criterion explains them, so they skip the hidden counters.
       if (opts.onlyIds != null && !opts.onlyIds.has(node.id)) {

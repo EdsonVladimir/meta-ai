@@ -58,6 +58,9 @@ function renderToolbar(overrides: Partial<Parameters<typeof ArchitectureToolbar>
     onToggleTests: vi.fn(),
     showConfig: true,
     onToggleConfig: vi.fn(),
+    showLibraries: false,
+    onToggleLibraries: vi.fn(),
+    libraryCount: 0,
     hiddenByFilters: 0,
     hiddenByFiltersTitle: null as string | null,
     edgeOpts: { incoming: true, outgoing: true, depth: 1 as const },
@@ -109,15 +112,15 @@ describe("ArchitectureToolbar", () => {
     expect(line.textContent).toContain("Folder grouping under src/sales/");
     expect(line.textContent).toContain("results may be incomplete");
     expect(line.textContent).toContain("20 of 34 references shown");
-    expect(screen.getByLabelText("External refs")).toBeTruthy();
+    expect(screen.getByLabelText("Outside module")).toBeTruthy();
   });
 
   it("offers external refs only with a module, symbols board only", () => {
     const props = renderToolbar({ moduleKey: null });
-    expect(screen.queryByLabelText("External refs")).toBeNull();
+    expect(screen.queryByLabelText("Outside module")).toBeNull();
     cleanup();
     renderToolbar({ ...props, moduleKey: "dir:be::::src/sales", groupBy: "files" });
-    const toggle = screen.getByLabelText("External refs") as HTMLInputElement;
+    const toggle = screen.getByLabelText("Outside module") as HTMLInputElement;
     expect(toggle.disabled).toBe(true);
     expect(toggle.closest("label")?.getAttribute("title")).toContain("Symbols board");
   });
@@ -141,6 +144,8 @@ describe("ArchitectureToolbar", () => {
     expect(props.onToggleTests).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByLabelText("Config"));
     expect(props.onToggleConfig).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByLabelText("External libraries (0)"));
+    expect(props.onToggleLibraries).toHaveBeenCalledTimes(1);
     fireEvent.change(screen.getByLabelText("Filter boards"), { target: { value: "sales" } });
     expect(props.onQueryChange).toHaveBeenCalledWith("sales");
   });

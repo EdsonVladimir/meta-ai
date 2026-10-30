@@ -20,6 +20,11 @@ import {
   memberRole,
   splitSignature,
 } from "./memberRoles";
+import {
+  ancestorFolders,
+  type ExternalFolder,
+  type ExternalLibrary,
+} from "./externalLibraries";
 import type { EffectiveLayer } from "./mapFilter";
 import type { StructureRelation } from "../structure/structureTypes";
 
@@ -55,6 +60,8 @@ interface ArchMapInspectorProps {
   memberships?: string[] | null;
   /** The selected symbol is an external reference, shown on request. */
   referenceNote?: string | null;
+  /** Marks a folder as an external library. */
+  onMarkExternal?: (rootId: string, rel: string) => void;
   /** Selected member of the selected symbol (index), from the board or here. */
   selectedMember?: number | null;
   onSelectMember?: (index: number | null) => void;
@@ -107,6 +114,7 @@ export function ArchMapInspector({
   outsideModule,
   memberships,
   referenceNote,
+  onMarkExternal,
   selectedMember,
   onSelectMember,
   onShowFlow,
@@ -251,6 +259,102 @@ export function ArchMapInspector({
           <p className="hint">{file.missing.join(", ")}</p>
         </Section>
       )}
+      {onMarkExternal !== undefined && ancestorFolders(file.rel).length > 0 && (
+        <Section id="mark-external" title="External library" count={null}>
+          <MarkExternal key={file.rel} file={file} onMark={onMarkExternal} />
+        </Section>
+      )}
+    </div>
+  );
+}
+
+function MarkExternal({
+  file,
+  onMark,
+}: {
+  file: ArchMapFile;
+  onMark: (rootId: string, rel: string) => void;
+}) {
+  const folders = ancestorFolders(file.rel);
+  const [folder, setFolder] = useState(folders[0]);
+  return (
+    <>
+      <p className="hint">
+        Code you use but do not change. The folder leaves the boards and stays listed under
+        External libraries.
+      </p>
+      <select
+        aria-label="Folder to treat as external"
+        value={folder}
+        onChange={(event) => setFolder(event.target.value)}
+      >
+        {folders.map((entry) => (
+          <option key={entry} value={entry}>
+            {entry}
+          </option>
+        ))}
+      </select>
+      <div className="button-row">
+        <button
+          type="button"
+          className="secondary small"
+          onClick={() => onMark(file.rootId, folder)}
+        >
+          Treat folder as external
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** One external library: who uses it and what they import, no members. */
+export function LibraryInspector({
+  library,
+  onSelectFile,
+  onUnmark,
+}: {
+  library: ExternalLibrary;
+  onSelectFile: (rootId: string, rel: string) => void;
+  onUnmark: (folder: ExternalFolder) => void;
+}) {
+  const folder = library.folder;
+  return (
+    <div className="archmap-inspector">
+      <h3 className="archmap-library-title">{library.name}</h3>
+      <p className="hint">
+        {folder === null ? "External package" : `Marked as external: ${folder.rel}`}
+      </p>
+      {folder !== null && (
+        <div className="button-row">
+          <button type="button" className="secondary small" onClick={() => onUnmark(folder)}>
+            Treat as project code
+          </button>
+        </div>
+      )}
+      <Section id="library-names" title="Imported" count={library.names.length}>
+        <p className="hint">
+          {library.names.length > 0 ? library.names.join(", ") : "No named imports."}
+        </p>
+      </Section>
+      <Section id="library-users" title="Used by" count={library.usedBy.length}>
+        {library.usedBy.length === 0 ? (
+          <p className="hint">No analyzed file imports it.</p>
+        ) : (
+          <ul className="archmap-list">
+            {library.usedBy.map((user) => (
+              <li key={`${user.rootId}:${user.rel}`}>
+                <button
+                  type="button"
+                  className="secondary small"
+                  onClick={() => onSelectFile(user.rootId, user.rel)}
+                >
+                  {user.rel}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
     </div>
   );
 }

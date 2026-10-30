@@ -67,7 +67,8 @@ import {
 import { ArchMapBoard, countLabel } from "./ArchMapBoard";
 import { ArchSymbolBoard } from "./ArchSymbolBoard";
 import { BoardViewport } from "./BoardViewport";
-import { ArchMapInspector, type SymbolRef } from "./ArchMapInspector";
+import { ArchMapInspector, LibraryInspector, type SymbolRef } from "./ArchMapInspector";
+import { collectLibraries, type ExternalFolder, type ExternalLibrary } from "./externalLibraries";
 import { FlowBoard } from "./FlowBoard";
 import { layoutFlowBoard, type FlowLayout } from "./flowLayout";
 import { FlowInspector, type FlowInspectorProps } from "./FlowInspector";
@@ -434,6 +435,12 @@ export function ProjectMapView({
   const [innerQuery, setInnerQuery] = useState("");
   const [innerTests, setInnerTests] = useState(true);
   const [innerConfig, setInnerConfig] = useState(true);
+  const [showLibraries, setShowLibraries] = useState(false);
+  const [selectedLibraryKey, setSelectedLibraryKey] = useState<string | null>(null);
+  const externalFolders = useRequirementsUi((s) => s.archExternalFolders);
+  const addExternalFolder = useRequirementsUi((s) => s.addArchExternalFolder);
+  const removeExternalFolder = useRequirementsUi((s) => s.removeArchExternalFolder);
+  const setInspectorCollapsed = useRequirementsUi((s) => s.setArchInspectorCollapsed);
   const [innerEdgeOpts, setInnerEdgeOpts] = useState<BoardEdgeOpts>(DEFAULT_EDGE_OPTS);
   const [innerGroupBy, setInnerGroupBy] = useState<"symbols" | "files">("symbols");
   const [innerZoom, setInnerZoom] = useState(1);
@@ -997,12 +1004,14 @@ export function ProjectMapView({
           showTests: activeShowTests,
           showConfig: activeShowConfig,
           onlyIds,
+          externalFolders,
         }),
         symbols: filterSymbolNodes(map, activeQuery, activeLayers, {
           showTests: activeShowTests,
           showConfig: activeShowConfig,
           overrides: layerOverrides,
           onlyIds,
+          externalFolders,
         }),
       });
     }
@@ -1016,7 +1025,40 @@ export function ProjectMapView({
     activeShowConfig,
     layerOverrides,
     onlyIds,
+    externalFolders,
   ]);
+
+  const librariesBySection = useMemo(() => {
+    const out = new Map<string, ExternalLibrary[]>();
+    const needle = activeQuery.trim().toLowerCase();
+    for (const section of sections) {
+      const map = states[section.key]?.map ?? null;
+      const onlyRels =
+        map === null || onlyIds === null
+          ? null
+          : new Set(map.nodes.filter((node) => onlyIds.has(node.id)).map((node) => node.rel));
+      out.set(
+        section.key,
+        collectLibraries(map, externalFolders, onlyRels).filter((library) =>
+          library.name.toLowerCase().includes(needle),
+        ),
+      );
+    }
+    return out;
+  }, [sections, states, activeQuery, onlyIds, externalFolders]);
+  const libraryCount = useMemo(
+    () => [...librariesBySection.values()].reduce((sum, list) => sum + list.length, 0),
+    [librariesBySection],
+  );
+  const selectedLibrary = useMemo(
+    () =>
+      selectedLibraryKey === null
+        ? null
+        : ([...librariesBySection.values()]
+            .flat()
+            .find((library) => library.key === selectedLibraryKey) ?? null),
+    [librariesBySection, selectedLibraryKey],
+  );
 
   const inspectorData = useMemo(
     () => findInspectorData(sections, states, selectedKey, selectedSymbolId),
@@ -1053,12 +1095,27 @@ export function ProjectMapView({
       ? `outside ${selectedOption.label}`
       : null;
 
+  function handleSelectLibrary(key: string): void {
+    setSelectedLibraryKey(key);
+    setInspectorCollapsed(false);
+  }
+
+  function handleMarkExternal(rootId: string, rel: string): void {
+    addExternalFolder({ rootId, rel });
+    setShowLibraries(true);
+    setSelectedKey(null);
+    setSelectedSymbolId(null);
+    setSelectedLibraryKey(`folder:${rootId}:${rel}`);
+  }
+
   function handleSelect(key: string | null): void {
+    setSelectedLibraryKey(null);
     setSelectedKey(key);
     setSelectedSymbolId(null);
   }
 
   function handleSelectSymbol(map: ArchMap | null, id: string | null): void {
+    setSelectedLibraryKey(null);
     if (id === null) {
       handleSelect(null);
       return;
@@ -1082,6 +1139,7 @@ export function ProjectMapView({
   }
 
   function handleSelectInspectorFile(rootId: string, rel: string): void {
+    setSelectedLibraryKey(null);
     setSelectedKey(fileKey(rootId, rel));
   }
 
@@ -1434,7 +1492,7 @@ export function ProjectMapView({
     selectedOption === null || !symbolMode || !showExternal
       ? null
       : references.total === 0
-        ? "no external references"
+        ? "nothing outside the module"
         : references.total > references.ids.size
           ? `${references.ids.size} of ${references.total} references shown`
           : `${references.total} ${references.total === 1 ? "reference" : "references"}`;
@@ -1499,6 +1557,9 @@ export function ProjectMapView({
         onToggleTests={() => setInnerTests((prev) => !prev)}
         showConfig={activeShowConfig}
         onToggleConfig={() => setInnerConfig((prev) => !prev)}
+        showLibraries={showLibraries}
+        onToggleLibraries={() => setShowLibraries((prev) => !prev)}
+        libraryCount={libraryCount}
         hiddenByFilters={hiddenByFilters}
         hiddenByFiltersTitle={hiddenByFiltersTitle}
         edgeOpts={activeEdgeOpts}
@@ -1629,6 +1690,9 @@ export function ProjectMapView({
                   filteredSymbols={
                     filteredBySection.get(section.key)?.symbols ?? EMPTY_FILTERED_SYMBOLS
                   }
+                  libraries={showLibraries ? (librariesBySection.get(section.key) ?? []) : []}
+                  selectedLibraryKey={selectedLibraryKey}
+                  onSelectLibrary={handleSelectLibrary}
                   referenceIds={symbolMode ? references.ids : EMPTY_SET}
                   referenceNote={
                     selectedOption === null ? null : `outside ${selectedOption.label}`
@@ -1671,6 +1735,9 @@ export function ProjectMapView({
           </div>
           <BoardInspector
             data={inspectorData}
+            library={selectedLibrary}
+            onMarkExternal={handleMarkExternal}
+            onUnmarkExternal={removeExternalFolder}
             onSelectFile={handleSelectInspectorFile}
             selectedSymbolId={selectedSymbolId}
             onSelectSymbol={setSelectedSymbolId}
@@ -2001,6 +2068,9 @@ function clampInspectorWidth(width: number): number {
 /** Single shared inspector: collapsible, resizable, width persisted. */
 function BoardInspector({
   data,
+  library,
+  onMarkExternal,
+  onUnmarkExternal,
   onSelectFile,
   selectedSymbolId,
   onSelectSymbol,
@@ -2015,6 +2085,9 @@ function BoardInspector({
   flow,
 }: {
   data: InspectorData | null;
+  library: ExternalLibrary | null;
+  onMarkExternal: (rootId: string, rel: string) => void;
+  onUnmarkExternal: (folder: ExternalFolder) => void;
   onSelectFile: (rootId: string, rel: string) => void;
   selectedSymbolId: string | null;
   onSelectSymbol: (id: string | null) => void;
@@ -2055,7 +2128,8 @@ function BoardInspector({
   useEffect(() => {
     if (proposedFiles) setCollapsed(false);
   }, [proposedFiles, generationId, setCollapsed]);
-  const hasData = flow !== null ? flow.selected !== null || proposedFiles : data !== null;
+  const hasData =
+    flow !== null ? flow.selected !== null || proposedFiles : data !== null || library !== null;
 
   if (collapsed) {
     return (
@@ -2138,8 +2212,15 @@ function BoardInspector({
               </section>
             )}
           </>
+        ) : library !== null ? (
+          <LibraryInspector
+            library={library}
+            onSelectFile={onSelectFile}
+            onUnmark={onUnmarkExternal}
+          />
         ) : (
           <ArchMapInspector
+            onMarkExternal={onMarkExternal}
             file={data?.file ?? null}
             edges={data?.edges ?? []}
             onSelectFile={onSelectFile}
@@ -2217,6 +2298,10 @@ interface ProjectMapSectionProps {
   /** Filtered in the parent (the toolbar lives there too). */
   filteredFiles: FilteredMap;
   filteredSymbols: FilteredSymbols;
+  /** Empty unless External libraries is on. */
+  libraries: ExternalLibrary[];
+  selectedLibraryKey: string | null;
+  onSelectLibrary: (key: string) => void;
   /** External references: compact cards, symbols board only. */
   referenceIds: Set<string>;
   referenceNote: string | null;
@@ -2249,6 +2334,9 @@ function ProjectMapSection({
   state,
   filteredFiles,
   filteredSymbols,
+  libraries,
+  selectedLibraryKey,
+  onSelectLibrary,
   referenceIds,
   referenceNote,
   moduleLabel,
@@ -2356,6 +2444,24 @@ function ProjectMapSection({
         <p className="hint" role="note">
           {emptyNote}
         </p>
+      )}
+      {libraries.length > 0 && (
+        <ul className="archmap-libraries" aria-label="External libraries">
+          {libraries.map((library) => (
+            <li key={library.key}>
+              <button
+                type="button"
+                className="archmap-library"
+                aria-pressed={library.key === selectedLibraryKey}
+                title={library.folder?.rel ?? library.name}
+                onClick={() => onSelectLibrary(library.key)}
+              >
+                <strong>{library.name}</strong>
+                <span className="hint">{countLabel(library.usedBy.length, "file", "files")}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
       {ready && map !== null && hasCards && (
         <BoardViewport

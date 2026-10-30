@@ -12,6 +12,7 @@ import {
   matchMapFile,
 } from "./mapFilter";
 import type { ArchMap, ArchMapFile, ArchMapNode } from "./archModel";
+import { fileKey } from "./boardLayout";
 
 function file(overrides: Partial<ArchMapFile> & { rel: string }): ArchMapFile {
   return {
@@ -338,3 +339,16 @@ describe("module filter (onlyIds)", () => {
     ).toBe(2);
   });
 });
+
+describe("external folders", () => {
+  it("takes a marked folder off both boards without counting it hidden", () => {
+    const inside = file({ rel: "vendor/ui/table.ts" });
+    const own = file({ rel: "src/a.ts" });
+    const map = { files: [inside, own], nodes: [], edges: [] } as unknown as ArchMap;
+    const folders = [{ rootId: inside.rootId, rel: "vendor" }];
+    const result = filterMapColumns(map, "", allLayersOn(), { externalFolders: folders });
+    expect([...result.visibleKeys]).toEqual([fileKey(own.rootId, own.rel)]);
+    expect(result.hiddenTests + result.hiddenConfigs).toBe(0);
+  });
+});
+

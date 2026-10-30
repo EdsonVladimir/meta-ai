@@ -8,6 +8,7 @@
 // `navigation.ts`).
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type { ExternalFolder } from "../code/archmap/externalLibraries";
 import type { LayerOverrides } from "../code/archmap/mapFilter";
 
 export interface Selection {
@@ -180,6 +181,8 @@ interface RequirementsUiState {
   archModule: string | null;
   /** Show summarized external references of the module (session-only). */
   archShowExternalRefs: boolean;
+  /** Project folders treated as external libraries (validated + capped). */
+  archExternalFolders: ExternalFolder[];
   setSelection: (selection: Selection) => void;
   setCenterView: (view: CenterView) => void;
   setCenterDoc: (key: string | null) => void;
@@ -216,6 +219,8 @@ interface RequirementsUiState {
   setLayerOverride: (id: string, value: LayerOverrides[string] | null) => void;
   setArchModule: (key: string | null) => void;
   setArchShowExternalRefs: (show: boolean) => void;
+  addArchExternalFolder: (folder: ExternalFolder) => void;
+  removeArchExternalFolder: (folder: ExternalFolder) => void;
 }
 
 export const EMPTY_SELECTION: Selection = {
@@ -235,6 +240,9 @@ export const MAX_PERSISTED_HIDDEN_PROJECTS = 200;
 
 /** Bound on persisted manual layer overrides. */
 export const MAX_PERSISTED_LAYER_OVERRIDES = 200;
+
+/** Bound on persisted external folders. */
+export const MAX_PERSISTED_EXTERNAL_FOLDERS = 50;
 
 /** localStorage blind to odd environments: corrupt or missing = default. */
 const layoutStorage = {
@@ -309,6 +317,20 @@ function validateLayerOverrides(persisted: unknown): LayerOverrides {
   return out;
 }
 
+function validateExternalFolders(persisted: unknown): ExternalFolder[] {
+  if (!Array.isArray(persisted)) return [];
+  const out: ExternalFolder[] = [];
+  for (const value of persisted as unknown[]) {
+    if (typeof value !== "object" || value === null) continue;
+    const { rootId, rel } = value as Record<string, unknown>;
+    if (typeof rootId !== "string" || rootId.length === 0 || rootId.length > 512) continue;
+    if (typeof rel !== "string" || rel.length === 0 || rel.length > 512) continue;
+    out.push({ rootId, rel });
+    if (out.length >= MAX_PERSISTED_EXTERNAL_FOLDERS) break;
+  }
+  return out;
+}
+
 export function validateLayoutPartial(persisted: unknown): {
   navigatorWidth: number | null;
   rightWidth: number | null;
@@ -317,6 +339,7 @@ export function validateLayoutPartial(persisted: unknown): {
   mapHiddenProjects: Record<string, boolean>;
   archInspectorWidth: number | null;
   layerOverrides: LayerOverrides;
+  archExternalFolders: ExternalFolder[];
 } {
   const fallback = {
     navigatorWidth: null,
@@ -326,6 +349,7 @@ export function validateLayoutPartial(persisted: unknown): {
     mapHiddenProjects: {},
     archInspectorWidth: null,
     layerOverrides: {},
+    archExternalFolders: [],
   };
   if (typeof persisted !== "object" || persisted === null) return fallback;
   const partial = persisted as Record<string, unknown>;
@@ -356,6 +380,7 @@ export function validateLayoutPartial(persisted: unknown): {
       ? (partial.archInspectorWidth as number)
       : null,
     layerOverrides: validateLayerOverrides(partial.layerOverrides),
+    archExternalFolders: validateExternalFolders(partial.archExternalFolders),
   };
 }
 
@@ -393,6 +418,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   layerOverrides: {},
   archModule: null,
   archShowExternalRefs: false,
+  archExternalFolders: [],
   toggleMapRoot: (rootId) =>
     set((state) => ({
       mapHiddenRoots: { ...state.mapHiddenRoots, [rootId]: !state.mapHiddenRoots[rootId] },
@@ -415,6 +441,21 @@ export const useRequirementsUi = create<RequirementsUiState>()(
     }),
   setArchModule: (archModule) => set({ archModule }),
   setArchShowExternalRefs: (archShowExternalRefs) => set({ archShowExternalRefs }),
+  addArchExternalFolder: (folder) =>
+    set((state) => ({
+      archExternalFolders: [
+        ...state.archExternalFolders.filter(
+          (entry) => entry.rootId !== folder.rootId || entry.rel !== folder.rel,
+        ),
+        folder,
+      ].slice(-MAX_PERSISTED_EXTERNAL_FOLDERS),
+    })),
+  removeArchExternalFolder: (folder) =>
+    set((state) => ({
+      archExternalFolders: state.archExternalFolders.filter(
+        (entry) => entry.rootId !== folder.rootId || entry.rel !== folder.rel,
+      ),
+    })),
   requestSave: () => set((state) => ({ saveSignal: state.saveSignal + 1 })),
   setLastSave: (lastSave) => set({ lastSave }),
   setDocStatus: (docStatus) => set({ docStatus }),
@@ -470,6 +511,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
         mapHiddenProjects: state.mapHiddenProjects,
         archInspectorWidth: state.archInspectorWidth,
         layerOverrides: state.layerOverrides,
+        archExternalFolders: state.archExternalFolders,
       }),
       merge: (persisted, current) => ({
         ...current,

@@ -49,6 +49,10 @@ interface ArchitectureToolbarProps {
   modulePartial: string | null;
   showExternal: boolean;
   onToggleExternal: () => void;
+  showLibraries: boolean;
+  onToggleLibraries: () => void;
+  /** Packages and marked folders in view. */
+  libraryCount: number;
   /** "20 of 34 shown", or null. */
   externalInfo: string | null;
   groupBy: "symbols" | "files";
@@ -145,6 +149,9 @@ export function ArchitectureToolbar({
   modulePartial,
   showExternal,
   onToggleExternal,
+  showLibraries,
+  onToggleLibraries,
+  libraryCount,
   externalInfo,
   groupBy,
   onGroupByChange,
@@ -234,7 +241,7 @@ export function ArchitectureToolbar({
             title={
               groupBy === "symbols"
                 ? "Show direct dependencies outside the module as compact reference cards."
-                : "External references show on the Symbols board."
+                : "Outside-module references show on the Symbols board."
             }
           >
             <input
@@ -243,7 +250,7 @@ export function ArchitectureToolbar({
               disabled={groupBy !== "symbols"}
               onChange={onToggleExternal}
             />
-            External refs
+            Outside module
           </label>
         )}
         <input
@@ -281,6 +288,13 @@ export function ArchitectureToolbar({
             >
               <input type="checkbox" checked={showConfig} onChange={onToggleConfig} />
               Config
+            </label>
+            <label
+              className="archmap-layer"
+              title="List packages and folders marked as external: who uses them, never their members."
+            >
+              <input type="checkbox" checked={showLibraries} onChange={onToggleLibraries} />
+              {`External libraries (${libraryCount})`}
             </label>
           </div>
         </DropMenu>

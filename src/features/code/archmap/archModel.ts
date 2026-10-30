@@ -3,6 +3,7 @@
 // map, with explicit truncation flags instead of silent drops (per-file
 // lists are small enough to keep whole, except unresolved refs).
 import type {
+  FileImport,
   StructureMember,
   StructureRange,
   StructureRelation,
@@ -63,6 +64,8 @@ export interface ArchMapFile {
   symbols: ArchMapSymbol[];
   /** Raw specifiers that point outside the analyzed code. */
   externals: string[];
+  /** All imports of the file, for the external libraries list. */
+  imports?: FileImport[];
   /** Relative specifiers that resolve to no analyzed file. */
   missing: string[];
   unresolved: ArchUnresolvedRef[];
@@ -255,6 +258,7 @@ export function buildArchMap(result: StructureResult): ArchMap {
         };
       }),
       externals: [...new Set(externals)],
+      imports: file.imports ?? [],
       missing: [...new Set(missing)],
       unresolved,
       unresolvedTruncated: unresolvedTotal > unresolved.length,

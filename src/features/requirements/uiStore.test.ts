@@ -29,6 +29,7 @@ beforeEach(() => {
     archInspectorWidth: null,
     archInspectorCollapsed: false,
     layerOverrides: {},
+    archExternalFolders: [],
   });
 });
 
@@ -215,6 +216,7 @@ describe("persisted panel sizes", () => {
     ui.setLayerOverride("s1", { layer: "state", name: "Billing" });
     ui.setArchModule("declared:mod:s1");
     ui.setArchShowExternalRefs(true);
+    ui.addArchExternalFolder({ rootId: "r1", rel: "vendor" });
     ui.setCenterView("overview");
     const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
     expect(raw).not.toBeNull();
@@ -227,7 +229,22 @@ describe("persisted panel sizes", () => {
       mapHiddenProjects: { "r1::apps/fe": true },
       archInspectorWidth: 320,
       layerOverrides: { s1: { layer: "state", name: "Billing" } },
+      archExternalFolders: [{ rootId: "r1", rel: "vendor" }],
     });
+  });
+
+  it("keeps only valid external folders and replaces repeats", () => {
+    expect(
+      validateLayoutPartial({
+        archExternalFolders: [{ rootId: "r", rel: "vendor" }, { rootId: "r" }, 3],
+      }).archExternalFolders,
+    ).toEqual([{ rootId: "r", rel: "vendor" }]);
+    const ui = useRequirementsUi.getState();
+    ui.addArchExternalFolder({ rootId: "r", rel: "vendor" });
+    ui.addArchExternalFolder({ rootId: "r", rel: "vendor" });
+    expect(useRequirementsUi.getState().archExternalFolders).toHaveLength(1);
+    ui.removeArchExternalFolder({ rootId: "r", rel: "vendor" });
+    expect(useRequirementsUi.getState().archExternalFolders).toEqual([]);
   });
 
   it("resets sizes and exits maximized terminal", () => {
@@ -267,6 +284,7 @@ describe("persisted panel sizes", () => {
       mapHiddenProjects: { "r1::apps/fe": true },
       archInspectorWidth: 320,
       layerOverrides: { s1: { layer: "state", name: "Billing" } },
+      archExternalFolders: [],
     });
     const fallback = {
       navigatorWidth: null,
@@ -276,6 +294,7 @@ describe("persisted panel sizes", () => {
       mapHiddenProjects: {},
       archInspectorWidth: null,
       layerOverrides: {},
+      archExternalFolders: [],
     };
     expect(validateLayoutPartial(null)).toEqual(fallback);
     expect(validateLayoutPartial("basura")).toEqual(fallback);
