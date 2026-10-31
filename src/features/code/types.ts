@@ -8,6 +8,8 @@ export interface CodeRootDto {
   missing: boolean;
   /** Associated project (`null` = loose folder, no project). */
   projectId: string | null;
+  /** Never send this folder's code to Muse (enforced in Rust). */
+  aiBlocked: boolean;
 }
 
 export type CodeEntryKind = "file" | "dir" | "other";

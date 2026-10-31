@@ -17,7 +17,7 @@ function root(overrides: Partial<CodeRootDto> = {}): CodeRootDto {
     id: "root-1",
     path: "/tmp/fe",
     name: "frontend",
-    missing: false,
+    missing: false, aiBlocked: false,
     projectId: null,
     ...overrides,
   };

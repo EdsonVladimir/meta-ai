@@ -514,6 +514,63 @@ pub async fn code_generate(
     Ok(generation_dto(ready.store, &roots, &stored))
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeAskInput {
+    pub question: String,
+    pub files: Vec<CodeScopeFileInput>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeAskDto {
+    pub answer: String,
+    pub model: String,
+}
+
+/// Answers a question about saved files. Records nothing and changes
+/// nothing; a blocked folder fails before any network.
+#[tauri::command]
+pub async fn code_ask(
+    state: State<'_, AppState>,
+    input: CodeAskInput,
+) -> Result<CodeAskDto, ApiError> {
+    if input.question.trim().is_empty() {
+        return Err(ApiError::coded("empty_question", "Write a question first."));
+    }
+    let scope: Vec<ScopeFileInput> = input
+        .files
+        .iter()
+        .map(|file| ScopeFileInput {
+            root_id: file.root_id.clone(),
+            rel: file.rel.clone(),
+        })
+        .collect();
+    let files = {
+        let mut guard = lock(&state.inner)?;
+        let ready = ready(&mut guard)?;
+        ruth_api::read_ask_scope(&workspace_of(ready.code_roots), &scope)?
+    };
+    let scope: Vec<ruth_meta::code::CodeScopeFile> = files
+        .into_iter()
+        .map(|file| ruth_meta::code::CodeScopeFile {
+            root_id: file.root_id,
+            rel: file.rel,
+            bytes: file.bytes,
+            content: file.content,
+        })
+        .collect();
+    let config = ruth_meta::MetaConfig::from_env().map_err(ApiError::from_meta)?;
+    let prompt = ruth_meta::code::build_ask_input(&input.question, &scope);
+    let result = ruth_meta::code::ask_code(&config, &prompt)
+        .await
+        .map_err(ApiError::from_meta)?;
+    Ok(CodeAskDto {
+        answer: result.answer,
+        model: result.model,
+    })
+}
+
 /// The module's code proposals, with freshness computed on the spot.
 #[tauri::command]
 pub fn code_list_generations(

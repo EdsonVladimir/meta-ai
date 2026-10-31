@@ -33,6 +33,7 @@ pub struct CodeRootDto {
     pub name: String,
     pub missing: bool,
     pub project_id: Option<String>,
+    pub ai_blocked: bool,
 }
 
 impl CodeRootDto {
@@ -43,6 +44,7 @@ impl CodeRootDto {
             name: root.name.clone(),
             missing: !Path::new(&root.path).is_dir(),
             project_id: root.project_id.clone(),
+            ai_blocked: root.ai_blocked,
         }
     }
 }
@@ -280,6 +282,7 @@ pub fn code_add_root(state: State<AppState>, input: AddRootInput) -> Result<Code
         name,
         // New folders enter unlinked; linking them is explicit.
         project_id: None,
+        ai_blocked: false,
     };
     let mut workspace = workspace_of(ready.code_roots);
     workspace.add(root.clone()).map_err(code_err)?;
@@ -296,6 +299,7 @@ pub fn code_add_root(state: State<AppState>, input: AddRootInput) -> Result<Code
             root.path.clone(),
             root.name.clone(),
             root.project_id.clone(),
+            root.ai_blocked,
         );
     }
     *ready.code_roots = log;
@@ -324,10 +328,50 @@ pub fn code_remove_root(
             root.path.clone(),
             root.name.clone(),
             root.project_id.clone(),
+            root.ai_blocked,
         );
     }
     *ready.code_roots = log;
     Ok(CodeRootDto::of(&removed))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetRootAiBlockedInput {
+    pub root_id: String,
+    pub blocked: bool,
+}
+
+/// Marks a folder so its code is never sent to Meta.
+#[tauri::command]
+pub fn code_set_root_ai_blocked(
+    state: State<AppState>,
+    input: SetRootAiBlockedInput,
+) -> Result<CodeRootDto, ApiError> {
+    let mut guard = lock(&state.inner)?;
+    let ready = ready(&mut guard)?;
+    let mut roots: Vec<CodeRoot> = ready.code_roots.roots().to_vec();
+    let root = roots
+        .iter_mut()
+        .find(|r| r.id == input.root_id)
+        .ok_or_else(|| code_err(ruth_code::CodeError::root_not_found(&input.root_id)))?;
+    root.ai_blocked = input.blocked;
+    let updated = CodeRootDto::of(root);
+    if let Err(err) = ready.db.save_code_roots(&roots, ready.ids.checkpoint()) {
+        return Err(ApiError::storage(err));
+    }
+    let mut log = ruth_store::CodeRootLog::new();
+    for root in &roots {
+        log.rehydrate(
+            root.id.clone(),
+            root.path.clone(),
+            root.name.clone(),
+            root.project_id.clone(),
+            root.ai_blocked,
+        );
+    }
+    *ready.code_roots = log;
+    Ok(updated)
 }
 
 /// Links a root to a project (`project_id`) or leaves it unlinked (`None`).
@@ -361,6 +405,7 @@ pub fn code_set_root_project(
             root.path.clone(),
             root.name.clone(),
             root.project_id.clone(),
+            root.ai_blocked,
         );
     }
     *ready.code_roots = log;

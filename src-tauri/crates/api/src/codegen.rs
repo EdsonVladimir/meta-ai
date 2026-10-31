@@ -162,6 +162,24 @@ pub fn snapshot_code_context(
     })
 }
 
+/// Saved files for a question to Muse. No project needed: nothing is
+/// recorded. Same checks as a proposal, before any network.
+pub fn read_ask_scope(
+    roots: &CodeWorkspace,
+    scope: &[ScopeFileInput],
+) -> Result<Vec<CodeScopeRead>, ApiError> {
+    if scope.is_empty() {
+        return Err(coded("empty_scope", "Pick at least one file to ask about."));
+    }
+    if scope.len() > ruth_meta::code::MAX_CODE_SCOPE_FILES {
+        return Err(coded(
+            "scope_too_large",
+            "Too many files in the scope for asking Muse.",
+        ));
+    }
+    read_scope_files(roots, scope)
+}
+
 /// Reads the scope from disk with fingerprints: no duplicates,
 /// authorized roots and saved content. Stable order (root, path).
 fn read_scope_files(
@@ -186,6 +204,12 @@ fn read_scope_files(
                 format!("Folder \"{}\" outside the workspace", entry.root_id),
             ));
         };
+        if root.ai_blocked {
+            return Err(coded(
+                "code_ai_blocked",
+                format!("\"{}\" is marked to never be sent to Muse.", root.name),
+            ));
+        }
         let read =
             ruth_code::read_file(&PathBuf::from(&root.path), &entry.rel).map_err(code_err)?;
         files.push(CodeScopeRead {

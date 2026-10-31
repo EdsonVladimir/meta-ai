@@ -94,7 +94,7 @@ const FILES: Array<{ rel: string; text: string }> = [
 ];
 
 const ROOTS: CodeRootDto[] = [
-  { id: "acc", path: "/repo/acc", name: "acceptance", missing: false, projectId: "p1" },
+  { id: "acc", path: "/repo/acc", name: "acceptance", missing: false, aiBlocked: false, projectId: "p1" },
 ];
 
 function listing(): CodeListingDto {

@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 function root(): CodeRootDto {
-  return { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: null };
+  return { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, aiBlocked: false, projectId: null };
 }
 
 function file(name: string): CodeEntryDto {

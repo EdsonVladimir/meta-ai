@@ -2225,6 +2225,9 @@ function BoardInspector({
         ) : (
           <ArchMapInspector
             onMarkExternal={onMarkExternal}
+            onAskMuse={(rootId, rel) =>
+              useRequirementsUi.getState().setMuseTarget({ rootId, rel, kind: "file" })
+            }
             file={data?.file ?? null}
             edges={data?.edges ?? []}
             onSelectFile={onSelectFile}

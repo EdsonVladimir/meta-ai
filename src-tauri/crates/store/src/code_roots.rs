@@ -43,12 +43,14 @@ impl CodeRootLog {
         path: String,
         name: String,
         project_id: Option<String>,
+        ai_blocked: bool,
     ) {
         self.roots.push(CodeRoot {
             id,
             path,
             name,
             project_id,
+            ai_blocked,
         });
     }
 }
@@ -85,8 +87,15 @@ pub(crate) fn write_code_roots(
         .map_err(|e| StoreError::convert(path, e))?;
     for (pos, root) in roots.iter().enumerate() {
         tx.execute(
-            "INSERT INTO code_roots(id, path, name, pos, project_id) VALUES (?, ?, ?, ?, ?)",
-            rusqlite::params![root.id, root.path, root.name, pos as u32, root.project_id],
+            "INSERT INTO code_roots(id, path, name, pos, project_id, ai_blocked) VALUES (?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                root.id,
+                root.path,
+                root.name,
+                pos as u32,
+                root.project_id,
+                root.ai_blocked
+            ],
         )
         .map_err(|e| StoreError::convert(path, e))?;
     }
@@ -98,30 +107,34 @@ pub(crate) fn load_code_roots(
     path: &Path,
     store: &Store,
     with_project: bool,
+    with_ai_blocked: bool,
 ) -> Result<CodeRootLog, StoreError> {
     // Loading runs before migrating: on v11 the column does not exist yet
     // and all roots enter loose (the migration preserves that NULL).
     let mut stmt = conn
-        .prepare(if with_project {
+        .prepare(if with_ai_blocked {
+            "SELECT id, path, name, project_id, ai_blocked FROM code_roots ORDER BY pos"
+        } else if with_project {
             "SELECT id, path, name, project_id FROM code_roots ORDER BY pos"
         } else {
             "SELECT id, path, name FROM code_roots ORDER BY pos"
         })
         .map_err(|e| StoreError::convert(path, e))?;
-    let rows: Vec<(String, String, String, Option<String>)> = stmt
+    let rows: Vec<(String, String, String, Option<String>, bool)> = stmt
         .query_map([], |row| {
             Ok((
                 row.get(0)?,
                 row.get(1)?,
                 row.get(2)?,
                 row.get(3).unwrap_or(None),
+                row.get(4).unwrap_or(false),
             ))
         })
         .map_err(|e| StoreError::convert(path, e))?
         .collect::<Result<_, _>>()
         .map_err(|e| StoreError::convert(path, e))?;
     let mut log = CodeRootLog::new();
-    for (id, path_value, name, project_id) in rows {
+    for (id, path_value, name, project_id, ai_blocked) in rows {
         if id.trim().is_empty() || path_value.trim().is_empty() || name.trim().is_empty() {
             return Err(invalid("invalid code root"));
         }
@@ -131,7 +144,7 @@ pub(crate) fn load_code_roots(
                 return Err(invalid(format!("root {id} points to a missing project")));
             }
         }
-        log.rehydrate(id, path_value, name, project_id);
+        log.rehydrate(id, path_value, name, project_id, ai_blocked);
     }
     Ok(log)
 }

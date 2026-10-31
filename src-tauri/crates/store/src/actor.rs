@@ -802,6 +802,7 @@ mod tests {
             path: "/tmp/fe".to_string(),
             name: "fe".to_string(),
             project_id: Some("proj-1".to_string()),
+            ai_blocked: false,
         }
     }
 

@@ -163,6 +163,8 @@ pub struct CodeRoot {
     /// Linking writes nothing in the repository and merges nothing:
     /// it is a local workspace-to-domain pointer.
     pub project_id: Option<String>,
+    /// Never send this folder's code to Meta. Checked where scope is read.
+    pub ai_blocked: bool,
 }
 
 /// In-memory root set, a mirror of the last confirmed commit.
@@ -693,6 +695,7 @@ mod tests {
             path: dir.display().to_string(),
             name: "a".into(),
             project_id: None,
+            ai_blocked: false,
         })
         .expect("add");
         assert!(ws.get("root-1").is_some());

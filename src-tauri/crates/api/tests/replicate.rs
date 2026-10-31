@@ -68,6 +68,7 @@ fn fixture(build: impl Fn(&std::path::Path)) -> Fixture {
         path: dir.display().to_string(),
         name: "fe".to_string(),
         project_id: None,
+        ai_blocked: false,
     }]);
     Fixture {
         store,
@@ -361,6 +362,7 @@ fn root_bound_to_another_project_blocks() {
         path: fe.dir.display().to_string(),
         name: "fe".to_string(),
         project_id: Some(fe.project.clone()),
+        ai_blocked: false,
     }]);
     let err = plan_replication(
         &fe.store,

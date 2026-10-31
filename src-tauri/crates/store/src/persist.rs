@@ -1170,7 +1170,7 @@ pub(crate) fn load(conn: &Connection, path: &Path) -> Result<LoadedState, StoreE
         MockupLog::new()
     };
     let code_roots = if version >= 11 {
-        crate::code_roots::load_code_roots(conn, path, &store, version >= 12)?
+        crate::code_roots::load_code_roots(conn, path, &store, version >= 12, version >= 16)?
     } else {
         CodeRootLog::new()
     };
@@ -2332,6 +2332,7 @@ mod tests {
             path: "/tmp/fe".to_string(),
             name: "fe".to_string(),
             project_id: Some("proj-1".to_string()),
+            ai_blocked: false,
         }
     }
 

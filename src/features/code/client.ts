@@ -114,6 +114,17 @@ export function setRootProject(rootId: string, projectId: string | null): Promis
   return call("code_set_root_project", { input: { rootId, projectId } });
 }
 
+export function setRootAiBlocked(rootId: string, blocked: boolean): Promise<CodeRootDto> {
+  return call("code_set_root_ai_blocked", { input: { rootId, blocked } });
+}
+
+export function askCode(
+  question: string,
+  files: Array<{ rootId: string; rel: string }>,
+): Promise<{ answer: string; model: string }> {
+  return call("code_ask", { input: { question, files } });
+}
+
 export function addModuleLink(
   moduleId: string,
   rootId: string,

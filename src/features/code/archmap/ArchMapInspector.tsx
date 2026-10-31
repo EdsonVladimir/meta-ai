@@ -62,6 +62,8 @@ interface ArchMapInspectorProps {
   referenceNote?: string | null;
   /** Marks a folder as an external library. */
   onMarkExternal?: (rootId: string, rel: string) => void;
+  /** Opens a Muse dialog on this file. */
+  onAskMuse?: (rootId: string, rel: string) => void;
   /** Selected member of the selected symbol (index), from the board or here. */
   selectedMember?: number | null;
   onSelectMember?: (index: number | null) => void;
@@ -115,6 +117,7 @@ export function ArchMapInspector({
   memberships,
   referenceNote,
   onMarkExternal,
+  onAskMuse,
   selectedMember,
   onSelectMember,
   onShowFlow,
@@ -154,6 +157,17 @@ export function ArchMapInspector({
       <p className="hint" title={file.rel}>
         {file.rel}
       </p>
+      {onAskMuse !== undefined && (
+        <div className="button-row">
+          <button
+            type="button"
+            className="secondary small"
+            onClick={() => onAskMuse(file.rootId, file.rel)}
+          >
+            Ask Muse
+          </button>
+        </div>
+      )}
       <p className="hint">
         {languageName(file.rel)} file · Layer: <strong>{ARCH_LAYER_BY_ID[file.layer].label}</strong> ·{" "}
         {file.layerReason}

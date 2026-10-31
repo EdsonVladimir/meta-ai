@@ -172,6 +172,7 @@ pub fn code_replicate_execute(
             root.path.clone(),
             root.name.clone(),
             root.project_id.clone(),
+            root.ai_blocked,
         );
     }
     *ready.code_roots = log;

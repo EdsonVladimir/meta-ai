@@ -94,6 +94,10 @@ interface CodeTreeProps {
   /** Folder picked for exploring (highlight only, never a scope). */
   folderSelection?: { rootId: string; rel: string } | null;
   onSelectFolder?: (rootId: string, rel: string) => void;
+  /** Opens a Muse dialog on a folder or file. */
+  onAskMuse?: (rootId: string, rel: string, kind: "folder" | "file") => void;
+  /** Marks a root so its code never reaches Muse. */
+  onSetRootAiBlocked?: (root: CodeRootDto, blocked: boolean) => void;
   /** Explicit folder analysis from the row menu. */
   onAnalyzeFolder?: (rootId: string, rel: string) => void;
   /** Detected projects hidden from Architecture, by `rootId::rel`. */
@@ -127,6 +131,8 @@ export function CodeTree({
   folderSelection,
   onSelectFolder,
   onAnalyzeFolder,
+  onAskMuse,
+  onSetRootAiBlocked,
   hiddenProjects,
   onToggleMapProject,
 }: CodeTreeProps) {
@@ -593,6 +599,35 @@ export function CodeTree({
               }}
             >
               {menu.target.kind === "dir" ? "Add folder to the analysis" : "Add to the analysis"}
+            </button>
+          )}
+          {onAskMuse !== undefined && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={menu.target.root.aiBlocked}
+              title={menu.target.root.aiBlocked ? "This folder never goes to Muse" : undefined}
+              onClick={() => {
+                const target = menu.target;
+                setMenu(null);
+                if (target.kind === "root") onAskMuse(target.root.id, "", "folder");
+                else onAskMuse(target.root.id, target.entry.rel, target.kind === "dir" ? "folder" : "file");
+              }}
+            >
+              Ask Muse
+            </button>
+          )}
+          {menu.target.kind === "root" && onSetRootAiBlocked !== undefined && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const { root } = menu.target;
+                setMenu(null);
+                onSetRootAiBlocked(root, !root.aiBlocked);
+              }}
+            >
+              {menu.target.root.aiBlocked ? "Allow sending to Muse" : "Never send to Muse"}
             </button>
           )}
           {menu.target.kind !== "file" && onAnalyzeFolder !== undefined && (

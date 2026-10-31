@@ -81,6 +81,8 @@ interface CodeProposalDialogProps {
   onFileAccepted: (rootId: string, rel: string) => void;
   /** Reports the current generation (null when cleared or closed) for overlays. */
   onGeneration?: (generation: CodeGenerationDto | null) => void;
+  /** Requirement just written in a Muse dialog: generates on open. */
+  autoRequirementId?: string | null;
   /** Steps aside so the proposal can be read on the X-ray; keeps its state. */
   onViewOnXray?: () => void;
   /** Mounted but out of the way: nothing is lost while the X-ray is on screen. */
@@ -105,6 +107,7 @@ export function CodeProposalDialog({
   onReanalyze,
   onFileAccepted,
   onGeneration,
+  autoRequirementId = null,
   onViewOnXray,
   hidden = false,
   onClose,
@@ -255,6 +258,21 @@ export function CodeProposalDialog({
       if (live.current) setGenerating(false);
     }
   }
+
+  // The Muse dialog already said what to do: one request, once.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRequirementId === null || autoRan.current || requirements === null) return;
+    if (selectedReq !== autoRequirementId) {
+      if (requirements.some((req) => req.id === autoRequirementId)) {
+        setSelectedReq(autoRequirementId);
+      }
+      return;
+    }
+    autoRan.current = true;
+    void runGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRequirementId, requirements, selectedReq]);
 
   async function loadPrevious(): Promise<void> {
     setPreviousBusy(true);

@@ -23,7 +23,7 @@ use commands::baseline::{
 };
 use commands::code::{
     code_add_root, code_analyze_rust, code_list_dir, code_list_roots, code_read_file,
-    code_remove_root, code_set_root_project, code_write_file,
+    code_remove_root, code_set_root_ai_blocked, code_set_root_project, code_write_file,
 };
 use commands::code_links::{
     code_add_module_link, code_add_symbol_link, code_delete_snapshot, code_get_snapshot,
@@ -31,8 +31,8 @@ use commands::code_links::{
     code_verify_snapshot,
 };
 use commands::codegen::{
-    code_accept_file, code_discard_file, code_gen_context, code_generate, code_list_generations,
-    code_mockup_screens,
+    code_accept_file, code_ask, code_discard_file, code_gen_context, code_generate,
+    code_list_generations, code_mockup_screens,
 };
 use commands::delivery::{
     core_create_delivery, core_export_delivery_preview, core_export_delivery_save,
@@ -198,6 +198,7 @@ pub fn run() {
             code_add_root,
             code_remove_root,
             code_set_root_project,
+            code_set_root_ai_blocked,
             code_list_dir,
             code_read_file,
             code_write_file,
@@ -217,6 +218,7 @@ pub fn run() {
             code_verify_snapshot,
             code_gen_context,
             code_generate,
+            code_ask,
             code_list_generations,
             code_mockup_screens,
             code_replicate_preview,

@@ -32,6 +32,22 @@ export type ArchScope =
   | { kind: "project"; rootId: string; rel: string }
   | { kind: "folder"; rootId: string; rel: string };
 
+/** What a Muse dialog is about: a folder or one file of the workspace. */
+export interface MuseTarget {
+  rootId: string;
+  /** Root-relative; "" for the whole folder. */
+  rel: string;
+  kind: "folder" | "file";
+}
+
+/** Requirement written in a Muse dialog, on its way to a proposal. */
+export interface MuseProposalRequest {
+  projectId: string;
+  moduleId: string;
+  requirementId: string;
+  files: Array<{ rootId: string; rel: string }>;
+}
+
 /** Folder picked in the code tree for exploring (never a scope). */
 export interface CodeFolderSelection {
   rootId: string;
@@ -172,6 +188,8 @@ interface RequirementsUiState {
   mapHiddenProjects: Record<string, boolean>;
   /** Folder picked in the code tree for exploring (session-only). */
   codeFolderSelection: CodeFolderSelection | null;
+  museTarget: MuseTarget | null;
+  museProposal: MuseProposalRequest | null;
   /** Board inspector width (null = CSS default); collapse is session-only. */
   archInspectorWidth: number | null;
   archInspectorCollapsed: boolean;
@@ -213,6 +231,9 @@ interface RequirementsUiState {
   toggleMapProject: (key: string) => void;
   showAllMapProjects: () => void;
   setCodeFolderSelection: (selection: CodeFolderSelection | null) => void;
+  /** Opens the Muse dialog on the target, in the Assistant tab. */
+  setMuseTarget: (target: MuseTarget | null) => void;
+  setMuseProposal: (request: MuseProposalRequest | null) => void;
   setArchInspectorWidth: (width: number | null) => void;
   setArchInspectorCollapsed: (collapsed: boolean) => void;
   /** Sets (or clears, with null) the manual layer of one symbol. */
@@ -413,6 +434,8 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   archScope: { kind: "all" },
   mapHiddenProjects: {},
   codeFolderSelection: null,
+  museTarget: null,
+  museProposal: null,
   archInspectorWidth: null,
   archInspectorCollapsed: true,
   layerOverrides: {},
@@ -430,6 +453,17 @@ export const useRequirementsUi = create<RequirementsUiState>()(
     })),
   showAllMapProjects: () => set({ mapHiddenProjects: {} }),
   setCodeFolderSelection: (codeFolderSelection) => set({ codeFolderSelection }),
+  setMuseTarget: (museTarget) =>
+    set((state) =>
+      museTarget === null
+        ? { museTarget }
+        : {
+            museTarget,
+            rightTab: "assistant",
+            panels: { ...state.panels, assistant: true },
+          },
+    ),
+  setMuseProposal: (museProposal) => set({ museProposal }),
   setArchInspectorWidth: (archInspectorWidth) => set({ archInspectorWidth }),
   setArchInspectorCollapsed: (archInspectorCollapsed) => set({ archInspectorCollapsed }),
   setLayerOverride: (id, value) =>

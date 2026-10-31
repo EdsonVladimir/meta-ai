@@ -1778,12 +1778,14 @@ fn code_roots_roundtrip_verbatim_including_missing() {
             path: "/tmp/ruth-real".to_string(),
             name: "real".to_string(),
             project_id: None,
+            ai_blocked: false,
         },
         ruth_code::CodeRoot {
             id: "root-2".to_string(),
             path: "/does/not/exist".to_string(),
             name: "old".to_string(),
             project_id: None,
+            ai_blocked: false,
         },
     ];
     db.save_code_roots(&roots, 7).expect("save");
@@ -1843,6 +1845,7 @@ fn v11_database_migrates_preserving_roots_and_adding_links() {
             path: "/tmp/ruth-v11".to_string(),
             name: "v11".to_string(),
             project_id: None,
+            ai_blocked: false,
         }],
         rich.ids.checkpoint(),
     )
@@ -1899,6 +1902,7 @@ fn links_and_snapshots_roundtrip_and_reject_dangling() {
         path: repo.display().to_string(),
         name: "repo".to_string(),
         project_id: Some("proy-1".to_string()),
+        ai_blocked: false,
     }];
     db.save_code_roots(&roots, rich.ids.checkpoint())
         .expect("roots");
@@ -2169,4 +2173,53 @@ fn codegen_v13_migrates_screen_origin_empty() {
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("version");
     assert_eq!(version, ruth_store::SCHEMA_VERSION);
+}
+
+#[test]
+fn the_never_send_mark_survives_reopen_and_old_roots_stay_allowed() {
+    let tmp = TempDb::new("ai-blocked");
+    {
+        let (db, _) = DbActor::spawn(&tmp.path).expect("open");
+        let roots = vec![
+            ruth_code::CodeRoot {
+                id: "root-1".to_string(),
+                path: "/a".to_string(),
+                name: "a".to_string(),
+                project_id: None,
+                ai_blocked: true,
+            },
+            ruth_code::CodeRoot {
+                id: "root-2".to_string(),
+                path: "/b".to_string(),
+                name: "b".to_string(),
+                project_id: None,
+                ai_blocked: false,
+            },
+        ];
+        db.save_code_roots(&roots, 9).expect("roots");
+        db.close();
+    }
+    {
+        let (db, loaded) = DbActor::spawn(&tmp.path).expect("reopen");
+        let roots = loaded.code_roots.roots();
+        assert!(roots[0].ai_blocked);
+        assert!(!roots[1].ai_blocked);
+        db.close();
+    }
+    // A v15 database has no column: reopening adds it, allowing every root.
+    {
+        let conn = rusqlite::Connection::open(&tmp.path).expect("raw");
+        conn.execute("ALTER TABLE code_roots DROP COLUMN ai_blocked", [])
+            .expect("drop");
+        conn.execute_batch("PRAGMA user_version = 15")
+            .expect("version");
+    }
+    let (db, loaded) = DbActor::spawn(&tmp.path).expect("migrate");
+    assert_eq!(loaded.code_roots.roots().len(), 2);
+    assert!(loaded
+        .code_roots
+        .roots()
+        .iter()
+        .all(|root| !root.ai_blocked));
+    db.close();
 }

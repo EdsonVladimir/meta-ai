@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 function root(): CodeRootDto {
-  return { id: "r1", path: "/repo/acme", name: "ACME", missing: false, projectId: "p1" };
+  return { id: "r1", path: "/repo/acme", name: "ACME", missing: false, aiBlocked: false, projectId: "p1" };
 }
 
 function dir(rel: string): CodeEntryDto {

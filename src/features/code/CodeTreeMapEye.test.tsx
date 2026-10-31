@@ -14,7 +14,7 @@ vi.mock("./client", () => ({
 afterEach(() => cleanup());
 
 function root(): CodeRootDto {
-  return { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: "p1" };
+  return { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, aiBlocked: false, projectId: "p1" };
 }
 
 function renderTree(options: {

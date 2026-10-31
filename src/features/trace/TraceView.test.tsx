@@ -118,7 +118,7 @@ function api(overrides: Partial<TraceApi> = {}): TraceApi {
     listSnapshots: vi.fn(async () => [snapshotMeta({})]),
     getSnapshot: vi.fn(async (id: string) => ({ meta: snapshotMeta({ id }), result: snapshotResult() })),
     listRoots: vi.fn(async () => [
-      { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: "proj-1" },
+      { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, aiBlocked: false, projectId: "proj-1" },
     ]),
     readFileText: vi.fn(async () => "current content"),
     listModules: vi.fn(async () => [{ id: "mod-1", name: "Sales" }]),

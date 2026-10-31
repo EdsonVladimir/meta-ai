@@ -63,6 +63,7 @@ fn baby() -> Baby {
         path: dir.display().to_string(),
         name: "baby".to_string(),
         project_id: Some(project.clone()),
+        ai_blocked: false,
     }];
     Baby {
         store,
@@ -552,6 +553,7 @@ fn portabilidad_exporta_y_rechaza_versiones() {
         path: "/tmp/x".to_string(),
         name: "x".to_string(),
         project_id: Some("proy-1".to_string()),
+        ai_blocked: false,
     }];
     let export = ruth_api::export_portable(
         Some("proy-1"),

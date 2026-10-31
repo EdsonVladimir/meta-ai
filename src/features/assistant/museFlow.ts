@@ -1,0 +1,96 @@
+// Folder-first Muse: what a dialog sends and which project it lands in.
+// Pure orchestration with injected IO. The domain still needs a project
+// and a module to trace a requirement; Ruth creates them from the folder
+// instead of asking for them. Each step that fails says so and deletes
+// nothing, as `projectFromFolder` does.
+import type { MuseTarget } from "../requirements/uiStore";
+
+/** Same bound as the Rust side (`MAX_CODE_SCOPE_FILES`). */
+export const MUSE_MAX_FILES = 8;
+/** Files listed to choose from; a folder may hold many more. */
+export const MUSE_MAX_CANDIDATES = 60;
+const MAX_DIRS_WALKED = 200;
+const SOURCE = /\.(ts|tsx|js|jsx|mts|rs|java|kt|py|go|cs|php|rb|html|css|scss|sql)$/i;
+const NOT_SOURCE = /(\.spec\.|\.test\.|\.d\.ts$|\.min\.)/i;
+
+export interface MuseFile {
+  rootId: string;
+  rel: string;
+}
+
+interface Entry {
+  name: string;
+  rel: string;
+  kind: string;
+}
+
+/** Source files under a target, shallow first: the closest files explain it. */
+export async function collectMuseFiles(
+  target: MuseTarget,
+  listDir: (rootId: string, rel: string) => Promise<{ entries: Entry[] }>,
+): Promise<{ files: MuseFile[]; truncated: boolean }> {
+  if (target.kind === "file") {
+    return { files: [{ rootId: target.rootId, rel: target.rel }], truncated: false };
+  }
+  const files: MuseFile[] = [];
+  const queue = [target.rel];
+  let walked = 0;
+  while (queue.length > 0 && walked < MAX_DIRS_WALKED && files.length < MUSE_MAX_CANDIDATES) {
+    const dir = queue.shift() as string;
+    walked += 1;
+    const { entries } = await listDir(target.rootId, dir);
+    const sorted = [...entries].sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of sorted) {
+      if (entry.name.startsWith(".")) continue;
+      if (entry.kind === "dir") queue.push(entry.rel);
+      else if (entry.kind === "file" && SOURCE.test(entry.name) && !NOT_SOURCE.test(entry.name)) {
+        files.push({ rootId: target.rootId, rel: entry.rel });
+      }
+    }
+  }
+  const truncated = queue.length > 0 || files.length > MUSE_MAX_CANDIDATES;
+  return { files: files.slice(0, MUSE_MAX_CANDIDATES), truncated };
+}
+
+export interface MuseLinkDeps {
+  listModules: (projectId: string) => Promise<Array<{ id: string; name: string; archived: boolean }>>;
+  createProject: () => Promise<{ id: string; name: string }>;
+  renameProject: (projectId: string, expectedName: string, name: string) => Promise<unknown>;
+  setRootProject: (rootId: string, projectId: string) => Promise<unknown>;
+  createModule: (projectId: string) => Promise<{ id: string; name: string }>;
+  renameModule: (
+    projectId: string,
+    moduleId: string,
+    expectedName: string,
+    name: string,
+  ) => Promise<unknown>;
+}
+
+/** The folder a target belongs to: itself, or the parent of a file. */
+export function moduleNameOf(target: MuseTarget, rootName: string): string {
+  const parts = target.rel.split("/").filter((part) => part !== "");
+  const folder = target.kind === "file" ? parts.slice(0, -1) : parts;
+  return folder[folder.length - 1] ?? rootName;
+}
+
+/** Project and module of a folder, created on first use. */
+export async function linkMuseTarget(
+  target: MuseTarget,
+  root: { id: string; name: string; projectId: string | null },
+  deps: MuseLinkDeps,
+): Promise<{ projectId: string; moduleId: string }> {
+  let projectId = root.projectId;
+  if (projectId === null) {
+    const created = await deps.createProject();
+    await deps.renameProject(created.id, created.name, root.name);
+    await deps.setRootProject(root.id, created.id);
+    projectId = created.id;
+  }
+  const name = moduleNameOf(target, root.name);
+  const modules = await deps.listModules(projectId);
+  const known = modules.find((entry) => entry.name === name && !entry.archived);
+  if (known !== undefined) return { projectId, moduleId: known.id };
+  const created = await deps.createModule(projectId);
+  await deps.renameModule(projectId, created.id, created.name, name);
+  return { projectId, moduleId: created.id };
+}

@@ -3,9 +3,9 @@
 // toolbar (filters, search, edges, module, details); this view only
 // keeps the shared zoom so scope switches never reset it. Saved
 // content only; drafts warn where analyzed.
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useCodeWorkspace } from "../useCodeWorkspace";
-import { useRequirementsUi } from "../../requirements/uiStore";
+import { useRequirementsUi, type MuseProposalRequest } from "../../requirements/uiStore";
 import { StructureView, scopeKey, type ScopeFile } from "../structure/StructureView";
 import { CodeProposalDialog } from "../structure/CodeProposalDialog";
 import { acceptCodeFile, discardCodeFile, normalizeCodeError } from "../client";
@@ -53,6 +53,20 @@ export function ArchitectureView() {
   const [chainFiles, setChainFiles] = useState<ScopeFile[]>([]);
   const [proposal, setProposal] = useState<CodeGenerationDto | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
+  // A Muse dialog hands its requirement here once its module is selected.
+  const museProposal = useRequirementsUi((s) => s.museProposal);
+  const setMuseProposal = useRequirementsUi((s) => s.setMuseProposal);
+  const [museRequest, setMuseRequest] = useState<MuseProposalRequest | null>(null);
+  useEffect(() => {
+    if (museProposal === null) return;
+    if (museProposal.projectId !== selectedProjectId || museProposal.moduleId !== selectedModuleId) {
+      return;
+    }
+    setMuseRequest(museProposal);
+    setProposeOpen(true);
+    setProposeHidden(false);
+    setMuseProposal(null);
+  }, [museProposal, selectedProjectId, selectedModuleId, setMuseProposal]);
   const handleGeneration = useCallback((generation: CodeGenerationDto | null): void => {
     setProposal(generation);
   }, []);
@@ -128,7 +142,7 @@ export function ArchitectureView() {
   }
   const rootNames = Object.fromEntries(roots.map((root) => [root.id, root.name]));
   const canPropose = selectedProjectId !== null && selectedModuleId !== null;
-  const proposalScope = scope.length > 0 ? scope : chainFiles;
+  const proposalScope = museRequest?.files ?? (scope.length > 0 ? scope : chainFiles);
   const footerActions = (
     <>
       <button
@@ -235,9 +249,13 @@ export function ArchitectureView() {
             requestReanalyze([{ rootId, rel }]);
           }}
           onGeneration={handleGeneration}
+          autoRequirementId={museRequest?.requirementId ?? null}
           onViewOnXray={() => setProposeHidden(true)}
           hidden={proposeHidden}
-          onClose={() => setProposeOpen(false)}
+          onClose={() => {
+            setProposeOpen(false);
+            setMuseRequest(null);
+          }}
           prefs={prefs}
           loader={loader}
         />

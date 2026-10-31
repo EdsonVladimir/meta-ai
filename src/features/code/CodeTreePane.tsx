@@ -1,5 +1,7 @@
 // Left code panel: workspace folders. It shares the session with the
 // editor through the provider (a single truth).
+import { useState } from "react";
+import { normalizeCodeError, setRootAiBlocked } from "./client";
 import { useCodeWorkspace } from "./useCodeWorkspace";
 import { useRequirementsUi } from "../requirements/uiStore";
 import { CodeTree } from "./CodeTree";
@@ -43,6 +45,8 @@ export function CodeTreePane() {
   const setArchScope = useRequirementsUi((s) => s.setArchScope);
   const folderSelection = useRequirementsUi((s) => s.codeFolderSelection);
   const setCodeFolderSelection = useRequirementsUi((s) => s.setCodeFolderSelection);
+  const setMuseTarget = useRequirementsUi((s) => s.setMuseTarget);
+  const [aiBlockError, setAiBlockError] = useState<string | null>(null);
   const hiddenProjects = useRequirementsUi((s) => s.mapHiddenProjects);
   const toggleMapProject = useRequirementsUi((s) => s.toggleMapProject);
 
@@ -80,9 +84,20 @@ export function CodeTreePane() {
         folderSelection={folderSelection}
         onSelectFolder={(rootId, rel) => setCodeFolderSelection({ rootId, rel })}
         onAnalyzeFolder={(rootId, rel) => setArchScope({ kind: "folder", rootId, rel })}
+        onAskMuse={(rootId, rel, kind) => setMuseTarget({ rootId, rel, kind })}
+        onSetRootAiBlocked={(root, blocked) => {
+          void setRootAiBlocked(root.id, blocked)
+            .then(() => reloadRoots())
+            .catch((raw) => setAiBlockError(normalizeCodeError(raw).message));
+        }}
         hiddenProjects={hiddenProjects}
         onToggleMapProject={toggleMapProject}
       />
+      {aiBlockError !== null && (
+        <p className="error" role="alert">
+          {aiBlockError}
+        </p>
+      )}
       {addError !== null && (
         <p className="error" role="alert">
           {addError}

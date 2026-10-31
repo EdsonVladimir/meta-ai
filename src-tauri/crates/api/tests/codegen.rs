@@ -3,7 +3,9 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use ruth_api::{AcceptCheck, IdGen, RecordCodeGenInput, ScopeFileInput};
+use ruth_api::{
+    read_ask_scope, snapshot_code_context, AcceptCheck, IdGen, RecordCodeGenInput, ScopeFileInput,
+};
 use ruth_code::{CodeRoot, CodeWorkspace};
 use ruth_core::application::Store;
 use ruth_meta::code::{
@@ -67,6 +69,7 @@ fn baby() -> Baby {
         path: dir.display().to_string(),
         name: "baby".to_string(),
         project_id: Some(project.clone()),
+        ai_blocked: false,
     }]);
     Baby {
         store,
@@ -111,6 +114,35 @@ fn create(rel: &str, content: &str) -> ValidatedCodeFile {
         operation: CodeOperation::Create,
         content: content.to_string(),
     }
+}
+
+#[test]
+fn a_blocked_folder_never_reaches_a_prompt() {
+    let mut baby = baby();
+    let scope = scope_one();
+    assert!(read_ask_scope(&baby.roots, &scope).is_ok());
+    let mut roots = baby.roots.roots().to_vec();
+    roots[0].ai_blocked = true;
+    baby.roots = CodeWorkspace::from_roots(roots);
+    let asked = read_ask_scope(&baby.roots, &scope).expect_err("blocked");
+    assert_eq!(asked.kind, "code_ai_blocked");
+    let proposed = snapshot_code_context(
+        &baby.store,
+        &baby.roots,
+        &baby.project,
+        &baby.module,
+        &baby.req,
+        &scope,
+    )
+    .expect_err("blocked");
+    assert_eq!(proposed.kind, "code_ai_blocked");
+}
+
+#[test]
+fn asking_needs_files() {
+    let baby = baby();
+    let err = read_ask_scope(&baby.roots, &[]).expect_err("empty");
+    assert_eq!(err.kind, "empty_scope");
 }
 
 #[test]

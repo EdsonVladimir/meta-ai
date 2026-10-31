@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState, type CSSPropertie
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauriEnvironment } from "../../lib/env";
 import { createProjectFromFolder } from "./projectFromFolder";
+import { MusePanel } from "../assistant/MusePanel";
 import { addCodeRoot, setRootProject } from "../code/client";
 import {
   approveVersion,
@@ -56,7 +57,7 @@ import { RequirementEditor } from "./RequirementEditor";
 import { ReviewPanel } from "./ReviewPanel";
 import { UnsavedDialog } from "./UnsavedDialog";
 import { withDesign, withMockup, withRequirement, withScreen } from "./navigation";
-import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, useRequirementsUi, type CenterView, type DocSaveState, type PanelName, type RightTab, type Selection } from "./uiStore";
+import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, useRequirementsUi, type CenterView, type DocSaveState, type MuseProposalRequest, type PanelName, type RightTab, type Selection } from "./uiStore";
 import { dirtyDocKeys, docKey } from "./saveStatus";
 import { GenerationPanel } from "../proposals/GenerationPanel";
 import {
@@ -163,6 +164,7 @@ export function RequirementsWorkspace() {
   const showTerminal = useRequirementsUi((s) => s.panels.terminal);
   const showAssistant = useRequirementsUi((s) => s.panels.assistant);
   const rightTab = useRequirementsUi((s) => s.rightTab);
+  const museTarget = useRequirementsUi((s) => s.museTarget);
   const rightWidth = useRequirementsUi((s) => s.rightWidth);
   const showRight = showReview || showAssistant;
 
@@ -2571,6 +2573,20 @@ export function RequirementsWorkspace() {
     useRequirementsUi.getState().togglePanel(panel);
   }
 
+  // A Muse dialog saved its requirement: show its module and propose.
+  function handleMuseProposal(request: MuseProposalRequest) {
+    setExplorerRefresh((t) => t + 1);
+    const ui = useRequirementsUi.getState();
+    ui.bumpCodeLibrary();
+    void listCodeRoots().then(setCodeRoots);
+    applySelection(
+      { projectId: request.projectId, moduleId: request.moduleId, requirementId: null, designId: null, mockupId: null, screenId: null },
+      false,
+    );
+    ui.setCenterView("architecture");
+    ui.setMuseProposal(request);
+  }
+
   function showRightTab(tab: RightTab) {
     const ui = useRequirementsUi.getState();
     ui.setRightTab(tab);
@@ -3157,7 +3173,14 @@ export function RequirementsWorkspace() {
               </button>
             </div>
             {rightTab === "assistant" ? (
-              projectId !== null && moduleId !== null ? (
+              museTarget !== null ? (
+                <MusePanel
+                  target={museTarget}
+                  roots={codeRoots}
+                  onClose={() => useRequirementsUi.getState().setMuseTarget(null)}
+                  onPropose={handleMuseProposal}
+                />
+              ) : projectId !== null && moduleId !== null ? (
                 <AssistantPanel
                   projectId={projectId}
                   moduleId={moduleId}
@@ -3186,7 +3209,9 @@ export function RequirementsWorkspace() {
                   onOpenImpact={() => useRequirementsUi.getState().setCenterView("impact")}
                 />
               ) : (
-                <p className="hint">Select a project and a module.</p>
+                <p className="hint">
+                  Right-click a folder or file and choose Ask Muse, or pick a module.
+                </p>
               )
             ) : (
               <>

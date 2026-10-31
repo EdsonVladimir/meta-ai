@@ -627,6 +627,7 @@ fn preview_project_lists_modules_and_blocks_until_empty_and_unbound() {
         "/tmp/fe".to_string(),
         "fe".to_string(),
         Some(lonely.clone()),
+        false,
     );
     let preview = ruth_api::archive_preview(
         &baby.store,
@@ -684,6 +685,7 @@ fn delete_project_checked_only_empty_unbound_and_unreferenced() {
         "/tmp/fe".to_string(),
         "fe".to_string(),
         Some(lonely.clone()),
+        false,
     );
     let err = delete(
         &mut baby.store,

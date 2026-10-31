@@ -23,6 +23,7 @@ const ROOT: CodeRootDto = {
   name: "frontend",
   missing: false,
   projectId: null,
+  aiBlocked: false,
 };
 
 function preview(overrides: Partial<ReplicatePreviewDto> = {}): ReplicatePreviewDto {

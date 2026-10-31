@@ -69,7 +69,7 @@ use rusqlite::{Connection, TransactionBehavior};
 
 use crate::error::StoreError;
 
-pub const SCHEMA_VERSION: i64 = 15;
+pub const SCHEMA_VERSION: i64 = 16;
 
 const DDL_V13: &str = "
 -- Code generations: one per requirement and scope, with its
@@ -620,7 +620,16 @@ pub(crate) fn migrate(conn: &mut Connection, path: &Path, fresh: bool) -> Result
     // empty in earlier databases: nothing to backfill.
     tx.execute_batch(DDL_V15)
         .map_err(|e| StoreError::convert(path, e))?;
-    tx.execute("PRAGMA user_version = 15", [])
+    // Migration v15→v16: folders whose code never goes to Meta. Guarded
+    // ALTER; existing roots stay allowed, as they were.
+    if !has_column(&tx, path, "code_roots", "ai_blocked")? {
+        tx.execute(
+            "ALTER TABLE code_roots ADD COLUMN ai_blocked INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|e| StoreError::convert(path, e))?;
+    }
+    tx.execute("PRAGMA user_version = 16", [])
         .map_err(|e| StoreError::convert(path, e))?;
     // Guaranteed real write: takes the lock that excludes second instances.
     let pid = std::process::id();

@@ -16,7 +16,7 @@ function root(overrides: Partial<CodeRootDto> & { id: string }): CodeRootDto {
   return {
     path: `/repo/${overrides.id}`,
     name: overrides.id,
-    missing: false,
+    missing: false,  aiBlocked: false,
     projectId: "proy-1",
     ...overrides,
   };

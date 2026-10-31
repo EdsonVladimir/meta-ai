@@ -1561,3 +1561,21 @@ that only reads the extraction; the extractors are unchanged.
   `templateUrl`/`styleUrls`), and pairing files by similar
   names would invent a relation.
 
+## Muse from folders
+
+A Muse dialog starts from a folder, a file or a board component
+(`ui.museTarget`), in the Assistant tab. The domain does not change: a
+requirement still needs a project and a module, so `linkMuseTarget`
+creates them from the folder on first use and reuses them after.
+
+- **Ask** (`code_ask`) sends the checked files and a question. It records
+  nothing and needs no project.
+- **Propose change** saves the message as a requirement and hands it to
+  the proposal dialog, which generates once. Output stays a proposal.
+- **Never send to Muse** (`code_roots.ai_blocked`, schema v16) is checked
+  in `read_scope_files`, the one place scope is read for a prompt, so it
+  also covers every proposal path. The UI only explains it.
+
+Limits: one question at a time, with no memory between turns; up to
+`MAX_CODE_SCOPE_FILES` files; the mark applies to a whole workspace root.
+
