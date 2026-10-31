@@ -1568,8 +1568,9 @@ A Muse dialog starts from a folder, a file or a board component
 requirement still needs a project and a module, so `linkMuseTarget`
 creates them from the folder on first use and reuses them after.
 
-- **Ask** (`code_ask`) sends the checked files and a question. It records
-  nothing and needs no project.
+- **Ask** (`code_ask`) sends a question with the files `pickMuseFiles`
+  chose: a spread of roles, not the first files of the folder. The person
+  can change them. It records nothing and needs no project.
 - **Propose change** saves the message as a requirement and hands it to
   the proposal dialog, which generates once. Output stays a proposal.
 - **Never send to Muse** (`code_roots.ai_blocked`, schema v16) is checked

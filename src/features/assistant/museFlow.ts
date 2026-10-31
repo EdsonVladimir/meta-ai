@@ -52,6 +52,44 @@ export async function collectMuseFiles(
   return { files: files.slice(0, MUSE_MAX_CANDIDATES), truncated };
 }
 
+/** Roles in reading order: what explains a feature comes first. */
+const FILE_ROLES = [
+  /\.routes?\.|routing/i,
+  /\.(component|page)\.|\.tsx$/i,
+  /\.(store|state)\.|\.signals?\./i,
+  /\.service\./i,
+  /\.(model|entity|dto|types?)\./i,
+  /\.(controller|resolver)\./i,
+  /\.module\./i,
+];
+
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? [];
+}
+
+/**
+ * The files Muse reads when the person chose none: a spread of roles,
+ * so a feature arrives whole, with files naming the message's words first.
+ */
+export function pickMuseFiles(candidates: MuseFile[], message: string): MuseFile[] {
+  const words = wordsOf(message);
+  const hits = (file: MuseFile): number =>
+    words.filter((word) => file.rel.toLowerCase().includes(word)).length;
+  const groups: MuseFile[][] = [...FILE_ROLES.map(() => []), []];
+  for (const file of candidates) {
+    const role = FILE_ROLES.findIndex((pattern) => pattern.test(file.rel));
+    groups[role === -1 ? FILE_ROLES.length : role].push(file);
+  }
+  for (const group of groups) group.sort((a, b) => hits(b) - hits(a));
+  const picked: MuseFile[] = [];
+  for (let turn = 0; picked.length < MUSE_MAX_FILES; turn += 1) {
+    const round = groups.flatMap((group) => group.slice(turn, turn + 1));
+    if (round.length === 0) break;
+    picked.push(...round);
+  }
+  return picked.slice(0, MUSE_MAX_FILES);
+}
+
 export interface MuseLinkDeps {
   listModules: (projectId: string) => Promise<Array<{ id: string; name: string; archived: boolean }>>;
   createProject: () => Promise<{ id: string; name: string }>;

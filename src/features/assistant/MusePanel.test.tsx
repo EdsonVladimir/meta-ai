@@ -44,19 +44,39 @@ function write(message: string): void {
 }
 
 describe("MusePanel", () => {
-  it("asks about the checked files and links nothing", async () => {
+  it("needs no choosing: it says how much it reads and asks", async () => {
     const fake = api();
     render(
       <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
     );
-    fireEvent.click(await screen.findByLabelText("core/f1.ts"));
-    expect(screen.getByRole("status").textContent).toContain("1 of 2");
+    expect((await screen.findByRole("status")).textContent).toContain("2 of 2");
+    expect(screen.queryByRole("checkbox")).toBeNull();
     write("What does it do?");
-    fireEvent.click(screen.getByRole("button", { name: "Ask Muse" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     expect(await screen.findByText("It validates.")).toBeTruthy();
-    expect(fake.ask).toHaveBeenCalledWith("What does it do?", [{ rootId: "r", rel: "core/f0.ts" }]);
+    expect(fake.ask).toHaveBeenCalledWith("What does it do?", [
+      { rootId: "r", rel: "core/f0.ts" },
+      { rootId: "r", rel: "core/f1.ts" },
+    ]);
     expect(fake.createProject).not.toHaveBeenCalled();
     expect(fake.createRequirement).not.toHaveBeenCalled();
+  });
+
+  it("lets the person change the files, and tells Muse what stayed out", async () => {
+    const fake = api();
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Change files" }));
+    fireEvent.click(screen.getByLabelText("core/f1.ts"));
+    expect(screen.getByRole("status").textContent).toContain("1 of 2");
+    write("Why?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    expect(fake.ask).toHaveBeenCalledWith(
+      "Why?\n\nAlso in this folder, not included: core/f1.ts",
+      [{ rootId: "r", rel: "core/f0.ts" }],
+    );
   });
 
   it("saves a requirement and hands it to the proposal flow", async () => {
@@ -65,10 +85,9 @@ describe("MusePanel", () => {
     render(
       <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={onPropose} api={fake} />,
     );
-    await screen.findByLabelText("core/f0.ts");
-    fireEvent.click(screen.getByLabelText("Propose change"));
+    await screen.findByRole("status");
     write("Add a total");
-    fireEvent.click(screen.getByRole("button", { name: "Save and propose" }));
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
     await waitFor(() => expect(onPropose).toHaveBeenCalledTimes(1));
     expect(fake.createRequirement).toHaveBeenCalledWith(
       expect.objectContaining({ projectId: "p1", moduleId: "m1", content: "Add a total" }),
@@ -77,11 +96,28 @@ describe("MusePanel", () => {
     expect(fake.ask).not.toHaveBeenCalled();
   });
 
-  it("checks up to the file limit and locks the rest", async () => {
+  it("turns a question into a change without rewriting it", async () => {
+    const fake = api();
+    const onPropose = vi.fn();
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={onPropose} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a user form");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Propose this as a change" }));
+    await waitFor(() => expect(onPropose).toHaveBeenCalledTimes(1));
+    expect(fake.createRequirement).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "Add a user form" }),
+    );
+  });
+
+  it("reads up to the limit and locks the rest", async () => {
     render(
       <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api(10)} />,
     );
-    const extra = (await screen.findByLabelText("core/f9.ts")) as HTMLInputElement;
+    fireEvent.click(await screen.findByRole("button", { name: "Change files" }));
+    const extra = screen.getByLabelText("core/f9.ts") as HTMLInputElement;
     expect(extra.checked).toBe(false);
     expect(extra.disabled).toBe(true);
     expect(screen.getByRole("status").textContent).toContain("8 of 10");

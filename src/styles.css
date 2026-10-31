@@ -6215,10 +6215,11 @@ button.archboard-member:hover {
   overflow-wrap: anywhere;
 }
 
-.muse-modes {
+.muse-reads {
   display: flex;
-  gap: 0.75rem;
-  font-size: 0.85rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
 }
 
 .muse-panel textarea {

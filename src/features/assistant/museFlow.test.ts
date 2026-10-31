@@ -5,6 +5,8 @@ import {
   linkMuseTarget,
   moduleNameOf,
   MUSE_MAX_CANDIDATES,
+  MUSE_MAX_FILES,
+  pickMuseFiles,
   type MuseLinkDeps,
 } from "./museFlow";
 
@@ -53,6 +55,51 @@ describe("collectMuseFiles", () => {
     }));
     expect(out.files).toHaveLength(MUSE_MAX_CANDIDATES);
     expect(out.truncated).toBe(true);
+  });
+});
+
+describe("pickMuseFiles", () => {
+  const files = (rels: string[]) => rels.map((rel) => ({ rootId: "r", rel }));
+
+  it("spreads roles instead of taking the first files", () => {
+    const picked = pickMuseFiles(
+      files([
+        "src/main.ts",
+        "src/core/auth.guard.ts",
+        "src/core/auth.interceptor.ts",
+        "src/core/environment.ts",
+        "src/a/env.config.ts",
+        "src/a/b.config.ts",
+        "src/a/c.config.ts",
+        "src/a/d.config.ts",
+        "src/app/app.routes.ts",
+        "src/app/x/x-form.component.ts",
+        "src/app/x/x.store.ts",
+        "src/app/x/x.service.ts",
+        "src/app/x/x.model.ts",
+      ]),
+      "",
+    ).map((file) => file.rel);
+    expect(picked).toHaveLength(MUSE_MAX_FILES);
+    expect(picked).toEqual(
+      expect.arrayContaining([
+        "src/app/app.routes.ts",
+        "src/app/x/x-form.component.ts",
+        "src/app/x/x.store.ts",
+        "src/app/x/x.service.ts",
+        "src/app/x/x.model.ts",
+      ]),
+    );
+  });
+
+  it("puts files named in the message first within a role", () => {
+    const many = Array.from({ length: 12 }, (_, i) => `src/c${i}.component.ts`);
+    const picked = pickMuseFiles(files([...many, "src/usuarios.component.ts"]), "los usuarios");
+    expect(picked[0].rel).toBe("src/usuarios.component.ts");
+  });
+
+  it("returns everything when it fits", () => {
+    expect(pickMuseFiles(files(["a.ts"]), "x")).toHaveLength(1);
   });
 });
 

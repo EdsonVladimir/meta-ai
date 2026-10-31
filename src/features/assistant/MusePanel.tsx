@@ -1,6 +1,6 @@
-// Muse dialog on a folder, file or component. Everything that leaves the
-// machine is listed first. Ask answers from the checked files and
-// changes nothing; Propose saves the request as a requirement and hands
+// Muse dialog on a folder, file or component. Ruth picks what Muse reads
+// and says how much; the list stays one click away. Ask answers and
+// changes nothing; Propose saves the message as a requirement and hands
 // it to the proposal flow, so AI output stays a separate proposal.
 import { useEffect, useRef, useState } from "react";
 import { askCode, listCodeDir, normalizeCodeError, setRootProject } from "../code/client";
@@ -18,6 +18,7 @@ import {
   collectMuseFiles,
   linkMuseTarget,
   MUSE_MAX_FILES,
+  pickMuseFiles,
   type MuseFile,
   type MuseLinkDeps,
 } from "./museFlow";
@@ -74,8 +75,9 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
   const root = roots.find((entry) => entry.id === target.rootId) ?? null;
   const [candidates, setCandidates] = useState<MuseFile[] | null>(null);
   const [truncated, setTruncated] = useState(false);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [mode, setMode] = useState<"ask" | "propose">("ask");
+  /** Null until the person changes the files: Ruth keeps choosing. */
+  const [chosen, setChosen] = useState<Set<string> | null>(null);
+  const [showFiles, setShowFiles] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +95,8 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
         if (stale) return;
         setCandidates(found.files);
         setTruncated(found.truncated);
-        setChecked(new Set(found.files.slice(0, MUSE_MAX_FILES).map((file) => file.rel)));
+        setChosen(null);
+        setShowFiles(false);
       })
       .catch((raw) => {
         if (!stale) setError(reason(raw));
@@ -104,25 +107,31 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
   }, [target]);
 
   const blocked = root?.aiBlocked ?? false;
-  const files = (candidates ?? []).filter((file) => checked.has(file.rel));
+  const all = candidates ?? [];
+  const files =
+    chosen === null ? pickMuseFiles(all, text) : all.filter((file) => chosen.has(file.rel));
+  const picked = new Set(files.map((file) => file.rel));
   const canSend = !busy && !blocked && root !== null && text.trim() !== "" && files.length > 0;
 
   function toggle(rel: string): void {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(rel)) next.add(rel);
-      return next;
-    });
+    const next = new Set(picked);
+    if (!next.delete(rel)) next.add(rel);
+    setChosen(next);
   }
 
-  async function send(): Promise<void> {
+  async function send(mode: "ask" | "propose", raw: string): Promise<void> {
     if (root === null) return;
-    const message = text.trim();
+    const message = raw.trim();
     setBusy(true);
     setError(null);
     try {
       if (mode === "ask") {
-        const reply = await api.ask(message, files);
+        const others = all.filter((file) => !picked.has(file.rel)).map((file) => file.rel);
+        const question =
+          others.length === 0
+            ? message
+            : `${message}\n\nAlso in this folder, not included: ${others.join(", ")}`;
+        const reply = await api.ask(question, files);
         setTurns((prev) => [...prev, { question: message, answer: reply.answer }]);
       } else {
         const { projectId, moduleId } = await linkMuseTarget(target, root, api);
@@ -167,56 +176,60 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
             <p className="hint">No source files here.</p>
           )}
           {candidates !== null && candidates.length > 0 && (
-            <>
-              <p className="hint" role="status">
-                {`Muse will read ${files.length} of ${candidates.length}${truncated ? "+" : ""} files (up to ${MUSE_MAX_FILES}).`}
-              </p>
-              <ul className="muse-files" aria-label="Files sent to Muse">
-                {candidates.map((file) => (
-                  <li key={file.rel}>
-                    <label title={file.rel}>
-                      <input
-                        type="checkbox"
-                        checked={checked.has(file.rel)}
-                        disabled={!checked.has(file.rel) && files.length >= MUSE_MAX_FILES}
-                        onChange={() => toggle(file.rel)}
-                      />
-                      {file.rel}
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </>
+            <div className="muse-reads">
+              <span className="hint" role="status">
+                {`Muse reads ${files.length} of ${candidates.length}${truncated ? "+" : ""} files here.`}
+              </span>
+              <button
+                type="button"
+                className="secondary small"
+                aria-expanded={showFiles}
+                onClick={() => setShowFiles((prev) => !prev)}
+              >
+                {showFiles ? "Hide files" : "Change files"}
+              </button>
+            </div>
           )}
-          <div className="muse-modes" role="radiogroup" aria-label="What Muse does">
-            <label title="Muse explains from these files. Nothing changes.">
-              <input
-                type="radio"
-                checked={mode === "ask"}
-                onChange={() => setMode("ask")}
-              />
-              Ask
-            </label>
-            <label title="Saved as a requirement. The change arrives as a proposal you review.">
-              <input
-                type="radio"
-                checked={mode === "propose"}
-                onChange={() => setMode("propose")}
-              />
-              Propose change
-            </label>
-          </div>
+          {showFiles && (
+            <ul className="muse-files" aria-label="Files sent to Muse">
+              {all.map((file) => (
+                <li key={file.rel}>
+                  <label title={file.rel}>
+                    <input
+                      type="checkbox"
+                      checked={picked.has(file.rel)}
+                      disabled={!picked.has(file.rel) && files.length >= MUSE_MAX_FILES}
+                      onChange={() => toggle(file.rel)}
+                    />
+                    {file.rel}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
           <textarea
             aria-label="Message to Muse"
             value={text}
-            placeholder={
-              mode === "ask" ? "What do you want to know?" : "What should change, and why?"
-            }
+            placeholder="Ask about this code, or describe what should change."
             onChange={(event) => setText(event.target.value)}
           />
           <div className="button-row">
-            <button type="button" disabled={!canSend} onClick={() => void send()}>
-              {busy ? "Working…" : mode === "ask" ? "Ask Muse" : "Save and propose"}
+            <button
+              type="button"
+              className="secondary"
+              disabled={!canSend}
+              title="Muse explains from these files. Nothing changes."
+              onClick={() => void send("ask", text)}
+            >
+              {busy ? "Working…" : "Ask"}
+            </button>
+            <button
+              type="button"
+              disabled={!canSend}
+              title="Saved as a requirement. The code arrives as a proposal you review."
+              onClick={() => void send("propose", text)}
+            >
+              Propose change
             </button>
           </div>
         </>
@@ -230,6 +243,14 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
         <div key={index} className="muse-turn">
           <p className="hint">{turn.question}</p>
           <p className="muse-answer">{turn.answer}</p>
+          <button
+            type="button"
+            className="secondary small"
+            disabled={busy || blocked}
+            onClick={() => void send("propose", turn.question)}
+          >
+            Propose this as a change
+          </button>
         </div>
       ))}
     </section>
