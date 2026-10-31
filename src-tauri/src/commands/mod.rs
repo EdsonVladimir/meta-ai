@@ -20,6 +20,7 @@ pub mod rename;
 pub mod replicate;
 pub mod requirements;
 pub mod terminal;
+pub mod window;
 
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};

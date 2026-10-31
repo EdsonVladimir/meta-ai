@@ -160,7 +160,7 @@ export function DeliveryPreparePane({
           <select value={scope} onChange={(e) => setScope(e.target.value)} disabled={busy !== null}>
             {modules.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.id}
+                {m.name}
               </option>
             ))}
           </select>

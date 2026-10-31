@@ -5532,6 +5532,14 @@ button.archboard-member:hover {
   font-size: 0.95rem;
 }
 
+.welcome-action {
+  flex: 1 1 12rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
 .welcome-actions {
   display: flex;
   gap: var(--sp-md);

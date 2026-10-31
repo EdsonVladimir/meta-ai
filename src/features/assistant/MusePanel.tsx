@@ -297,6 +297,13 @@ export function MusePanel({
     chosen === null ? pickMuseFiles(all, text) : all.filter((file) => chosen.has(file.rel));
   const picked = new Set(files.map((file) => file.rel));
   const rootNames = Object.fromEntries(roots.map((entry) => [entry.id, entry.name]));
+  // What leaves the machine, in plain view: it must not need a hover.
+  const leftOut = all.length - files.length;
+  const outgoing = [
+    `Sending goes to Meta: ${files.length === 1 ? "this file" : `these ${files.length} files`}`,
+    ...(leftOut > 0 ? [`the names of the other ${leftOut}`] : []),
+    ...(messages.length > 0 ? ["your recent messages here"] : []),
+  ].join(", ").concat(".");
   const newest = newestProposal(messages);
   const showAdjust = adjustMode && newest !== null;
   const canSend =
@@ -805,6 +812,7 @@ export function MusePanel({
                 ))}
               </ul>
             )}
+            {!blocked && all.length > 0 && <p className="hint muse-outgoing">{outgoing}</p>}
             <textarea
               aria-label="Message to Muse"
               value={text}
@@ -817,7 +825,7 @@ export function MusePanel({
                 type="button"
                 className="secondary"
                 disabled={!canSend}
-                title="Muse explains from these files. Nothing changes. Ctrl+Enter sends."
+                title="Muse answers from what is listed above. No file changes. Ctrl+Enter sends."
                 onClick={() => void sendQuestion(text)}
               >
                 Ask

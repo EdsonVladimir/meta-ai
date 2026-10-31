@@ -531,8 +531,8 @@ export function CodeTree({
                   type="button"
                   className="icon-button"
                   aria-pressed={mapHidden?.[root.id] !== true}
-                  aria-label={`${mapHidden?.[root.id] === true ? "Show" : "Hide"} the ${root.name} diagram in Map`}
-                  title="Show/hide in Map"
+                  aria-label={`${mapHidden?.[root.id] === true ? "Show" : "Hide"} the ${root.name} diagram in Architecture`}
+                  title="Show/hide in Architecture"
                   onClick={() => onToggleMapRoot(root.id)}
                 >
                   {mapHidden?.[root.id] === true ? <RuthEyeOffIcon /> : <RuthEyeIcon />}

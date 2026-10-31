@@ -237,6 +237,25 @@ still holds. Commits are on `code-xray`.
   uses. The interface only explains it. It is per workspace root and off
   by default, so a new client folder must be marked (`2b41426`).
 
+- **What leaves the machine is said in plain view.** The file count
+  alone hid that the names of other files and the conversation go too,
+  so the panel states them above the box, without needing a hover. From
+  the first-time developer audit (`docs/audits/ui-ux-audit.md`), R2.
+
+**From the first-time developer audit**
+
+- **Every close route protects drafts.** The title-bar button asked, but
+  the OS shortcut only looked at terminals, and drafts live in memory
+  only. Rust now stops any close while drafts exist and the UI decides;
+  one pass covers the close the person already confirmed, so cancelling
+  a later terminal prompt keeps the protection.
+- **Muse stays visible by name.** The audit proposed Assistant as the
+  product name (R7). Rejected for now: using Meta's models is part of the
+  hackathon score, and the name says who answers.
+- **Keyboard focus in dialogs and studies with real users come after
+  delivery.** R5 is real but blocks nobody, and users cannot be studied
+  before the freeze.
+
 **Reading code**
 
 - **External libraries are references, never detail.** We use them and

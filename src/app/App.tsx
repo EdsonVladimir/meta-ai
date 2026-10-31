@@ -10,6 +10,7 @@ import {
 } from "../features/requirements/saveStatus";
 import { useRequirementsUi } from "../features/requirements/uiStore";
 import { isTauriEnvironment } from "../lib/env";
+import { allowCloseOnce, useCloseGuard } from "./closeGuard";
 import { WindowControls } from "./WindowControls";
 
 async function toggleMaximizeWindow(): Promise<void> {
@@ -17,10 +18,17 @@ async function toggleMaximizeWindow(): Promise<void> {
   await getCurrentWindow().toggleMaximize();
 }
 
-/** Close through the existing flow: fires CloseRequested (terminals). */
+/** Close through the existing flow: fires CloseRequested. */
 function requestWindowClose(): void {
   if (!isTauriEnvironment()) return;
   void getCurrentWindow().close().catch(() => {});
+}
+
+/** The drafts were saved or discarded: only terminals can stop this close. */
+function closePastDrafts(): void {
+  void allowCloseOnce()
+    .then(requestWindowClose)
+    .catch(() => {});
 }
 
 export function App() {
@@ -34,6 +42,13 @@ export function App() {
   const docStatus = useRequirementsUi((s) => s.docStatus);
   const saveAllResult = useRequirementsUi((s) => s.saveAllResult);
 
+  // Any close route with drafts lands here: the OS shortcut goes
+  // through Rust, the title-bar button through `requestClose`.
+  useCloseGuard(dirtyDocKeys(docStatus).length > 0, () => {
+    useRequirementsUi.getState().resolveSaveAll(null);
+    setCloseGate(true);
+  });
+
   // After a successful Save-all, each gate continues on its way.
   useEffect(() => {
     if (saveAllResult === null || !saveAllResult.ok) return;
@@ -44,7 +59,7 @@ export function App() {
     } else if (closeGate) {
       useRequirementsUi.getState().resolveSaveAll(null);
       setCloseGate(false);
-      requestWindowClose();
+      closePastDrafts();
     }
   }, [saveAllResult, exportGate, closeGate]);
 
@@ -190,7 +205,7 @@ export function App() {
           onDiscard={() => {
             useRequirementsUi.getState().resolveSaveAll(null);
             setCloseGate(false);
-            requestWindowClose();
+            closePastDrafts();
           }}
           onCancel={() => {
             useRequirementsUi.getState().resolveSaveAll(null);

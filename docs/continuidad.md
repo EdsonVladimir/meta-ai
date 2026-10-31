@@ -181,7 +181,7 @@ npm run tauri dev
 
 ## Schema and migrations
 
-`SCHEMA_VERSION = 14` (`crates/store/src/schema.rs`). Chain: v1
+`SCHEMA_VERSION = 16` (`crates/store/src/schema.rs`). Chain: v1
 base → v2 requirement generations → v3 design generations → v4
 update target → v5 `baseline_meta` → v6 `design_layouts` → v7
 `archived` → v8 names and title history → v9 work deliveries →
@@ -189,7 +189,8 @@ v10 screen proposals → v11 `code_roots` → v12 `project_id` +
 `code_links` + `structure_snapshots` (+ persisted `next_id`) →
 v13 `code_generations` + scope + notes + proposed files → v14
 screen provenance (NULL columns = requirement source) +
-`code_gen_screen_sources`.
+`code_gen_screen_sources` → v15 recent workspaces → v16
+`code_roots.ai_blocked` (folders never sent to Muse).
 Policy: transactional and idempotent migrations; each version
 opens earlier databases intact; `*.db` excluded from the repo
 (`.gitignore`). User database:

@@ -500,6 +500,19 @@ describe("MusePanel", () => {
     expect(screen.getAllByRole("button", { name: "Accept" })[0]).toHaveProperty("disabled", true);
   });
 
+  it("says in plain view what leaves the machine", async () => {
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api(10)} />,
+    );
+    await screen.findByRole("status");
+    const notice = (await screen.findByText(/Sending goes to Meta/)).textContent;
+    expect(notice).toBe("Sending goes to Meta: these 8 files, the names of the other 2.");
+    write("Why?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    expect(screen.getByText(/Sending goes to Meta/).textContent).toContain("your recent messages");
+  });
+
   it("keeps typed answers while hidden", async () => {
     const fake = api();
     const generation = generationDto({ questions: ["Public?"] });

@@ -69,6 +69,7 @@ use commands::terminal::{
     term_close, term_create, term_list, term_quit_app, term_resize, term_write,
     CloseRequestedPayload, TerminalState,
 };
+use commands::window::{app_allow_close_once, app_set_unsaved_drafts, CloseDecision, CloseGuard};
 use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -110,24 +111,34 @@ pub fn run() {
             };
             app.manage(state);
             app.manage(TerminalState::new(app.handle()));
+            app.manage(CloseGuard::default());
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing with running terminals asks for confirmation: it stops
-            // here and the UI decides (see `term_quit_app`). Without
-            // running sessions, closing proceeds normally.
+            // Closing with drafts or running terminals asks first: it stops
+            // here and the UI decides (see `commands/window.rs` and
+            // `term_quit_app`). Otherwise closing proceeds normally.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let running = window.state::<TerminalState>().running_count();
-                if running > 0 {
-                    api.prevent_close();
-                    let _ = window.emit(
-                        "ruth-terminal-close-requested",
-                        CloseRequestedPayload { running },
-                    );
+                match window.state::<CloseGuard>().decide(running) {
+                    CloseDecision::Proceed => {}
+                    CloseDecision::AskDrafts => {
+                        api.prevent_close();
+                        let _ = window.emit("ruth-drafts-close-requested", ());
+                    }
+                    CloseDecision::AskTerminals => {
+                        api.prevent_close();
+                        let _ = window.emit(
+                            "ruth-terminal-close-requested",
+                            CloseRequestedPayload { running },
+                        );
+                    }
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
+            app_set_unsaved_drafts,
+            app_allow_close_once,
             meta_status,
             test_meta_connection,
             core_status,
