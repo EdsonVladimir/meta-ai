@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isTauriEnvironment } from "../../lib/env";
 import { createProjectFromFolder } from "./projectFromFolder";
 import { MusePanel } from "../assistant/MusePanel";
+import { NavSplitHandle } from "../explorer/NavSplitHandle";
 import { addCodeRoot, setRootProject } from "../code/client";
 import {
   approveVersion,
@@ -165,6 +166,7 @@ export function RequirementsWorkspace() {
   const showAssistant = useRequirementsUi((s) => s.panels.assistant);
   const rightTab = useRequirementsUi((s) => s.rightTab);
   const museTarget = useRequirementsUi((s) => s.museTarget);
+  const projectsPaneFrac = useRequirementsUi((s) => s.projectsPaneFrac);
   const rightWidth = useRequirementsUi((s) => s.rightWidth);
   const showRight = showReview || showAssistant;
 
@@ -2764,7 +2766,14 @@ export function RequirementsWorkspace() {
         {/* Single explorer: projects/design above, code folders below.
             Both stay mounted (hidden, not unmounted) to keep expansion
             and caches. */}
-        <div className="nav-slot">
+        <div
+          className="nav-slot"
+          style={
+            projectsPaneFrac === null
+              ? undefined
+              : ({ "--projects-pane": `${projectsPaneFrac * 100}%` } as React.CSSProperties)
+          }
+        >
         <ExplorerPanel
           hidden={!showNavigator}
           storageReady={storageReady}
@@ -2849,6 +2858,7 @@ export function RequirementsWorkspace() {
           onArchiveAction={(target, action) => requestArchive(target, action)}
           onRename={requestRename}
         />
+        {showNavigator && <NavSplitHandle />}
         <nav
           className="navigator"
           aria-label="Code folders"

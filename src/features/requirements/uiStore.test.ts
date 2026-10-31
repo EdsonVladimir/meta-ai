@@ -223,6 +223,7 @@ describe("persisted panel sizes", () => {
     const stored = JSON.parse(raw ?? "{}") as { state?: Record<string, unknown> };
     expect(stored.state).toEqual({
       navigatorWidth: 300,
+      projectsPaneFrac: null,
       rightWidth: 400,
       terminalHeight: 300,
       terminalPaneWidths: [0.4, 0.6],
@@ -269,6 +270,7 @@ describe("persisted panel sizes", () => {
     expect(
       validateLayoutPartial({
         navigatorWidth: 300,
+        projectsPaneFrac: 0.2,
         rightWidth: 400,
         terminalHeight: 300,
         terminalPaneWidths: [0.5, 0.5],
@@ -278,6 +280,7 @@ describe("persisted panel sizes", () => {
       }),
     ).toEqual({
       navigatorWidth: 300,
+      projectsPaneFrac: 0.2,
       rightWidth: 400,
       terminalHeight: 300,
       terminalPaneWidths: [0.5, 0.5],
@@ -288,6 +291,7 @@ describe("persisted panel sizes", () => {
     });
     const fallback = {
       navigatorWidth: null,
+      projectsPaneFrac: null,
       rightWidth: null,
       terminalHeight: null,
       terminalPaneWidths: null,
@@ -302,6 +306,7 @@ describe("persisted panel sizes", () => {
     expect(
       validateLayoutPartial({
         navigatorWidth: Number.NaN,
+        projectsPaneFrac: 2,
         rightWidth: 99999,
         terminalHeight: -5,
         terminalPaneWidths: [0.5, "x"],

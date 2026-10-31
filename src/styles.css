@@ -388,8 +388,24 @@ footer {
 
 /* Projects keeps a usable slice however long the folder tree gets. */
 .nav-slot > nav.explorer {
-  flex: 0 0 34%;
-  min-height: 7rem;
+  flex: 0 0 var(--projects-pane, 34%);
+}
+
+/* Drag to share the column between Projects and Folders. */
+.nav-split {
+  flex: none;
+  height: 6px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.nav-split:hover {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.nav-split:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .workbench-center {

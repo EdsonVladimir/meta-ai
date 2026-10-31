@@ -99,6 +99,10 @@ export const MAX_RIGHT_WIDTH = 560;
 export const DEFAULT_NAV_WIDTH = 272; // 17rem
 export const MIN_NAV_WIDTH = 200;
 export const MAX_NAV_WIDTH = 520;
+/** Share of the navigator column for Projects, above Folders. */
+export const DEFAULT_PROJECTS_PANE_FRAC = 0.34;
+export const MIN_PROJECTS_PANE_FRAC = 0.05;
+export const MAX_PROJECTS_PANE_FRAC = 0.85;
 
 /** Terminal panel height in px; null uses the default. */
 export const DEFAULT_TERMINAL_HEIGHT = 260;
@@ -163,6 +167,7 @@ interface RequirementsUiState {
   panels: Record<PanelName, boolean>;
   rightTab: RightTab;
   navigatorWidth: number | null;
+  projectsPaneFrac: number | null;
   rightWidth: number | null;
   /** null = default height; null fractions = even split. */
   terminalHeight: number | null;
@@ -213,6 +218,7 @@ interface RequirementsUiState {
   togglePanel: (panel: PanelName) => void;
   setRightTab: (tab: RightTab) => void;
   setNavigatorWidth: (width: number | null) => void;
+  setProjectsPaneFrac: (frac: number | null) => void;
   setRightWidth: (width: number | null) => void;
   setTerminalHeight: (height: number | null) => void;
   setTerminalPaneWidths: (widths: number[] | null) => void;
@@ -354,6 +360,7 @@ function validateExternalFolders(persisted: unknown): ExternalFolder[] {
 
 export function validateLayoutPartial(persisted: unknown): {
   navigatorWidth: number | null;
+  projectsPaneFrac: number | null;
   rightWidth: number | null;
   terminalHeight: number | null;
   terminalPaneWidths: number[] | null;
@@ -364,6 +371,7 @@ export function validateLayoutPartial(persisted: unknown): {
 } {
   const fallback = {
     navigatorWidth: null,
+    projectsPaneFrac: null,
     rightWidth: null,
     terminalHeight: null,
     terminalPaneWidths: null,
@@ -378,6 +386,13 @@ export function validateLayoutPartial(persisted: unknown): {
   return {
     navigatorWidth: inRange(partial.navigatorWidth, MIN_NAV_WIDTH, MAX_NAV_WIDTH)
       ? (partial.navigatorWidth as number)
+      : null,
+    projectsPaneFrac: inRange(
+      partial.projectsPaneFrac,
+      MIN_PROJECTS_PANE_FRAC,
+      MAX_PROJECTS_PANE_FRAC,
+    )
+      ? (partial.projectsPaneFrac as number)
       : null,
     rightWidth: inRange(partial.rightWidth, MIN_RIGHT_WIDTH, MAX_RIGHT_WIDTH)
       ? (partial.rightWidth as number)
@@ -419,6 +434,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   panels: { navigator: true, review: true, terminal: false, assistant: true },
   rightTab: "review",
   navigatorWidth: null,
+  projectsPaneFrac: null,
   rightWidth: null,
   terminalHeight: null,
   terminalPaneWidths: null,
@@ -500,6 +516,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   resetLayout: () =>
     set({
       navigatorWidth: null,
+      projectsPaneFrac: null,
       rightWidth: null,
       terminalHeight: null,
       terminalPaneWidths: null,
@@ -528,6 +545,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
     set((state) => ({ panels: { ...state.panels, [panel]: !state.panels[panel] } })),
   setRightTab: (rightTab) => set({ rightTab }),
   setNavigatorWidth: (navigatorWidth) => set({ navigatorWidth }),
+  setProjectsPaneFrac: (projectsPaneFrac) => set({ projectsPaneFrac }),
   setRightWidth: (rightWidth) => set({ rightWidth }),
   setTerminalHeight: (terminalHeight) => set({ terminalHeight }),
   setTerminalPaneWidths: (terminalPaneWidths) => set({ terminalPaneWidths }),
@@ -539,6 +557,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
       storage: createJSONStorage(() => layoutStorage),
       partialize: (state) => ({
         navigatorWidth: state.navigatorWidth,
+        projectsPaneFrac: state.projectsPaneFrac,
         rightWidth: state.rightWidth,
         terminalHeight: state.terminalHeight,
         terminalPaneWidths: state.terminalPaneWidths,
