@@ -101,6 +101,38 @@ export function ProposalFiles({
     }
   }
 
+  /**
+   * One click decides what the button names: pending files in order. It
+   * stops at the first failure, so nothing after it is written without
+   * the person seeing why, and what it left pending can still be decided.
+   */
+  async function acceptAll(): Promise<void> {
+    const total = pending.length;
+    let written = 0;
+    setOpError(null);
+    setFileNotice(null);
+    for (const file of pending) {
+      setBusyPos(file.pos);
+      try {
+        const outcome = await api.acceptFile(generation.id, file.pos);
+        if (!live.current) return;
+        onChange(outcome.generation);
+        if (!outcome.alreadyAccepted) onAccepted(file.rootId, file.rel);
+        written += 1;
+      } catch (raw) {
+        if (!live.current) return;
+        setBusyPos(null);
+        setOpError(
+          `Stopped at "${file.rel}": ${normalizeCodeError(raw).message} ${written} of ${total} accepted; the rest stay pending.`,
+        );
+        return;
+      }
+    }
+    if (!live.current) return;
+    setBusyPos(null);
+    setFileNotice(`${written} files written to disk.`);
+  }
+
   async function discard(file: CodeProposalFileDto): Promise<void> {
     setBusyPos(file.pos);
     setOpError(null);
@@ -118,8 +150,27 @@ export function ProposalFiles({
     }
   }
 
+  const pending = generation.files.filter((file) => file.state === "pending");
+
   return (
     <>
+      {!readOnly && pending.length > 1 && (
+        <div className="button-row">
+          <button
+            type="button"
+            className="primary small"
+            disabled={generation.stale || busyPos !== null}
+            title={
+              generation.stale
+                ? "Blocked: the proposal is stale"
+                : "Write every pending file to disk, in order. Stops at the first failure."
+            }
+            onClick={() => void acceptAll()}
+          >
+            {`Accept all (${pending.length})`}
+          </button>
+        </div>
+      )}
       {opError !== null && (
         <p className="error" role="alert">
           {opError}

@@ -248,6 +248,10 @@ still holds. Commits are on `code-xray`.
   are made one by one inside the root, never through a link, and removed
   again if the write fails.
 
+- **Accept all stops at the first failure.** A proposal is reviewed as a
+  set, so one click may decide it, and the button names how many files
+  it writes. Stopping keeps the rest pending, with the reason in view.
+
 **From the first-time developer audit**
 
 - **Every close route protects drafts.** The title-bar button asked, but
