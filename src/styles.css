@@ -6421,3 +6421,27 @@ button.archboard-member:hover {
   margin: 0;
 }
 
+/* Answers on the newest proposal card: one input per question. */
+.muse-answers {
+  list-style: none;
+  margin: 0 0 0.4rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.muse-answer-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.muse-answer-q {
+  font-size: 0.85rem;
+}
+
+.muse-answer-row input[type="text"] {
+  width: 100%;
+}
+

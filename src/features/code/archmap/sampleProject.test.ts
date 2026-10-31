@@ -6,6 +6,7 @@ import { combineResults } from "../structure/structureMerge";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import { memberSignalLines } from "./flowLayout";
 import { buildFlowGraph, TEMPLATE_MEMBER, type FlowProject } from "./flowModel";
+import { projectUsesStore } from "./proposalChecks";
 import { applyChangesToGraph, buildProposalOverlay } from "./proposalOverlay";
 import { STRUCTURE_LIMITS } from "../structure/structureTypes";
 import type { StructureInput, StructureResult } from "../structure/structureTypes";
@@ -64,6 +65,15 @@ it("walks the demo page from its template down to the HTTP call", () => {
   );
   expect(graph.httpNodes.length).toBeGreaterThan(0);
   expect(graph.pending.filter((item) => item.kind === "ambiguous")).toEqual([]);
+});
+
+it("proves the demo project routes UI through a store", () => {
+  const project: FlowProject = {
+    key: "reservas",
+    label: "reservas",
+    result: analyzeSample(["frontend"]),
+  };
+  expect(projectUsesStore([project])).toBe(true);
 });
 
 it("yields every link the demo needs", () => {

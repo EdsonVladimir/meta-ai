@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { CodeGenerationDto, CodeProposalFileDto, CodeRootDto } from "../code/types";
+import type { RequirementDetail } from "../requirements/types";
 import { useRequirementsUi } from "../requirements/uiStore";
 import { MusePanel, type MusePanelApi } from "./MusePanel";
 
@@ -99,6 +100,35 @@ function api(count = 2): MusePanelApi {
 
 function write(message: string): void {
   fireEvent.change(screen.getByLabelText("Message to Muse"), { target: { value: message } });
+}
+
+function requirementDetail(currentVersionId: string, content: string): RequirementDetail {
+  return {
+    artifact: {
+      id: "req-1",
+      projectId: "p1",
+      moduleId: "m1",
+      kind: "requirement",
+      title: null,
+      archived: false,
+    },
+    versions: [
+      {
+        id: currentVersionId,
+        number: 1,
+        content,
+        provenance: { kind: "person", by: "t" },
+        sources: [],
+      },
+    ],
+    approvals: [],
+    currentVersionId,
+  };
+}
+
+function withVersions(fake: MusePanelApi, currentVersionId: string, content: string): void {
+  fake.getRequirement = vi.fn(async () => requirementDetail(currentVersionId, content));
+  fake.saveVersion = vi.fn(async () => requirementDetail("req-1-v2", content));
 }
 
 describe("MusePanel", () => {
@@ -470,6 +500,39 @@ describe("MusePanel", () => {
     expect(screen.getAllByRole("button", { name: "Accept" })[0]).toHaveProperty("disabled", true);
   });
 
+  it("keeps typed answers while hidden", async () => {
+    const fake = api();
+    const generation = generationDto({ questions: ["Public?"] });
+    fake.generate = vi.fn(async () => generation);
+    const { rerender } = await proposeOnce(fake);
+    fireEvent.change(screen.getByLabelText("Public?"), { target: { value: "Yes" } });
+    const props = { target, roots: [root], onClose: () => {}, onPropose: () => {}, api: fake };
+    rerender(<MusePanel {...props} hidden />);
+    rerender(<MusePanel {...props} />);
+    expect((screen.getByLabelText("Public?") as HTMLInputElement).value).toBe("Yes");
+  });
+
+  it("holds new adjustments while a saved one waits for Retry", async () => {
+    const fake = api();
+    await proposeOnce(fake);
+    const versionId = generationDto().requirementVersionId;
+    Object.assign(fake, {
+      getRequirement: vi.fn(async () => ({
+        currentVersionId: versionId,
+        versions: [{ id: versionId, content: "Base" }],
+      })),
+      saveVersion: vi.fn(async () => ({})),
+      generate: vi.fn(async () => {
+        throw { kind: "meta_timeout", message: "Timed out." };
+      }),
+    });
+    write("Add a store");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    await screen.findByRole("button", { name: "Retry proposal" });
+    write("Another change");
+    expect(screen.getByRole("button", { name: "Adjust proposal" })).toHaveProperty("disabled", true);
+  });
+
   it("keeps the thread while hidden and when the same folder is asked again", async () => {
     const fake = api();
     const { rerender } = await proposeOnce(fake);
@@ -508,5 +571,191 @@ describe("MusePanel", () => {
     fireEvent.click(screen.getAllByText("Accept")[1]);
     await waitFor(() => expect(fake.acceptFile).toHaveBeenCalledWith("cgen-1", 1));
     expect(useRequirementsUi.getState().museAccepted?.nonce).toBe(2);
+  });
+
+  it("answers the newest card's questions as an adjustment", async () => {
+    const fake = api();
+    withVersions(fake, "req-1-v1", "Add a total");
+    vi.mocked(fake.generate)
+      .mockResolvedValueOnce(generationDto({ questions: ["First?", "Second?"] }))
+      .mockResolvedValue(
+        generationDto({ id: "cgen-2", explanation: "Adjusted.", questions: [] }),
+      );
+    const onPropose = vi.fn();
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={onPropose} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    fireEvent.change(screen.getByLabelText("Second?"), { target: { value: "On confirm." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    await screen.findByText("Adjusted.");
+    expect(fake.generate).toHaveBeenCalledTimes(2);
+    expect(fake.generate).toHaveBeenNthCalledWith(2, {
+      projectId: "p1",
+      moduleId: "m1",
+      source: { kind: "requirement", artifactId: "req-1" },
+      scope: [{ rootId: "r", rel: "core/f0.ts" }],
+      instruction: "Q: Second?\nA: On confirm.",
+      previousGenerationId: "cgen-1",
+    });
+    expect(onPropose).toHaveBeenCalledTimes(1);
+    expect(useRequirementsUi.getState().museGeneration?.id).toBe("cgen-2");
+  });
+
+  it("stops the adjustment when the requirement moved on", async () => {
+    const fake = api();
+    withVersions(fake, "req-1-v2", "Changed meanwhile");
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    expect(screen.queryByRole("button", { name: "Propose change" })).toBeNull();
+    write("Use doubles.");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    await screen.findByText(/changed since this proposal/);
+    expect(fake.saveVersion).not.toHaveBeenCalled();
+    expect(fake.generate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Replaced by/)).toBeNull();
+  });
+
+  it("adjusts with get, save then generate in order", async () => {
+    const fake = api();
+    withVersions(fake, "req-1-v1", "Add a total");
+    vi.mocked(fake.generate)
+      .mockResolvedValueOnce(generationDto())
+      .mockResolvedValue(
+        generationDto({ id: "cgen-2", explanation: "Adjusted.", questions: [] }),
+      );
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    write("Use doubles.");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    await screen.findByText("Adjusted.");
+    expect(fake.getRequirement).toHaveBeenCalledWith("req-1");
+    expect(fake.saveVersion).toHaveBeenCalledWith({
+      projectId: "p1",
+      artifactId: "req-1",
+      expectedVersionId: "req-1-v1",
+      content: "Add a total\n\nAdjustment: Use doubles.",
+      author: "Muse dialog",
+    });
+    const order = [
+      vi.mocked(fake.getRequirement).mock.invocationCallOrder[0],
+      vi.mocked(fake.saveVersion).mock.invocationCallOrder[0],
+      vi.mocked(fake.generate).mock.invocationCallOrder[1],
+    ];
+    expect(order[0]).toBeLessThan(order[1]);
+    expect(order[1]).toBeLessThan(order[2]);
+  });
+
+  it("keeps older cards read-only after an adjustment", async () => {
+    const fake = api();
+    withVersions(fake, "req-1-v1", "Add a total");
+    vi.mocked(fake.generate)
+      .mockResolvedValueOnce(generationDto())
+      .mockResolvedValue(
+        generationDto({ id: "cgen-2", explanation: "Adjusted.", questions: [] }),
+      );
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    write("Use doubles.");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    await screen.findByText("Adjusted.");
+    expect(screen.getByText("Replaced by cgen-2")).toBeTruthy();
+    expect(screen.getAllByText("Accept")).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Show on X-ray" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "New proposal" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+    expect(screen.getByText("On reserve or on confirm?")).toBeTruthy();
+    expect(screen.queryByLabelText("On reserve or on confirm?")).toBeNull();
+  });
+
+  it("returns Propose change after New proposal", async () => {
+    const fake = api();
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    expect(screen.queryByRole("button", { name: "Propose change" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Adjust proposal" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "New proposal" }));
+    expect(screen.getByRole("button", { name: "Propose change" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Adjust proposal" })).toBeNull();
+    expect(useRequirementsUi.getState().museGeneration?.id).toBe("cgen-1");
+  });
+
+  it("retries a failed proposal without saving twice", async () => {
+    const fake = api();
+    vi.mocked(fake.generate)
+      .mockRejectedValueOnce({ kind: "meta_down", message: "Meta is down." })
+      .mockResolvedValue(generationDto());
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByRole("button", { name: "Retry proposal" });
+    expect(screen.getByText("Meta is down.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry proposal" }));
+    await screen.findByText("Adds the discount.");
+    expect(fake.createRequirement).toHaveBeenCalledTimes(1);
+    expect(fake.generate).toHaveBeenCalledTimes(2);
+    expect(fake.generate).toHaveBeenNthCalledWith(2, {
+      projectId: "p1",
+      moduleId: "m1",
+      source: { kind: "requirement", artifactId: "req-1" },
+      scope: [
+        { rootId: "r", rel: "core/f0.ts" },
+        { rootId: "r", rel: "core/f1.ts" },
+      ],
+    });
+    expect(screen.queryByRole("button", { name: "Retry proposal" })).toBeNull();
+  });
+
+  it("retries a failed adjustment without saving another version", async () => {
+    const fake = api();
+    withVersions(fake, "req-1-v1", "Add a total");
+    let calls = 0;
+    vi.mocked(fake.generate).mockImplementation(async () => {
+      calls += 1;
+      if (calls === 2) throw { kind: "meta_down", message: "Meta is down." };
+      return calls === 1
+        ? generationDto()
+        : generationDto({ id: "cgen-2", explanation: "Adjusted.", questions: [] });
+    });
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    write("Use doubles.");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry proposal" }));
+    await screen.findByText("Adjusted.");
+    expect(fake.saveVersion).toHaveBeenCalledTimes(1);
+    expect(fake.getRequirement).toHaveBeenCalledTimes(1);
+    expect(fake.generate).toHaveBeenCalledTimes(3);
   });
 });

@@ -84,7 +84,7 @@ import {
   buildProposalOverlay,
   type ProposalOverlay,
 } from "./proposalOverlay";
-import { checkProposal, type ProposalCheck } from "./proposalChecks";
+import { checkProposal, projectUsesStore, type ProposalCheck } from "./proposalChecks";
 import {
   ArchitectureToolbar,
   type ToolbarDetailRow,
@@ -1388,8 +1388,9 @@ export function ProjectMapView({
   // built for the board (nothing to verify without one).
   const flowChecks = useMemo((): ProposalCheck[] | null => {
     if (flowMode === null || flowMode.overlay === null || proposalGeneration === null) return null;
-    return checkProposal(proposalGeneration, flowMode.overlay, flowMode.graph);
-  }, [flowMode, proposalGeneration]);
+    const usesStore = projectUsesStore(flowProjectsOf(sections, mergedRef.current));
+    return checkProposal(proposalGeneration, flowMode.overlay, flowMode.graph, usesStore);
+  }, [flowMode, proposalGeneration, sections]);
 
   // The chain on screen is what Muse reads; a proposal's own files
   // do not exist on disk yet, so they never count as context.

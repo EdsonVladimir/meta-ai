@@ -237,4 +237,27 @@ describe("ArchitectureView with thread proposals", () => {
     act(() => useRequirementsUi.getState().setMuseGeneration(null));
     await waitFor(() => expect(screen.getByTestId("proposal-count").textContent).toBe("none"));
   });
+
+  it("refreshes once per accepted file however often it renders", async () => {
+    useRequirementsUi.setState({
+      selection: {
+        projectId: "p1",
+        moduleId: "m1",
+        requirementId: null,
+        designId: null,
+        mockupId: null,
+        screenId: null,
+      },
+    });
+    const { ArchitectureView } = await import("./ArchitectureView");
+    const { rerender } = render(<ArchitectureView />);
+    act(() => {
+      useRequirementsUi.getState().setMuseAccepted({ rootId: "r", rel: "src/a.ts", nonce: 1 });
+    });
+    expect(mocks.notifyFileChanged).toHaveBeenCalledTimes(1);
+    rerender(<ArchitectureView />);
+    rerender(<ArchitectureView />);
+    expect(mocks.notifyFileChanged).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("reanalyze-nonce").textContent).toBe("1");
+  });
 });

@@ -2,7 +2,8 @@
 // proposal (syntax, scope, chain, freshness). Pure; no IO.
 import { describe, expect, it } from "vitest";
 import type { CodeGenerationDto, CodeProposalFileDto } from "../types";
-import type { FlowGraph, FlowPending } from "./flowModel";
+import type { ArchLayer } from "./archLayers";
+import type { FlowChange, FlowEdge, FlowGraph, FlowNode, FlowPending } from "./flowModel";
 import type { ProposalOverlay } from "./proposalOverlay";
 import { checkProposal } from "./proposalChecks";
 
@@ -127,6 +128,96 @@ describe("checkProposal", () => {
     const chain = checkProposal(GEN, overlay, CHAIN).find((c) => c.id === "chain")!;
     expect(chain.status).toBe("warn");
     expect(chain.detail).toContain("Other");
+  });
+
+  function node(id: string, layer: ArchLayer, change?: FlowChange): FlowNode {
+    return {
+      id,
+      projectKey: "p",
+      projectLabel: "P",
+      symbol: {
+        id,
+        language: "ts",
+        kind: "class",
+        name: id,
+        rootId: "r",
+        rel: "a.ts",
+        range: { startLine: 1, startCol: 1, endLine: 2, endCol: 1 },
+        members: [],
+        membersTruncated: false,
+        heuristic: null,
+      },
+      layer,
+      members: [],
+      depth: 0,
+      change,
+    };
+  }
+
+  function edge(fromNode: string, toNode: string): FlowEdge {
+    return {
+      id: `${fromNode}>${toNode}`,
+      kind: "call",
+      fromNode,
+      fromMember: null,
+      toNode,
+      toMember: null,
+      order: 0,
+      evidence: "test",
+    };
+  }
+
+  function graph(nodes: FlowNode[], edges: FlowEdge[]): FlowGraph {
+    return { nodes, httpNodes: [], edges, pending: [], truncated: false };
+  }
+
+  it("warns when a proposed component skips the project's store", () => {
+    const g = graph(
+      [
+        node("new-ui", "ui", "added"),
+        node("svc", "services"),
+        node("old-ui", "ui"),
+        node("store", "state"),
+        node("svc2", "services"),
+      ],
+      [edge("new-ui", "svc"), edge("old-ui", "store"), edge("store", "svc2")],
+    );
+    const checks = checkProposal(GEN, OVERLAY, g);
+    expect(checks.find((c) => c.id === "layers")).toEqual({
+      id: "layers",
+      label: "Layers",
+      status: "warn",
+      detail: "This component calls the service directly; the project uses a store.",
+    });
+  });
+
+  it("stays silent unless the graph proves both facts", () => {
+    // Direct call but no store chain in the project.
+    const noStore = graph([node("new-ui", "ui", "added"), node("svc", "services")], [
+      edge("new-ui", "svc"),
+    ]);
+    expect(checkProposal(GEN, OVERLAY, noStore).find((c) => c.id === "layers")).toBeUndefined();
+    // The analysis proves what the chain on screen cannot show.
+    expect(checkProposal(GEN, OVERLAY, noStore, true).find((c) => c.id === "layers")?.status).toBe(
+      "warn",
+    );
+    // Store chain but the direct call is pre-existing, not proposed.
+    const settled = graph(
+      [node("old-ui", "ui"), node("svc", "services"), node("store", "state"), node("svc2", "services")],
+      [edge("old-ui", "svc"), edge("old-ui", "store"), edge("store", "svc2")],
+    );
+    expect(checkProposal(GEN, OVERLAY, settled).find((c) => c.id === "layers")).toBeUndefined();
+    // A store chain through a proposed node proves nothing about the project.
+    const proposedStore = graph(
+      [node("new-ui", "ui", "added"), node("svc", "services"), node("store", "state", "added")],
+      [edge("new-ui", "svc"), edge("new-ui", "store")],
+    );
+    expect(
+      checkProposal(GEN, OVERLAY, proposedStore).find((c) => c.id === "layers"),
+    ).toBeUndefined();
+    // No graph, no proof.
+    expect(checkProposal(GEN, OVERLAY, null).find((c) => c.id === "layers")).toBeUndefined();
+    expect(checkProposal(GEN, OVERLAY, null)).toHaveLength(4);
   });
 });
 

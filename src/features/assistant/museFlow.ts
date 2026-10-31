@@ -18,6 +18,16 @@ export interface MuseFile {
   rel: string;
 }
 
+/** Answers sent from a proposal card: "Q: ..\nA: .." for the answered ones only. */
+export function composeAnswers(questions: string[], answers: Record<number, string>): string {
+  const blocks: string[] = [];
+  questions.forEach((question, index) => {
+    const answer = (answers[index] ?? "").trim();
+    if (answer !== "") blocks.push(`Q: ${question}\nA: ${answer}`);
+  });
+  return blocks.join("\n\n");
+}
+
 interface Entry {
   name: string;
   rel: string;

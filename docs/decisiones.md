@@ -214,6 +214,17 @@ still holds. Commits are on `code-xray`.
   thread, with Accept and Discard, and the board stays visible
   (`07b213d`, `7e005b5`, `cb5eaf1`). The thread lives in memory for now;
   requirements and proposals persist.
+- **Answers and adjustments are new requirement versions of one
+  requirement.** Each change creating another requirement left duplicates
+  and hid how the request evolved. If the requirement moved on, the
+  adjustment stops. If generation fails after saving, Retry reuses that
+  save, and new adjustments wait for it, so nothing is saved twice.
+- **Replaced proposals stay read-only in the thread.** Only the newest
+  card decides files, so nobody accepts from a version already replaced.
+- **"This component calls the service directly" comes from the analysis.**
+  A new component going straight to a service shows no store on its own
+  chain, so the check reads the whole analyzed project: a UI symbol
+  injecting a store that injects a service.
 - **Card and X-ray show one proposal.** Accepting on either side updates
   the other through `museGeneration`, so they cannot disagree (`cb5eaf1`).
 - **Proposals follow the project's layers.** Muse once went from a

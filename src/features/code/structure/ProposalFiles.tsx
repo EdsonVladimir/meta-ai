@@ -32,6 +32,8 @@ interface ProposalFilesProps {
   onChange: (generation: CodeGenerationDto) => void;
   /** A file was written to disk (not on already-accepted repeats). */
   onAccepted: (rootId: string, rel: string) => void;
+  /** Replaced cards: files listed without actions. */
+  readOnly?: boolean;
 }
 
 export function ProposalFiles({
@@ -42,6 +44,7 @@ export function ProposalFiles({
   loader,
   onChange,
   onAccepted,
+  readOnly = false,
 }: ProposalFilesProps) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [currentTexts, setCurrentTexts] = useState<Record<number, string>>({});
@@ -140,41 +143,43 @@ export function ProposalFiles({
                 {file.decidedAt !== null ? ` · ${file.decidedAt}` : ""}
               </span>
             </div>
-            <div className="button-row">
-              <button
-                type="button"
-                className="secondary small"
-                onClick={() => void toggleDiff(file)}
-              >
-                {expanded === file.pos ? "Hide diff" : "View diff"}
-              </button>
-              <button
-                type="button"
-                className="primary small"
-                disabled={file.state !== "pending" || generation.stale || busyPos !== null}
-                title={
-                  generation.stale
-                    ? "Blocked: the proposal is stale"
-                    : file.state !== "pending"
-                      ? `Already ${file.state === "accepted" ? "accepted" : "discarded"}`
-                      : file.operation === "create"
-                        ? "Create the file on disk"
-                        : "Replace the file on disk"
-                }
-                onClick={() => void accept(file)}
-              >
-                {busyPos === file.pos ? "Accepting…" : "Accept"}
-              </button>
-              <button
-                type="button"
-                className="secondary small"
-                disabled={file.state !== "pending" || busyPos !== null}
-                onClick={() => void discard(file)}
-              >
-                Discard
-              </button>
-            </div>
-            {expanded === file.pos && (
+            {!readOnly && (
+              <div className="button-row">
+                <button
+                  type="button"
+                  className="secondary small"
+                  onClick={() => void toggleDiff(file)}
+                >
+                  {expanded === file.pos ? "Hide diff" : "View diff"}
+                </button>
+                <button
+                  type="button"
+                  className="primary small"
+                  disabled={file.state !== "pending" || generation.stale || busyPos !== null}
+                  title={
+                    generation.stale
+                      ? "Blocked: the proposal is stale"
+                      : file.state !== "pending"
+                        ? `Already ${file.state === "accepted" ? "accepted" : "discarded"}`
+                        : file.operation === "create"
+                          ? "Create the file on disk"
+                          : "Replace the file on disk"
+                  }
+                  onClick={() => void accept(file)}
+                >
+                  {busyPos === file.pos ? "Accepting…" : "Accept"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary small"
+                  disabled={file.state !== "pending" || busyPos !== null}
+                  onClick={() => void discard(file)}
+                >
+                  Discard
+                </button>
+              </div>
+            )}
+            {expanded === file.pos && !readOnly && (
               <div className="code-proposal-diff">
                 {file.operation === "modify" && currentTexts[file.pos] === undefined ? (
                   <p className="hint">Reading the current file…</p>

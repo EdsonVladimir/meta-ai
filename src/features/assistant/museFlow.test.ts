@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   collectMuseFiles,
+  composeAnswers,
   linkMuseTarget,
   moduleNameOf,
   MUSE_MAX_CANDIDATES,
@@ -143,5 +144,17 @@ describe("linkMuseTarget", () => {
     expect(moduleNameOf({ rootId: "r", rel: "src/core/a.ts", kind: "file" }, "shop")).toBe("core");
     expect(moduleNameOf({ rootId: "r", rel: "a.ts", kind: "file" }, "shop")).toBe("shop");
     expect(moduleNameOf({ rootId: "r", rel: "", kind: "folder" }, "shop")).toBe("shop");
+  });
+});
+
+describe("composeAnswers", () => {
+  it("composes the answered questions only", () => {
+    expect(composeAnswers(["First?", "Second?"], { 0: "  Yes. ", 1: "   " })).toBe(
+      "Q: First?\nA: Yes.",
+    );
+    expect(composeAnswers(["First?", "Second?"], { 0: "Yes.", 1: "No." })).toBe(
+      "Q: First?\nA: Yes.\n\nQ: Second?\nA: No.",
+    );
+    expect(composeAnswers(["First?"], {})).toBe("");
   });
 });
