@@ -35,7 +35,11 @@ pub struct CodeScopeFileInput {
 
 /// Source of the proposal: ONE requirement or ONE mockup screen.
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum CodeGenSourceInput {
     Requirement {
         artifact_id: String,
@@ -715,4 +719,27 @@ pub fn code_discard_file(
         .get(&input.generation_id)
         .ok_or_else(|| ApiError::internal("the proposal vanished"))?;
     Ok(generation_dto(ready.store, &roots, generation))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_source_as_the_frontend_sends_it() {
+        let requirement: CodeGenSourceInput =
+            serde_json::from_str(r#"{"kind":"requirement","artifactId":"req-1"}"#).expect("req");
+        assert!(matches!(
+            requirement,
+            CodeGenSourceInput::Requirement { artifact_id } if artifact_id == "req-1"
+        ));
+        let screen: CodeGenSourceInput =
+            serde_json::from_str(r#"{"kind":"screen","mockupId":"mock-1","screenId":"s-1"}"#)
+                .expect("screen");
+        assert!(matches!(
+            screen,
+            CodeGenSourceInput::Screen { mockup_id, screen_id }
+                if mockup_id == "mock-1" && screen_id == "s-1"
+        ));
+    }
 }

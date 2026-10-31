@@ -43,7 +43,11 @@ pub struct ReplicatePreviewDto {
 }
 
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum ReplicateTargetInput {
     New { name: String },
     Existing { project_id: String },
@@ -208,4 +212,19 @@ pub fn code_replicate_execute(
         already_linked: plan.already_linked,
         root: CodeRootDto::of(root),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_target_as_the_frontend_sends_it() {
+        let existing: ReplicateTargetInput =
+            serde_json::from_str(r#"{"kind":"existing","projectId":"proy-1"}"#).expect("existing");
+        assert!(matches!(
+            existing,
+            ReplicateTargetInput::Existing { project_id } if project_id == "proy-1"
+        ));
+    }
 }
