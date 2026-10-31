@@ -61,6 +61,33 @@ Production web build:
 npm run build
 ```
 
+## Install and run (packaged app)
+
+`npm run tauri build` produces a `.deb` and an AppImage under
+`src-tauri/target/release/bundle/`.
+
+Install and run the `.deb` (Debian/Ubuntu):
+
+```sh
+sudo dpkg -i "src-tauri/target/release/bundle/deb/Ruth IDE_0.1.0_amd64.deb"
+```
+
+Or run the AppImage with no install:
+
+```sh
+chmod +x "src-tauri/target/release/bundle/appimage/Ruth IDE_0.1.0_amd64.AppImage"
+"./src-tauri/target/release/bundle/appimage/Ruth IDE_0.1.0_amd64.AppImage"
+```
+
+The Meta key is read from the environment, so start the app from
+a terminal after exporting it:
+
+```sh
+read -rsp 'META_API_KEY: ' META_API_KEY && export META_API_KEY && echo
+```
+
+Opened from the system menu it has no key and Muse will not work.
+
 ## Environment variables (without leaving the key in history)
 
 The test reads **only** the native process environment. Never put

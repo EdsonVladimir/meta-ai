@@ -296,6 +296,18 @@ still holds. Commits are on `code-xray`.
   a large board mattered more than zoom (`4180e46`). The board fills the
   center, with the status bar on the bottom edge (`076defe`).
 
+**Packaging**
+
+- **The sample runs for real, on SQLite with no setup.** A demo target
+  that cannot start proves nothing. Nest and Angular configuration was
+  added around the same 18 source files.
+- **`tauri dev` uses `ruth-dev.db`; the installed app keeps `ruth.db`.**
+  They could not run together, and Ruth working on Ruth needs both. The
+  existing data stays with the installed app and nothing was moved.
+- **Packages are `.deb` and AppImage for Debian.** Other systems must be
+  built on those systems. Started from the menu the app has no key, so
+  it is started from a terminal for now.
+
 **Agreed and not built yet**
 
 - **Pages view:** columns by level from the routes. A page is only a
@@ -303,12 +315,9 @@ still holds. Commits are on `code-xray`.
   by many parents goes to a Shared column. One with no route or parent
   reads "No usage detected", because dynamic creation cannot be ruled
   out.
-- **Executable:** development and production need separate data
-  folders, because both use `ruth.db` and it locks a second instance.
-  Opened from the system menu it has no `META_API_KEY`: start it from a
-  terminal first, then add a screen that stores the key in the system
-  keyring. New folders blocked by default is worth it if client code is
-  opened often.
+- **Key screen:** store the key in the system keyring, so the app can
+  start from the menu. New folders blocked by default is worth it if
+  client code is opened often.
 
 ## Superseded (historical context)
 
