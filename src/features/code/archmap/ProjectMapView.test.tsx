@@ -424,6 +424,17 @@ describe("ProjectMapView", () => {
     expect(screen.getByRole("complementary", { name: "Board inspector" })).toBeTruthy();
   });
 
+  it("opens the files behind a card, read only, and closes back to the board", async () => {
+    renderView({ groupBy: "symbols" });
+    const buttons = await screen.findAllByRole("button", { name: /^View TS of / });
+    fireEvent.click(buttons[0]);
+    const dialog = await screen.findByRole("dialog", { name: /^Source of / });
+    expect(within(dialog).getByRole("tab", { name: "TS" })).toBeTruthy();
+    expect(within(dialog).getByText(/read only/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: /^Source of / })).toBeNull();
+  });
+
   it("reads what a component names, and survives a file that is gone", async () => {
     const reads: string[] = [];
     const deps = makeDeps({

@@ -7,6 +7,8 @@ import { countLabel, KIND_BADGE } from "./ArchMapBoard";
 import { ARCH_LAYER_BY_ID } from "./archLayers";
 import { MemberRow } from "./MemberRow";
 import { languageBadge, memberRole } from "./memberRoles";
+import { SourceButtons } from "./SourceButtons";
+import type { SourceSymbol } from "./sourceTabs";
 import {
   ARCH_CARD_W,
   ARCH_COL_PAD_X,
@@ -27,6 +29,8 @@ export interface FlowBoardProps {
   layout: FlowLayout;
   selected: { nodeId: string; member: string | null } | null;
   onSelect: (selection: { nodeId: string; member: string | null } | null) => void;
+  /** Shows a file behind a card. */
+  onViewSource?: (symbol: SourceSymbol, tabKey: string) => void;
 }
 
 /** Row center for a member, card center otherwise. Null when the card is missing. */
@@ -159,6 +163,7 @@ function FlowNodeCard({
   repositoryMethods,
   selected,
   onSelect,
+  onViewSource,
 }: {
   node: FlowNode;
   height: number;
@@ -166,6 +171,7 @@ function FlowNodeCard({
   repositoryMethods: string[];
   selected: { nodeId: string; member: string | null } | null;
   onSelect: FlowBoardProps["onSelect"];
+  onViewSource: FlowBoardProps["onViewSource"];
 }) {
   const { symbol } = node;
   const base = symbol.rel.split("/").pop() ?? symbol.rel;
@@ -218,6 +224,7 @@ function FlowNodeCard({
             ? `repository: ${repositoryMethods.join(", ")}`
             : countLabel(node.members.length, "chain member", "chain members")}
         </span>
+        {onViewSource !== undefined && <SourceButtons symbol={symbol} onOpen={onViewSource} />}
       </div>
       {node.members.length > 0 && (
         <div className="archboard-member-list" role="list" aria-label={`Chain members of ${symbol.name}`}>
@@ -301,7 +308,13 @@ function repositoryMethodsOf(graph: FlowGraph, nodeId: string): string[] {
   return [...new Set(methods)];
 }
 
-export function FlowBoard({ graph, layout, selected, onSelect }: FlowBoardProps): ReactNode {
+export function FlowBoard({
+  graph,
+  layout,
+  selected,
+  onSelect,
+  onViewSource,
+}: FlowBoardProps): ReactNode {
   const drawn = drawEdges(graph, layout);
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
   const httpById = new Map(graph.httpNodes.map((http) => [http.id, http]));
@@ -377,6 +390,7 @@ export function FlowBoard({ graph, layout, selected, onSelect }: FlowBoardProps)
                       repositoryMethods={repositoryMethodsOf(graph, node.id)}
                       selected={selected}
                       onSelect={onSelect}
+                      onViewSource={onViewSource}
                     />
                   );
                 }

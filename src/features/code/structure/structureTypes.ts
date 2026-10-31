@@ -175,6 +175,8 @@ export interface ComponentFacts {
   imports: string[];
   templateRel: string | null;
   styleRels: string[];
+  /** First line of an inline template in the source file. */
+  templateLine?: number;
   /** Set after the assets step. */
   template?: TemplateFacts | null;
   missingAssets?: string[];

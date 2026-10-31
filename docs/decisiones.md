@@ -275,6 +275,12 @@ still holds. Commits are on `code-xray`.
 
 **Reading code**
 
+- **Each card opens its TS, HTML and CSS in a read-only popup.** Going
+  to Folders broke the reading of a board. It stays read-only because
+  editing here would duplicate the editor and its saving rules; Open in
+  code goes there. An inline template opens at its line in the source
+  file, and a pending proposal shows its content, marked as not on disk.
+
 - **External libraries are references, never detail.** We use them and
   do not change them: one card per package, with who uses it and what
   they import, off by default. Ownership comes from the imports, not a

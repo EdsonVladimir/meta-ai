@@ -77,6 +77,7 @@ export function collectComponentFacts(
     if (inline !== undefined && text !== null) {
       const start = source.getLineAndCharacterOfPosition(inline.getStart(source)).line + 1;
       facts.template = scanTemplate(rel, text, start);
+      facts.templateLine = start;
     }
     return facts;
   }

@@ -9,6 +9,8 @@ import type { ArchMapNode, ArchMapSymbolEdge } from "./archModel";
 import { BoardColumnHead, BoardColumnPanels, KIND_BADGE, countLabel } from "./ArchMapBoard";
 import { MemberRow } from "./MemberRow";
 import { languageBadge, memberCounts, memberRole } from "./memberRoles";
+import { SourceButtons } from "./SourceButtons";
+import type { SourceSymbol } from "./sourceTabs";
 import {
   ARCH_CARD_W,
   ARCH_COL_W,
@@ -45,6 +47,8 @@ export interface ArchSymbolBoardProps {
   onSelect: (id: string | null) => void;
   /** Opens Flow mode from a card head (absent = no button, reference cards never). */
   onShowFlow?: (symbolId: string, member: string | null) => void;
+  /** Shows a file behind a card (absent = no buttons, reference cards never). */
+  onViewSource?: (symbol: SourceSymbol, tabKey: string) => void;
 }
 
 function edgeKinds(edge: ArchMapSymbolEdge): string {
@@ -67,6 +71,7 @@ export function ArchSymbolBoard({
   onToggleMembers,
   onSelect,
   onShowFlow,
+  onViewSource,
 }: ArchSymbolBoardProps) {
   const references = referenceIds ?? new Set<string>();
   const shown = visibleSymbolEdges(edges, visibleIds, selectedId, edgeOpts);
@@ -127,6 +132,7 @@ export function ArchSymbolBoard({
                       ? undefined
                       : (member) => onShowFlow(node.id, member)
                   }
+                  onViewSource={onViewSource}
                 />
               ))}
             </div>
@@ -189,6 +195,7 @@ function SymbolCard({
   onToggleMembers,
   onSelect,
   onShowFlow,
+  onViewSource,
 }: {
   node: ArchMapNode;
   /** Effective layer (manual overrides applied): drives the role accent. */
@@ -205,6 +212,7 @@ function SymbolCard({
   onToggleMembers: () => void;
   onSelect: () => void;
   onShowFlow: ((member: string | null) => void) | undefined;
+  onViewSource: ArchSymbolBoardProps["onViewSource"];
 }) {
   const { symbol } = node;
   const base = node.rel.split("/").pop() ?? node.rel;
@@ -301,6 +309,12 @@ function SymbolCard({
             {countLabel(symbol.unresolved.length, "unresolved", "unresolved")}
             {symbol.unresolvedTruncated ? "+" : ""}
           </span>
+        )}
+        {!reference && onViewSource !== undefined && (
+          <SourceButtons
+            symbol={{ ...symbol, rootId: node.rootId, rel: node.rel }}
+            onOpen={onViewSource}
+          />
         )}
       </div>
       {!reference && count > 0 && !collapsed && (

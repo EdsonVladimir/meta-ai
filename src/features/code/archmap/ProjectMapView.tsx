@@ -85,6 +85,8 @@ import {
   type ProposalOverlay,
 } from "./proposalOverlay";
 import { checkProposal, projectUsesStore, type ProposalCheck } from "./proposalChecks";
+import { SourceViewer } from "./SourceViewer";
+import { sourceTabsOf, type SourceSymbol } from "./sourceTabs";
 import {
   ArchitectureToolbar,
   type ToolbarDetailRow,
@@ -436,6 +438,9 @@ export function ProjectMapView({
   const [innerQuery, setInnerQuery] = useState("");
   const [innerTests, setInnerTests] = useState(true);
   const [innerConfig, setInnerConfig] = useState(true);
+  const [sourceView, setSourceView] = useState<{ symbol: SourceSymbol; tabKey: string } | null>(
+    null,
+  );
   const [showLibraries, setShowLibraries] = useState(false);
   const [selectedLibraryKey, setSelectedLibraryKey] = useState<string | null>(null);
   const externalFolders = useRequirementsUi((s) => s.archExternalFolders);
@@ -1386,6 +1391,10 @@ export function ProjectMapView({
 
   // Local verification of the open proposal, reusing the overlay
   // built for the board (nothing to verify without one).
+  function handleViewSource(symbol: SourceSymbol, tabKey: string): void {
+    setSourceView({ symbol, tabKey });
+  }
+
   const flowChecks = useMemo((): ProposalCheck[] | null => {
     if (flowMode === null || flowMode.overlay === null || proposalGeneration === null) return null;
     const usesStore = projectUsesStore(flowProjectsOf(sections, mergedRef.current));
@@ -1680,6 +1689,7 @@ export function ProjectMapView({
                     layout={flowMode.layout}
                     selected={flowSelected}
                     onSelect={setFlowSelected}
+                    onViewSource={handleViewSource}
                   />
                 </BoardViewport>
               </section>
@@ -1729,6 +1739,7 @@ export function ProjectMapView({
                   onToggleCollapsed={(id) => setCollapsed((prev) => toggleSetValue(prev, id))}
                   onRetry={() => retrySection(section.key)}
                   onCancel={() => cancelSection(section.key)}
+                  onViewSource={handleViewSource}
                   onShowFlow={(symbolId, member) =>
                     handleShowFlow(section.key, symbolId, member)
                   }
@@ -1800,6 +1811,18 @@ export function ProjectMapView({
           onContinue={handleContinueAll}
           unsaved={dirtyAnalyzed.length}
           onShowUnsaved={() => setDetailsOpen(true)}
+        />
+      )}
+      {sourceView !== null && (
+        <SourceViewer
+          title={sourceView.symbol.name}
+          tabs={sourceTabsOf(sourceView.symbol, proposalFiles)}
+          initialKey={sourceView.tabKey}
+          readFile={(rootId, rel) => depsRef.current.readFile(rootId, rel)}
+          onOpenCode={onOpenCode}
+          onClose={() => setSourceView(null)}
+          prefs={prefs}
+          loader={loader}
         />
       )}
     </div>
@@ -2333,6 +2356,7 @@ interface ProjectMapSectionProps {
   onRetry: () => void;
   onCancel: () => void;
   onShowFlow: (symbolId: string, member: string | null) => void;
+  onViewSource: (symbol: SourceSymbol, tabKey: string) => void;
   zoom: number;
   onZoomChange?: (zoom: number) => void;
 }
@@ -2365,6 +2389,7 @@ function ProjectMapSection({
   onRetry,
   onCancel,
   onShowFlow,
+  onViewSource,
   zoom,
   onZoomChange,
 }: ProjectMapSectionProps) {
@@ -2496,6 +2521,7 @@ function ProjectMapSection({
               selectedMember={selectedMember}
               onSelectMember={(id, index) => onSelectMember(map, id, index)}
               onShowFlow={onShowFlow}
+              onViewSource={onViewSource}
             />
           ) : (
             <ArchMapBoard
