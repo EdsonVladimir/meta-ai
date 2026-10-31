@@ -163,6 +163,106 @@ longer rules is stated here.
   have no own IR ranges and list one per row with an honest
   note. Member ranges need an extractor + IR extension.
 
+### Code X-ray and Muse (October 2026)
+
+Each entry says why, so a later change can tell whether the reason
+still holds. Commits are on `code-xray`.
+
+**Focus**
+
+- **The demo order is: one conversation, a real proposal accepted and
+  compiled, the executable, then the Pages view.** The Meta video is due
+  2026-11-04, with a freeze on 2026-11-03. The conversation came first
+  because talking to Muse is the core of the demo. Pages moved after
+  delivery unless time remains. It replaced the earlier order
+  (Muse test, executable, Pages) once the first real test showed that
+  the dialog was the weak point.
+- **Client code never goes to Meta and never appears in published
+  material.** The demo runs on the public `examples/reservas`. The name
+  was removed from the whole `code-xray` history before the first push,
+  because the repository is public. Before anything is published, check
+  names and metrics, not only one word.
+- **External agents implement and Claude audits.** Each task is one
+  prompt in a fresh session. Passing tests is not enough to approve: the
+  audit reads the diff and runs the flow in a real browser, because the
+  worst defects of this work passed every test.
+
+**Talking to Muse**
+
+- **Work starts from folders, files or components, not from projects.**
+  Going up to Projects to pick a module was the wrong entry point. The
+  domain did not change: a requirement still needs a project and a
+  module, because traceability, impact and export depend on them, so
+  Ruth creates them from the folder on first use (`2b41426`).
+- **Projects stays as the place for requirements, with a movable
+  split.** Folders shows files; requirements, designs and mockups need a
+  home. It had a fixed share, so a handle was added (`1b55332`).
+- **Ruth chooses what Muse reads; the list is one click away.** A list
+  of checkboxes made the person decide before saying anything, and the
+  first files of a folder left out the store and the service. Files are
+  now a spread of roles, and the names left out are sent too (`75fe761`).
+- **Two buttons instead of a mode switch.** Ask and Propose change say
+  what each does. There is no silent classifier: the person chooses, and
+  an answer can become a change without retyping (`75fe761`).
+- **Ask helps with what does not exist yet.** Told to answer only from
+  the files, Muse refused design requests. Facts about the code still
+  come only from the files; plans and drafts are allowed, labeled as
+  suggestions (`f90ac7b`).
+- **One conversation, in the Assistant tab, beside the X-ray.** A chat
+  with no memory plus a modal dialog hid the files once X-ray opened,
+  and questions could not be answered. Proposals are now cards in the
+  thread, with Accept and Discard, and the board stays visible
+  (`07b213d`, `7e005b5`, `cb5eaf1`). The thread lives in memory for now;
+  requirements and proposals persist.
+- **Card and X-ray show one proposal.** Accepting on either side updates
+  the other through `museGeneration`, so they cannot disagree (`cb5eaf1`).
+- **Proposals follow the project's layers.** Muse once went from a
+  component straight to a service, skipping the store. The instruction
+  now forbids skipping a layer, and template versions were raised so a
+  proposal shows which rules produced it (`07b213d`).
+- **Never send to Muse is enforced in Rust.** One click makes it easy to
+  send a confidential folder, so the mark lives in the database (schema
+  v16) and is checked in `read_scope_files`, which every prompt path
+  uses. The interface only explains it. It is per workspace root and off
+  by default, so a new client folder must be marked (`2b41426`).
+
+**Reading code**
+
+- **External libraries are references, never detail.** We use them and
+  do not change them: one card per package, with who uses it and what
+  they import, off by default. Ownership comes from the imports, not a
+  fixed `app/` or `src/` folder, so it works for Angular and Nest
+  alike. A folder can be marked external for code kept in the project
+  but treated as a library (`b8a6e5c`).
+- **Marked folders still count as analyzed.** Marking changes what is
+  shown, so unmarking needs no new pass. Flow and Muse still reach them.
+- **A signal is a signal only if its class declares it.** `this.store.items.set()`
+  used to vanish with no trace. It now reads as a write, proven against
+  the injected class; what cannot be proven stays pending (`f2ed611`).
+- **Templates join the chain; styles only exist.** Flow reads handlers,
+  signal reads and writes, and child components by selector. Style
+  files are only checked for existence: matching CSS classes to HTML
+  costs a lot, gives doubtful links and does not help impact
+  (`3177e6c`). HTML gets no cards of its own, because they would
+  duplicate the component.
+- **The board scrolls with the wheel; Ctrl+wheel zooms.** Moving through
+  a large board mattered more than zoom (`4180e46`). The board fills the
+  center, with the status bar on the bottom edge (`076defe`).
+
+**Agreed and not built yet**
+
+- **Pages view:** columns by level from the routes. A page is only a
+  component a route targets, never by name or folder. A component used
+  by many parents goes to a Shared column. One with no route or parent
+  reads "No usage detected", because dynamic creation cannot be ruled
+  out.
+- **Executable:** development and production need separate data
+  folders, because both use `ruth.db` and it locks a second instance.
+  Opened from the system menu it has no `META_API_KEY`: start it from a
+  terminal first, then add a screen that stores the key in the system
+  keyring. New folders blocked by default is worth it if client code is
+  opened often.
+
 ## Superseded (historical context)
 
 1. "Generating designs requires approved sources" — superseded by
@@ -205,6 +305,19 @@ longer rules is stated here.
     in batches, with per-batch resolution and
     discovered/analyzed/failed/excluded/pending counters
     (§28).
+15. "Wheel zooms the board" — superseded: the wheel scrolls and
+    Ctrl+wheel zooms, so moving through a board does not change it.
+16. "External refs" as a name — superseded: it showed references
+    outside the module, not libraries, so it is now "Outside module".
+17. "Pick a project and a module before talking to Muse" — superseded:
+    dialogs start from a folder, file or component.
+18. "Checkboxes and a mode switch in the Muse dialog" — superseded:
+    Ruth picks the files, and Ask and Propose change are two buttons.
+19. "Modal dialog for proposals from Muse" — superseded in the Muse
+    thread by cards beside the X-ray. The Propose with Muse button
+    keeps its dialog.
+20. "Pages view before the demo" — moved after delivery unless time
+    remains.
 
 Full detail on 1–4 in the
 [live-design decision](decision-diseno-vivo.md).

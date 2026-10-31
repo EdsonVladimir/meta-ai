@@ -11,6 +11,8 @@ finds the affected designs and proposes updates for a person to review.
 and the English-only language policy. To resume work, start with
 [docs/continuidad.md](docs/continuidad.md): it covers current status, schema
 version, known errors, pending tasks and the uncommitted-changes ledger.
+[docs/decisiones.md](docs/decisiones.md) records what was decided and why:
+read it before changing a behavior, and add to it when a decision changes.
 [docs/arquitectura.md](docs/arquitectura.md) is the authoritative design
 document. Its numbered sections (§17 terminal, §20 code workspace, §22
 unified perspectives…) are cited from the code and the docs.
