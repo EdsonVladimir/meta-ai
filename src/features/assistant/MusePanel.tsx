@@ -70,6 +70,9 @@ export interface MusePanelApi extends MuseLinkDeps {
   }) => Promise<{ artifact: { id: string } }>;
 }
 
+/** Enough of an answer to carry its idea into a requirement. */
+const MAX_SAVED_ANSWER_CHARS = 4000;
+
 const defaultApi: MusePanelApi = {
   listDir: listCodeDir,
   ask: askCode,
@@ -121,6 +124,8 @@ interface FailedAsk {
 interface FailedProposal {
   kind: "propose" | "adjust";
   text: string;
+  /** Saved text, when it differs from what the thread shows. */
+  content?: string;
   /** The card being adjusted; null while proposing fresh. */
   generation: CodeGenerationDto | null;
   /** Saved requirement/version to reuse; null replays from the top. */
@@ -250,6 +255,7 @@ export function MusePanel({
   const [failedProposal, setFailedProposal] = useState<FailedProposal | null>(null);
   /** True while a proposal exists: the composer adjusts instead of proposing. */
   const [adjustMode, setAdjustMode] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
   const apiRef = useRef(api);
   apiRef.current = api;
   const idRef = useRef(0);
@@ -300,10 +306,11 @@ export function MusePanel({
   const rootNames = Object.fromEntries(roots.map((entry) => [entry.id, entry.name]));
   // What leaves the machine, in plain view: it must not need a hover.
   const leftOut = all.length - files.length;
-  const outgoing = [
-    `Sending goes to Meta: ${files.length === 1 ? "this file" : `these ${files.length} files`}`,
+  const fileText = (count: number): string => (count === 1 ? "1 file" : `${count} files`);
+  const askOutgoing = [
+    `Ask sends ${fileText(files.length)}`,
     ...(leftOut > 0 ? [`the names of the other ${leftOut}`] : []),
-    ...(messages.length > 0 ? ["your recent messages here"] : []),
+    ...(messages.length > 0 ? ["this conversation"] : []),
   ].join(", ").concat(".");
   const newest = newestProposal(messages);
   const showAdjust = adjustMode && newest !== null;
@@ -312,6 +319,16 @@ export function MusePanel({
   // A saved version waits for its Retry: another adjustment would find
   // the proposal out of date and lose that Retry.
   const pendingRetry = failedProposal?.resume != null;
+  const shownProposals = messages.flatMap((entry) =>
+    entry.role === "proposal" ? [latest(entry.generation)] : [],
+  );
+  const changeOutgoing = showAdjust
+    ? `Adjust proposal sends ${fileText(adjustmentScope(shownProposals).length)}, the current proposal and your request.`
+    : `Propose change sends ${fileText(files.length)} and your request.`;
+  const pendingFiles =
+    newest === null
+      ? 0
+      : latest(newest.generation).files.filter((file) => file.state === "pending").length;
   const canAdjust =
     busy === null &&
     !pendingRetry &&
@@ -408,6 +425,7 @@ export function MusePanel({
 
   async function runProposeFlow(input: {
     message: string;
+    content?: string;
     showUser: boolean;
     resume: FailedProposal["resume"];
   }): Promise<void> {
@@ -424,7 +442,7 @@ export function MusePanel({
         const created = await api.createRequirement({
           projectId,
           moduleId,
-          content: input.message,
+          content: input.content ?? input.message,
           author: "Muse dialog",
         });
         saved = {
@@ -449,6 +467,7 @@ export function MusePanel({
       setFailedProposal({
         kind: "propose",
         text: input.message,
+        content: input.content,
         generation: null,
         resume: saved,
         error: reason(raw),
@@ -458,12 +477,17 @@ export function MusePanel({
     }
   }
 
-  async function sendProposal(raw: string): Promise<void> {
+  /** An answer it builds on is saved with the request, cut to a fair size. */
+  async function sendProposal(raw: string, answer: string | null = null): Promise<void> {
     if (root === null) return;
     const message = raw.trim();
     if (message === "") return;
     setText("");
-    await runProposeFlow({ message, showUser: true, resume: null });
+    const content =
+      answer === null
+        ? message
+        : `${message}\n\nMuse's answer to build on:\n${answer.slice(0, MAX_SAVED_ANSWER_CHARS)}`;
+    await runProposeFlow({ message, content, showUser: true, resume: null });
   }
 
   async function runAdjustFlow(input: {
@@ -549,7 +573,12 @@ export function MusePanel({
     const failed = failedProposal;
     if (failed === null || busy !== null) return;
     if (failed.kind === "propose") {
-      void runProposeFlow({ message: failed.text, showUser: false, resume: failed.resume });
+      void runProposeFlow({
+        message: failed.text,
+        content: failed.content,
+        showUser: false,
+        resume: failed.resume,
+      });
     } else if (failed.generation !== null) {
       void runAdjustFlow({
         generation: failed.generation,
@@ -606,12 +635,40 @@ export function MusePanel({
             type="button"
             className="secondary small"
             aria-label="Close Muse dialog"
-            onClick={onClose}
+            onClick={() => {
+              if (pendingFiles > 0) {
+                setConfirmClose(true);
+                return;
+              }
+              onClose();
+            }}
           >
             ×
           </button>
         </span>
       </div>
+      {confirmClose && (
+        <div className="muse-confirm" role="alert">
+          <p className="hint">
+            {`${pendingFiles === 1 ? "1 file is" : `${pendingFiles} files are`} still pending. Closing removes this conversation, and that proposal can then only be reopened from Propose with Muse.`}
+          </p>
+          <div className="button-row">
+            <button type="button" className="secondary small" onClick={() => setConfirmClose(false)}>
+              Keep it open
+            </button>
+            <button
+              type="button"
+              className="secondary small"
+              onClick={() => {
+                useRequirementsUi.getState().setMuseGeneration(null);
+                onClose();
+              }}
+            >
+              Close anyway
+            </button>
+          </div>
+        </div>
+      )}
       {blocked ? (
         <p className="error" role="alert">
           This folder is marked to never be sent to Muse. Nothing leaves this machine.
@@ -633,7 +690,7 @@ export function MusePanel({
                     type="button"
                     className="secondary small"
                     disabled={busy !== null}
-                    onClick={() => void sendProposal(questionOf(index))}
+                    onClick={() => void sendProposal(questionOf(index), message.text)}
                   >
                     Propose this as a change
                   </button>
@@ -677,6 +734,7 @@ export function MusePanel({
                     loader={loader}
                     onChange={(generation) => updateProposal(message.id, generation)}
                     onAccepted={proposalAccepted}
+                    autoRefreshes
                   />
                   <div className="button-row">
                     <button
@@ -732,6 +790,7 @@ export function MusePanel({
                     loader={loader}
                     onChange={(generation) => updateProposal(message.id, generation)}
                     onAccepted={proposalAccepted}
+                    autoRefreshes
                     readOnly
                   />
                   {newest !== null && (
@@ -759,7 +818,10 @@ export function MusePanel({
             )}
             {failedProposal !== null && (
               <div className="muse-error-row" role="alert">
-                <span className="error">{failedProposal.error}</span>
+                <span className="error">
+                  {failedProposal.error}
+                  {failedProposal.resume !== null ? " Your request is saved; Retry only generates." : ""}
+                </span>
                 <button
                   type="button"
                   className="secondary small"
@@ -780,7 +842,7 @@ export function MusePanel({
             )}
             {candidates === null && notice === null && <p className="hint">Reading the folder…</p>}
             {candidates !== null && candidates.length === 0 && (
-              <p className="hint">No source files here.</p>
+              <p className="hint">No source files here. Right-click a folder with code.</p>
             )}
             {candidates !== null && candidates.length > 0 && (
               <div className="muse-reads">
@@ -814,7 +876,13 @@ export function MusePanel({
                 ))}
               </ul>
             )}
-            {!blocked && all.length > 0 && <p className="hint muse-outgoing">{outgoing}</p>}
+            {!blocked && all.length > 0 && (
+              <p className="hint muse-outgoing">
+                {askOutgoing}
+                <br />
+                {changeOutgoing}
+              </p>
+            )}
             <textarea
               aria-label="Message to Muse"
               value={text}

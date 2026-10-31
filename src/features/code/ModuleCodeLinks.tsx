@@ -116,7 +116,7 @@ export function ModuleCodeLinks({ moduleId, moduleName, archived, api }: ModuleC
         </p>
       )}
       {links !== null && !loading && links.length === 0 && (
-        <p className="hint">No links. Open a file in Code and link it here.</p>
+        <p className="hint">No links. Open a file from Folders and link it here.</p>
       )}
       {links !== null && links.length > 0 && (
         <ul className="pick-list">

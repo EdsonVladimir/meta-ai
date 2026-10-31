@@ -19,8 +19,8 @@ Muse is the Meta assistant: Test connection, Ask, Propose
 requirements, Generate flow/ER, Propose screens and Propose
 change/code. Every call goes to real Meta models (Responses
 API, default `muse-spark-1.3`) and only fires from an explicit
-button — never at startup, never in the background, never from
-tests. The key lives in `META_API_KEY` in the native process
+button, or from Automatic AI update once you turn it on for a
+module. Never at startup, and never from tests. The key lives in `META_API_KEY` in the native process
 environment; it never crosses to the frontend, logs or files.
 
 ## Demo path (examples/reservas)
@@ -30,9 +30,9 @@ Angular 18 standalone UI). Its own
 [Run section](examples/reservas/README.md) starts both.
 
 1. `npm run tauri dev`, export `META_API_KEY` first (below).
-2. Add `examples/reservas/frontend` and `backend` as code
-   roots, open the Architecture perspective: the X-ray draws
-   the UI → store → service chains with evidence.
+2. Open project on `examples/reservas` and go to Architecture.
+   The map draws the UI → store → service chains with evidence,
+   and Pages orders the app from its routes.
 3. Right-click a folder → Ask Muse. Ask about the code, then
    use Propose change for the missing user registration.
 4. Review the proposal in the thread and on the X-ray, answer

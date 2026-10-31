@@ -34,6 +34,8 @@ interface ProposalFilesProps {
   onAccepted: (rootId: string, rel: string) => void;
   /** Replaced cards: files listed without actions. */
   readOnly?: boolean;
+  /** The board refreshes on its own: no need to ask for it. */
+  autoRefreshes?: boolean;
 }
 
 export function ProposalFiles({
@@ -45,9 +47,12 @@ export function ProposalFiles({
   onChange,
   onAccepted,
   readOnly = false,
+  autoRefreshes = false,
 }: ProposalFilesProps) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [currentTexts, setCurrentTexts] = useState<Record<number, string>>({});
+  /** A failed read is not an empty file: no comparison is drawn for it. */
+  const [unreadable, setUnreadable] = useState<Set<number>>(new Set());
   const [busyPos, setBusyPos] = useState<number | null>(null);
   const [fileNotice, setFileNotice] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
@@ -72,7 +77,7 @@ export function ProposalFiles({
       setCurrentTexts((prev) => ({ ...prev, [file.pos]: read.text }));
     } catch (raw) {
       if (!live.current) return;
-      setCurrentTexts((prev) => ({ ...prev, [file.pos]: "" }));
+      setUnreadable((prev) => new Set(prev).add(file.pos));
       setFileNotice(`Could not read the current file: ${normalizeCodeError(raw).message}`);
     }
   }
@@ -89,7 +94,7 @@ export function ProposalFiles({
         setFileNotice(`"${file.rel}" was already accepted; not written again.`);
       } else {
         setFileNotice(
-          `"${file.rel}" written to disk (fingerprint ${outcome.fingerprint ?? "?"}). Re-analyze to see the change.`,
+          `"${file.rel}" written to disk (fingerprint ${outcome.fingerprint ?? "?"}).${autoRefreshes ? "" : " Re-analyze to see the change."}`,
         );
         onAccepted(file.rootId, file.rel);
       }
@@ -232,7 +237,9 @@ export function ProposalFiles({
             )}
             {expanded === file.pos && !readOnly && (
               <div className="code-proposal-diff">
-                {file.operation === "modify" && currentTexts[file.pos] === undefined ? (
+                {unreadable.has(file.pos) ? (
+                  <p className="error">The current file could not be read, so no comparison is shown.</p>
+                ) : file.operation === "modify" && currentTexts[file.pos] === undefined ? (
                   <p className="hint">Reading the current file…</p>
                 ) : (
                   <CodeConflictDiff

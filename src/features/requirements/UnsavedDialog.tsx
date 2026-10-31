@@ -1,3 +1,5 @@
+import { useEscape } from "../../lib/useEscape";
+
 interface UnsavedDialogProps {
   /** "requirement req-1" or "design flow-1": which draft is protected. */
   subject: string;
@@ -23,6 +25,7 @@ export function UnsavedDialog({
   onDiscard,
   onCancel,
 }: UnsavedDialogProps) {
+  useEscape(onCancel, !busy);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="unsaved-title">
       <div className="modal">

@@ -1,7 +1,7 @@
 // Board zoom steps: fixed levels keep boxes, edges and labels aligned
 // (all geometry derives from layout constants, so CSS `zoom` scales
 // every layer together). Pure and tested.
-export const BOARD_ZOOM_STEPS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2] as const;
+export const BOARD_ZOOM_STEPS = [0.33, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2] as const;
 
 export function stepBoardZoom(current: number, direction: 1 | -1): number {
   if (direction === 1) {

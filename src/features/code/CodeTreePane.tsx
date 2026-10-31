@@ -87,7 +87,7 @@ export function CodeTreePane() {
         onAskMuse={(rootId, rel, kind) => setMuseTarget({ rootId, rel, kind })}
         onSetRootAiBlocked={(root, blocked) => {
           void setRootAiBlocked(root.id, blocked)
-            .then(() => reloadRoots())
+            .then(() => useRequirementsUi.getState().bumpCodeLibrary())
             .catch((raw) => setAiBlockError(normalizeCodeError(raw).message));
         }}
         hiddenProjects={hiddenProjects}

@@ -314,7 +314,7 @@ export function TraceView({ projectId, moduleId, moduleName, onOpenArtifact, api
               <h3>Unlinked artifacts</h3>
               <p className="hint">
                 No linked code yet: link the active tab to the module or a
-                symbol from Structure.
+                symbol from Manual analysis.
               </p>
               <ul className="pick-list">
                 {model.unlinkedArtifacts.map((artifact) => (
@@ -345,14 +345,14 @@ export function TraceView({ projectId, moduleId, moduleName, onOpenArtifact, api
             {model.orphanSymbols.length === 0 ? (
               <p className="hint">
                 Nothing pending in the saved snapshots. It only covers what
-                was analyzed and saved: analyze in Structure and save a
+                was analyzed and saved: use Manual analysis and save a
                 snapshot to widen.
               </p>
             ) : (
               <>
                 <p className="hint">
                   Symbols detected in snapshots with no linked artifact in
-                  the project. To link them, analyze them in Structure (links
+                  the project. To link them, use Manual analysis (links
                   with fresh evidence can be made there).
                 </p>
                 {model.orphansTruncated && (
@@ -398,7 +398,7 @@ export function TraceView({ projectId, moduleId, moduleName, onOpenArtifact, api
           {model.counts.artifacts === 0 && model.counts.orphanSymbols === 0 && (
             <p className="hint">
               The module has no artifacts and no symbols are saved. Create a
-              requirement or analyze code in Structure to start.
+              requirement or use Manual analysis to start.
             </p>
           )}
         </>

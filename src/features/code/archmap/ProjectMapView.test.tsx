@@ -293,7 +293,7 @@ describe("ProjectMapView", () => {
 
   it("guides when the project has no folders", () => {
     renderView({ roots: [] });
-    expect(screen.getByText(/No folders associated/)).toBeTruthy();
+    expect(screen.getByText(/No folders linked/)).toBeTruthy();
   });
 
   it("continues past unreadable files and reports them", async () => {

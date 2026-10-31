@@ -260,7 +260,7 @@ describe("fitZoomStep", () => {
     expect(fitZoomStep(1000, 800, 1000, 800)).toBe(1);
     expect(fitZoomStep(1000, 800, 500, 800)).toBe(0.5);
     expect(fitZoomStep(1000, 800, 700, 800)).toBe(0.67);
-    expect(fitZoomStep(1000, 800, 400, 300)).toBe(0.5);
+    expect(fitZoomStep(1000, 800, 400, 300)).toBe(0.33);
     expect(fitZoomStep(200, 100, 2000, 2000)).toBe(2);
   });
 

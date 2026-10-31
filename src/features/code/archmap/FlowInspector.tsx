@@ -28,7 +28,7 @@ export interface FlowInspectorProps {
   decisionError?: string | null;
   /** Open proposal generation for the verification panel (absent = no panel). */
   generation?: CodeGenerationDto | null;
-  /** Local checks over the generation (shown under "Ruth verified"). */
+  /** Local checks over the generation (shown under "Ruth checked"). */
   checks?: ProposalCheck[] | null;
   /** Reopens the proposal dialog to ask Muse to adjust (absent = no button). */
   onOpenProposal?: () => void;
@@ -140,7 +140,8 @@ function VerificationPanel({
           </div>
         )}
       </Block>
-      <Block title="Ruth verified">
+      <Block title="Ruth checked">
+        <p className="hint">Syntax, scope, links, layers and freshness. Not compiled or run.</p>
         {checks.length === 0 ? (
           <p className="hint">No checks ran.</p>
         ) : (

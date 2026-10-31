@@ -397,6 +397,7 @@ footer {
   height: 6px;
   cursor: row-resize;
   touch-action: none;
+  background: linear-gradient(var(--line), var(--line)) center / 28px 2px no-repeat;
 }
 
 .nav-split:hover {
@@ -6605,5 +6606,26 @@ button.archboard-member:hover {
 
 .pagesboard-card.dimmed {
   opacity: 0.28;
+}
+
+.archmap-mode-hint {
+  flex: none;
+  margin: 0 0 0.25rem;
+}
+
+.pages-focus {
+  flex: none;
+  margin: 0 0 0.3rem;
+}
+
+.muse-confirm {
+  flex: none;
+  padding: 0.4rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--r-sm);
+}
+
+.muse-confirm .hint {
+  margin: 0 0 0.3rem;
 }
 

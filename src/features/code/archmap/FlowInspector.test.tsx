@@ -181,7 +181,7 @@ it("shows the verification panel for an open proposal", () => {
   expect(screen.getByText("Adds the discount.")).toBeTruthy();
   expect(screen.getByText("In-memory stock.")).toBeTruthy();
   expect(screen.getByText("On reserve or on confirm?")).toBeTruthy();
-  expect(screen.getByText("Ruth verified")).toBeTruthy();
+  expect(screen.getByText("Ruth checked")).toBeTruthy();
   expect(screen.getAllByText("Pass")).toHaveLength(4);
 });
 

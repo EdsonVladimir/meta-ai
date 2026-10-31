@@ -1622,8 +1622,8 @@ export function ProjectMapView({
       />
       {projectRoots.length === 0 && (
         <p className="hint" role="note">
-          No folders associated with this project yet. Associate them from the Code view (◈
-          badge) and their diagrams will appear here.
+          No folders linked to this project yet. Open or link a folder in Folders and its
+          diagrams will appear here.
         </p>
       )}
       {projectRoots.length > 0 && scopeIssue !== null && (
@@ -1654,6 +1654,9 @@ export function ProjectMapView({
             </button>
           </p>
         )}
+      {sections.length > 0 && (
+        <p className="hint archmap-mode-hint">{MODE_HINTS[activeGroupBy]}</p>
+      )}
       {sections.length > 0 && (
         <div className="project-map-boards">
           <div className="project-map-sections">
@@ -2403,11 +2406,19 @@ interface ProjectMapSectionProps {
   onZoomChange?: (zoom: number) => void;
 }
 
+const MODE_HINTS = {
+  symbols: "Symbols: one card per class or function, grouped by architecture layer.",
+  files: "Files: one card per file, grouped by architecture layer.",
+  pages: "Pages: what a route opens, then the components each one uses, level by level.",
+};
+
 /** What the hierarchy could not settle, said above the board. */
 function PagesNotes({ composition }: { composition: Composition }) {
   const hasPages = composition.columns.some((column) => column.key === "pages");
   const notes = [
-    ...(hasPages ? [] : ["No routes were found, so no page can be told apart."]),
+    ...(hasPages || composition.unresolvedRoutes.length > 0
+      ? []
+      : ["No routes were found, so no page can be told apart."]),
     ...(composition.unresolvedRoutes.length > 0
       ? [
           `${composition.unresolvedRoutes.length} route${composition.unresolvedRoutes.length === 1 ? "" : "s"} point to no known component: ${composition.unresolvedRoutes
@@ -2507,7 +2518,7 @@ function ProjectMapSection({
       ? map.files.length === 0
         ? "No supported source files."
         : pagesMode && composition === null
-          ? "Pages reads Angular components and routes. None were found here."
+          ? "Pages reads Angular components and routes. None were found here: choose an Angular folder, or use Symbols."
         : symbolMode && map.nodes.length === 0
           ? "No symbols detected in the analyzed files."
           : !hasCards
@@ -2576,6 +2587,18 @@ function ProjectMapSection({
         </ul>
       )}
       {ready && pagesMode && composition !== null && <PagesNotes composition={composition} />}
+      {ready && pagesMode && composition !== null && selectedSymbolId !== null && (
+        <p className="hint pages-focus" role="status">
+          Showing this card's branch.{" "}
+          <button
+            type="button"
+            className="secondary small"
+            onClick={() => onSelectSymbol(map, null)}
+          >
+            Clear selection
+          </button>
+        </p>
+      )}
       {ready && map !== null && hasCards && (
         <BoardViewport
           zoom={zoom}

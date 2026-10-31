@@ -459,7 +459,7 @@ export function CodeTree({
       )}
       {!loading && error === null && roots.length === 0 && (
         <p className="hint">
-          No folders. Open the frontend and the backend as separate roots of the same workspace.
+          No folders yet. Open the folder that holds your project: Ruth finds frontend and backend inside it.
         </p>
       )}
       <ul className="code-roots" aria-label="Workspace folders">

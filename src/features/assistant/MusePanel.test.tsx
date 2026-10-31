@@ -246,7 +246,9 @@ describe("MusePanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Propose this as a change" }));
     await waitFor(() => expect(onPropose).toHaveBeenCalledTimes(1));
     expect(fake.createRequirement).toHaveBeenCalledWith(
-      expect.objectContaining({ content: "Add a user form" }),
+      expect.objectContaining({
+        content: expect.stringMatching(/^Add a user form\n\nMuse's answer to build on:\nIt validates\./),
+      }),
     );
     expect(fake.generate).toHaveBeenCalledWith(
       expect.objectContaining({ source: { kind: "requirement", artifactId: "req-1" } }),
@@ -319,7 +321,7 @@ describe("MusePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByText("Why?")).toBeTruthy();
-    expect(screen.getByText("Meta is down.")).toBeTruthy();
+    expect(screen.getByText(/Meta is down\./)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText("It validates.");
     expect(fake.ask).toHaveBeenCalledTimes(2);
@@ -505,12 +507,50 @@ describe("MusePanel", () => {
       <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api(10)} />,
     );
     await screen.findByRole("status");
-    const notice = (await screen.findByText(/Sending goes to Meta/)).textContent;
-    expect(notice).toBe("Sending goes to Meta: these 8 files, the names of the other 2.");
+    const notice = (await screen.findByText(/Ask sends/)).textContent;
+    expect(notice).toContain("Ask sends 8 files, the names of the other 2.");
+    expect(notice).toContain("Propose change sends 8 files and your request.");
     write("Why?");
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     await screen.findByText("It validates.");
-    expect(screen.getByText(/Sending goes to Meta/).textContent).toContain("your recent messages");
+    expect(screen.getByText(/Ask sends/).textContent).toContain("this conversation");
+  });
+
+  it("names what an adjustment sends", async () => {
+    await proposeOnce(api());
+    expect(screen.getByText(/Ask sends/).textContent).toContain(
+      "the current proposal and your request",
+    );
+  });
+
+  it("asks before closing with pending files, and clears the X-ray if confirmed", async () => {
+    const onClose = vi.fn();
+    render(
+      <MusePanel target={target} roots={[root]} onClose={onClose} onPropose={() => {}} api={api()} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByRole("button", { name: "Show on X-ray" });
+    fireEvent.click(screen.getByRole("button", { name: "Close Muse dialog" }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText(/still pending/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep it open" }));
+    expect(screen.queryByText(/still pending/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close Muse dialog" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close anyway" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(useRequirementsUi.getState().museGeneration).toBeNull();
+  });
+
+  it("closes at once with nothing pending", async () => {
+    const onClose = vi.fn();
+    render(
+      <MusePanel target={target} roots={[root]} onClose={onClose} onPropose={() => {}} api={api()} />,
+    );
+    await screen.findByRole("status");
+    fireEvent.click(screen.getByRole("button", { name: "Close Muse dialog" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("keeps typed answers while hidden", async () => {
@@ -728,7 +768,7 @@ describe("MusePanel", () => {
     write("Add a total");
     fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
     await screen.findByRole("button", { name: "Retry proposal" });
-    expect(screen.getByText("Meta is down.")).toBeTruthy();
+    expect(screen.getByText(/Meta is down\./)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry proposal" }));
     await screen.findByText("Adds the discount.");
     expect(fake.createRequirement).toHaveBeenCalledTimes(1);

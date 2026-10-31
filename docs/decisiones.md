@@ -259,6 +259,10 @@ still holds. Commits are on `code-xray`.
   the `modify` it is, with the file's real fingerprint, so View diff
   shows what it replaces. Nothing is overwritten without Accept.
 
+- **Each folder or file keeps its own conversation.** Going elsewhere
+  used to erase a thread, with proposals still pending. Threads now stay
+  by target, and closing one with pending files asks first.
+
 **From the first-time developer audit**
 
 - **Every close route protects drafts.** The title-bar button asked, but

@@ -58,7 +58,7 @@ import { RequirementEditor } from "./RequirementEditor";
 import { ReviewPanel } from "./ReviewPanel";
 import { UnsavedDialog } from "./UnsavedDialog";
 import { withDesign, withMockup, withRequirement, withScreen } from "./navigation";
-import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, useRequirementsUi, type CenterView, type DocSaveState, type PanelName, type RightTab, type Selection } from "./uiStore";
+import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, useRequirementsUi, type CenterView, type DocSaveState, type MuseTarget, type PanelName, type RightTab, type Selection } from "./uiStore";
 import { dirtyDocKeys, docKey } from "./saveStatus";
 import { GenerationPanel } from "../proposals/GenerationPanel";
 import {
@@ -149,6 +149,10 @@ interface PendingNav {
   draft: "requirement" | "visual" | "mockup";
 }
 
+function museKey(target: MuseTarget): string {
+  return `${target.rootId}\n${target.rel}`;
+}
+
 export function RequirementsWorkspace() {
   const [isNative] = useState<boolean>(() => isTauriEnvironment());
   const projectId = useRequirementsUi((s) => s.selection.projectId);
@@ -166,6 +170,20 @@ export function RequirementsWorkspace() {
   const showAssistant = useRequirementsUi((s) => s.panels.assistant);
   const rightTab = useRequirementsUi((s) => s.rightTab);
   const museTarget = useRequirementsUi((s) => s.museTarget);
+  // One thread per folder or file: going to another keeps this one.
+  const [museThreads, setMuseThreads] = useState<MuseTarget[]>([]);
+  useEffect(() => {
+    if (museTarget === null) return;
+    setMuseThreads((prev) =>
+      prev.some((target) => museKey(target) === museKey(museTarget)) ? prev : [...prev, museTarget],
+    );
+  }, [museTarget]);
+  function closeMuseThread(target: MuseTarget) {
+    setMuseThreads((prev) => prev.filter((entry) => museKey(entry) !== museKey(target)));
+    const ui = useRequirementsUi.getState();
+    if (ui.museTarget !== null && museKey(ui.museTarget) === museKey(target)) ui.setMuseTarget(null);
+  }
+  const rootsToken = useRequirementsUi((s) => s.codeLibraryToken);
   const projectsPaneFrac = useRequirementsUi((s) => s.projectsPaneFrac);
   const rightWidth = useRequirementsUi((s) => s.rightWidth);
   const showRight = showReview || showAssistant;
@@ -1191,7 +1209,7 @@ export function RequirementsWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [isNative, projectId, centerView, explorerRefresh]);
+  }, [isNative, projectId, centerView, explorerRefresh, rootsToken]);
 
   async function handleAddFolder() {
     if (!isNative || projectId === null || navBusy) return;
@@ -3064,6 +3082,21 @@ export function RequirementsWorkspace() {
                 />
               </div>
             ) : null
+          ) : centerView === "traceability" ? (
+            moduleId === null || projectId === null ? (
+              <p className="hint">Select a project and a module.</p>
+            ) : (
+              <TraceView
+                projectId={projectId}
+                moduleId={moduleId}
+                moduleName={selectedModuleName}
+                onOpenArtifact={(artifact) => {
+                  if (artifact.kind === "requirement") handleOpenRequirement(artifact.id);
+                  else if (artifact.kind === "mockup") handleOpenMockup(artifact.id);
+                  else handleOpenDesign(artifact.id);
+                }}
+              />
+            )
           ) : designId === null ? (
             moduleId === null || projectId === null ? (
               <p className="hint">Select a project and a module.</p>
@@ -3139,21 +3172,6 @@ export function RequirementsWorkspace() {
               }
               />
             </div>
-          ) : centerView === "traceability" ? (
-            moduleId === null || projectId === null ? (
-              <p className="hint">Select a project and a module.</p>
-            ) : (
-              <TraceView
-                projectId={projectId}
-                moduleId={moduleId}
-                moduleName={selectedModuleName}
-                onOpenArtifact={(artifact) => {
-                  if (artifact.kind === "requirement") handleOpenRequirement(artifact.id);
-                  else if (artifact.kind === "mockup") handleOpenMockup(artifact.id);
-                  else handleOpenDesign(artifact.id);
-                }}
-              />
-            )
           ) : null}
             </>
           )}
@@ -3182,15 +3200,20 @@ export function RequirementsWorkspace() {
                 Assistant
               </button>
             </div>
-            {museTarget !== null && (
+            {museThreads.map((target) => (
               <MusePanel
-                target={museTarget}
+                key={museKey(target)}
+                target={target}
                 roots={codeRoots}
-                hidden={rightTab !== "assistant"}
-                onClose={() => useRequirementsUi.getState().setMuseTarget(null)}
+                hidden={
+                  rightTab !== "assistant" ||
+                  museTarget === null ||
+                  museKey(target) !== museKey(museTarget)
+                }
+                onClose={() => closeMuseThread(target)}
                 onPropose={handleMuseProposal}
               />
-            )}
+            ))}
             {rightTab === "assistant" ? (
               museTarget !== null ? null : projectId !== null && moduleId !== null ? (
                 <AssistantPanel

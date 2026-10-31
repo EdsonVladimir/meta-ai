@@ -87,3 +87,25 @@ describe("Accept all", () => {
     expect(screen.getByRole("button", { name: "Accept all (2)" })).toHaveProperty("disabled", true);
   });
 });
+
+describe("View diff", () => {
+  it("never shows a failed read as an empty file", async () => {
+    const generation = generationDto([{ ...fileDto(0), operation: "modify" }]);
+    const readFile = vi.fn(async () => {
+      throw { kind: "code_io", message: "Denied." };
+    });
+    render(
+      <ProposalFiles
+        generation={generation}
+        rootNames={{}}
+        api={{ acceptFile: vi.fn(), discardFile: vi.fn(), readFile } as unknown as ProposalFilesApi}
+        prefs={DEFAULT_CODE_EDITOR_PREFS}
+        onChange={() => {}}
+        onAccepted={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "View diff" }));
+    expect(await screen.findByText(/could not be read, so no comparison/)).toBeTruthy();
+  });
+});
+

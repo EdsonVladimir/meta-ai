@@ -10,6 +10,7 @@ import {
 } from "../features/requirements/saveStatus";
 import { useRequirementsUi } from "../features/requirements/uiStore";
 import { isTauriEnvironment } from "../lib/env";
+import { useEscape } from "../lib/useEscape";
 import { allowCloseOnce, useCloseGuard } from "./closeGuard";
 import { WindowControls } from "./WindowControls";
 
@@ -301,6 +302,7 @@ function ExportGateDialog({
 }) {
   const saveAllResult = useRequirementsUi((s) => s.saveAllResult);
   const [waiting, setWaiting] = useState(false);
+  useEscape(onCancel, !waiting);
 
   useEffect(() => {
     if (saveAllResult !== null) setWaiting(false);
@@ -372,6 +374,7 @@ function CloseGateDialog({
 }) {
   const saveAllResult = useRequirementsUi((s) => s.saveAllResult);
   const [waiting, setWaiting] = useState(false);
+  useEscape(onCancel, !waiting);
 
   useEffect(() => {
     if (saveAllResult !== null) setWaiting(false);

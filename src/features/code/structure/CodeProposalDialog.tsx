@@ -290,7 +290,7 @@ export function CodeProposalDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="modal-head">
-          <h3>Propose code</h3>
+          <h3>Propose with Muse</h3>
           <div className="button-row">
             {generation !== null && onViewOnXray !== undefined && (
               <button type="button" className="primary small" onClick={onViewOnXray}>

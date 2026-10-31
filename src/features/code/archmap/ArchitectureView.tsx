@@ -174,7 +174,7 @@ export function ArchitectureView() {
         title={
           canPropose
             ? `Muse reads ${proposalScope.length} file(s): the chain on screen, or your manual scope`
-            : "Select a project and a module to propose with Muse"
+            : "Needs a module: right-click a folder and choose Ask Muse, or pick a module"
         }
         onClick={() => {
           setProposeOpen(true);
