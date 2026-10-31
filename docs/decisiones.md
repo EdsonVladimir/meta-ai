@@ -319,9 +319,9 @@ still holds. Commits are on `code-xray`.
   built on those systems. Started from the menu the app has no key, so
   it is started from a terminal for now.
 
-- **The README claims only what can be shown.** "Built entirely during
-  the event" was removed until the start date is checked against the
-  first commit (2026-10-26). The earlier prototype stays declared.
+- **The whole repository is event work.** The owner confirmed that work
+  started on 2026-10-26, the first commit, after the organizers allowed
+  it. The README says so, and the earlier prototype stays declared.
 
 **Agreed and not built yet**
 

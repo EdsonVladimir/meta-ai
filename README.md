@@ -117,5 +117,7 @@ Windows compiles but is unverified here.
 
 ## Provenance
 
-An earlier exploration existed before this repository (Atelier
-/ Ruth IDE). Its code was not read or reused here.
+Built during the event: work started in this repository on
+2026-10-26, once the organizers confirmed it could begin. An
+earlier exploration existed before it (Atelier / Ruth IDE); its
+code was not read or reused here.
