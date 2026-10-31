@@ -177,11 +177,11 @@ still holds. Commits are on `code-xray`.
   delivery unless time remains. It replaced the earlier order
   (Muse test, executable, Pages) once the first real test showed that
   the dialog was the weak point. Pages was then built before delivery.
-- **Client code never goes to Meta and never appears in published
-  material.** The demo runs on the public `examples/reservas`. The name
-  was removed from the whole `code-xray` history before the first push,
-  because the repository is public. Before anything is published, check
-  names and metrics, not only one word.
+- **Private code reaches Meta only when its owner decides, and never
+  appears in published material.** The owner allowed it for a project in
+  development. The demo still runs on the public `examples/reservas`, and
+  Never send to Muse remains for code that must stay local. Before
+  anything is published, check names and metrics, not only one word.
 - **External agents implement and Claude audits.** Each task is one
   prompt in a fresh session. Passing tests is not enough to approve: the
   audit reads the diff and runs the flow in a real browser, because the
