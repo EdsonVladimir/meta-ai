@@ -291,13 +291,21 @@ pub fn resolve_within(root: &Path, rel: &str) -> Result<PathBuf, CodeError> {
     Ok(current)
 }
 
-/// Resolves the PARENT directory of `rel` inside the root and returns
-/// (absolute parent, final name). Only for creating new files: the
-/// parent must exist as a real directory (without creating it or
-/// following links), the name is a single component and any `..` or
-/// trailing slash rejects without normalizing (strict as a creation
-/// primitive; proposal validation already requires it).
-fn resolve_parent_within(root: &Path, rel: &str) -> Result<(PathBuf, String), CodeError> {
+/// The parent of a new file: its path, the file name, and the folders
+/// that do not exist yet (outermost first).
+struct NewFileParent {
+    dir: PathBuf,
+    name: String,
+    missing: Vec<PathBuf>,
+}
+
+/// Resolves the PARENT directory of `rel` inside the root. Only for
+/// creating new files: what exists must be real directories (links are
+/// never followed), what does not is reported as missing, the name is
+/// a single component and any `..` or trailing slash rejects without
+/// normalizing (strict as a creation primitive; proposal validation
+/// already requires it). Creates nothing.
+fn resolve_parent_within(root: &Path, rel: &str) -> Result<NewFileParent, CodeError> {
     if !root.is_dir() {
         return Err(CodeError::root_missing(&root.display().to_string()));
     }
@@ -311,6 +319,7 @@ fn resolve_parent_within(root: &Path, rel: &str) -> Result<(PathBuf, String), Co
         .filter(|name| !name.is_empty())
         .ok_or_else(CodeError::escape)?;
     let mut current = root.to_path_buf();
+    let mut missing = Vec::new();
     if let Some(parent) = normalized.parent() {
         for component in parent.components() {
             let piece = match component {
@@ -318,26 +327,47 @@ fn resolve_parent_within(root: &Path, rel: &str) -> Result<(PathBuf, String), Co
                 _ => return Err(CodeError::escape()),
             };
             current.push(piece);
-            let meta = fs::symlink_metadata(&current)
-                .map_err(|_| CodeError::not_found(&display_rel(&normalized)))?;
-            if meta.file_type().is_symlink() {
-                return Err(CodeError::symlink());
+            if !missing.is_empty() {
+                missing.push(current.clone());
+                continue;
             }
-            if !meta.file_type().is_dir() {
-                return Err(CodeError::not_dir(&display_rel(&normalized)));
+            match fs::symlink_metadata(&current) {
+                Ok(meta) if meta.file_type().is_symlink() => return Err(CodeError::symlink()),
+                Ok(meta) if !meta.file_type().is_dir() => {
+                    return Err(CodeError::not_dir(&display_rel(&normalized)));
+                }
+                Ok(_) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    missing.push(current.clone());
+                }
+                Err(_) => return Err(CodeError::not_found(&display_rel(&normalized))),
             }
         }
     }
+    let existing = missing.first().and_then(|first| first.parent());
     let canonical_root = root
         .canonicalize()
         .map_err(|_| CodeError::root_missing(&root.display().to_string()))?;
-    let canonical_parent = current
+    let canonical_parent = existing
+        .unwrap_or(&current)
         .canonicalize()
         .map_err(|_| CodeError::not_found(&display_rel(&normalized)))?;
     if !canonical_parent.starts_with(&canonical_root) {
         return Err(CodeError::escape());
     }
-    Ok((current, name.to_string()))
+    Ok(NewFileParent {
+        dir: current,
+        name: name.to_string(),
+        missing,
+    })
+}
+
+/// Removes folders this operation created, innermost first. Only empty
+/// ones go: `remove_dir` refuses anything with content.
+fn remove_created(created: &[PathBuf]) {
+    for dir in created.iter().rev() {
+        let _ = fs::remove_dir(dir);
+    }
 }
 
 /// Normalizes `rel` to a relative path without `.`, escaping `..` or root.
@@ -596,10 +626,14 @@ pub fn fingerprint_matches(root: &Path, rel: &str, expected: &str) -> Result<boo
 
 /// Checks whether something exists at `rel`, without reading it. To
 /// decide creations: `Ok(true)` = exists (file or not), `Ok(false)` =
-/// missing with a valid parent, `Err` = missing root, escape or broken parent.
+/// missing with a valid or still missing parent, `Err` = missing root,
+/// escape or broken parent.
 pub fn file_exists(root: &Path, rel: &str) -> Result<bool, CodeError> {
-    let (parent, name) = resolve_parent_within(root, rel)?;
-    match fs::symlink_metadata(parent.join(name)) {
+    let parent = resolve_parent_within(root, rel)?;
+    if !parent.missing.is_empty() {
+        return Ok(false);
+    }
+    match fs::symlink_metadata(parent.dir.join(parent.name)) {
         Ok(_) => Ok(true),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(err) => Err(CodeError::io(err.to_string())),
@@ -608,9 +642,10 @@ pub fn file_exists(root: &Path, rel: &str) -> Result<bool, CodeError> {
 
 /// Creates a new file with an atomic write (temp + rename in the same
 /// directory). Only for accepting proposals: it fails when the target
-/// exists (never overwrites), when the parent directory is missing (it
-/// creates no folders) or when the path escapes the root. Permissions
-/// are the process ones (umask); there is no original to copy.
+/// exists (never overwrites) or when the path escapes the root. Missing
+/// parent folders are created one by one inside the root, and removed
+/// again if the file cannot be written. Permissions are the process
+/// ones (umask); there is no original to copy.
 pub fn create_file(root: &Path, rel: &str, content: &str) -> Result<WriteOutcome, CodeError> {
     if content.len() > MAX_FILE_BYTES {
         return Err(CodeError::too_large(rel, MAX_FILE_BYTES));
@@ -618,7 +653,20 @@ pub fn create_file(root: &Path, rel: &str, content: &str) -> Result<WriteOutcome
     if content.as_bytes().contains(&0) {
         return Err(CodeError::binary(rel));
     }
-    let (parent, name) = resolve_parent_within(root, rel)?;
+    let NewFileParent {
+        dir: parent,
+        name,
+        missing,
+    } = resolve_parent_within(root, rel)?;
+    let mut created = Vec::new();
+    for dir in missing {
+        // `create_dir` never follows a link planted since the check.
+        if let Err(err) = fs::create_dir(&dir) {
+            remove_created(&created);
+            return Err(CodeError::io(err.to_string()));
+        }
+        created.push(dir);
+    }
     let path = parent.join(&name);
     // Atomic target reservation: when it exists (or appears in between),
     // `create_new` fails and nothing preexisting is ever overwritten.
@@ -627,6 +675,7 @@ pub fn create_file(root: &Path, rel: &str, content: &str) -> Result<WriteOutcome
         .create_new(true)
         .open(&path)
         .map_err(|e| {
+            remove_created(&created);
             if e.kind() == std::io::ErrorKind::AlreadyExists {
                 CodeError::already_exists(rel)
             } else {
@@ -646,6 +695,7 @@ pub fn create_file(root: &Path, rel: &str, content: &str) -> Result<WriteOutcome
     if wrote.is_err() {
         let _ = fs::remove_file(&temp);
         let _ = fs::remove_file(&path);
+        remove_created(&created);
     }
     wrote?;
     let after = fs::symlink_metadata(&path).map_err(|e| CodeError::io(e.to_string()))?;
@@ -928,13 +978,63 @@ mod tests {
         let err = create_file(&dir, "new.txt", "other\n").expect_err("duplicate");
         assert_eq!(err.kind(), "code_conflict");
         assert_eq!(read_file(&dir, "new.txt").expect("read").text, "hello\n");
-        // No parent: it creates no folders and leaves no trace.
-        let err = create_file(&dir, "sub/new.txt", "x").expect_err("no parent");
-        assert_eq!(err.kind(), "code_not_found");
-        assert!(!dir.join("sub").exists());
-        // Escapes and NUL reject.
+        // Escapes and NUL reject, and leave no folder behind.
         assert!(create_file(&dir, "../outside.txt", "x").is_err());
         assert!(create_file(&dir, "nul.txt", "a\0b").is_err());
+        assert!(create_file(&dir, "gone/nul.txt", "a\0b").is_err());
+        assert!(create_file(&dir, "gone/../../outside.txt", "x").is_err());
         assert!(!dir.join("nul.txt").exists());
+        assert!(!dir.join("gone").exists());
+    }
+
+    #[test]
+    fn a_new_file_brings_its_missing_folders() {
+        let dir = scratch("create-folders");
+        assert!(!file_exists(&dir, "src/app/users/users.ts").expect("probe"));
+        assert!(!dir.join("src").exists(), "probing creates nothing");
+        create_file(&dir, "src/app/users/users.ts", "x\n").expect("create");
+        assert_eq!(
+            read_file(&dir, "src/app/users/users.ts")
+                .expect("read")
+                .text,
+            "x\n"
+        );
+        // Existing folders are reused, and the file now counts as there.
+        create_file(&dir, "src/app/users/other.ts", "y\n").expect("sibling");
+        assert!(file_exists(&dir, "src/app/users/users.ts").expect("probe"));
+    }
+
+    #[test]
+    fn a_file_on_the_way_blocks_folders() {
+        let dir = scratch("create-not-dir");
+        write(&dir.join("taken"), b"file");
+        let err = create_file(&dir, "taken/new/a.ts", "x").expect_err("file in the path");
+        assert_eq!(err.kind(), "code_not_dir");
+        assert!(file_exists(&dir, "taken/new/a.ts").is_err());
+        assert_eq!(read_file(&dir, "taken").expect("read").text, "file");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn folders_are_never_created_through_a_link() {
+        let dir = scratch("create-link");
+        let outside = scratch("create-link-outside");
+        std::os::unix::fs::symlink(&outside, dir.join("out")).expect("link");
+        let err = create_file(&dir, "out/new/a.ts", "x").expect_err("through a link");
+        assert_eq!(err.kind(), "code_symlink");
+        assert!(!outside.join("new").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_write_removes_the_folders_it_made() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("create-fail");
+        fs::create_dir(dir.join("locked")).expect("dir");
+        fs::set_permissions(dir.join("locked"), fs::Permissions::from_mode(0o500)).expect("lock");
+        let result = create_file(&dir, "locked/a/b/c.ts", "x");
+        fs::set_permissions(dir.join("locked"), fs::Permissions::from_mode(0o700)).expect("open");
+        assert!(result.is_err());
+        assert!(!dir.join("locked").join("a").exists());
     }
 }

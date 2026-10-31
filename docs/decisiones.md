@@ -242,6 +242,12 @@ still holds. Commits are on `code-xray`.
   so the panel states them above the box, without needing a hover. From
   the first-time developer audit (`docs/audits/ui-ux-audit.md`), R2.
 
+- **Accepting a file creates the folders it needs.** The original rule
+  was that accepting creates no folders, but a new feature almost always
+  needs one, and the first real proposal could not be accepted. Folders
+  are made one by one inside the root, never through a link, and removed
+  again if the write fails.
+
 **From the first-time developer audit**
 
 - **Every close route protects drafts.** The title-bar button asked, but
