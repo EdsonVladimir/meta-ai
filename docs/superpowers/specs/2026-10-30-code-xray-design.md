@@ -202,7 +202,7 @@ the same name in the gateway and the backend (`AuditoriaService`), so a
 global lookup would mark them ambiguous. Only HTTP links cross projects.
 
 Gateways are ordinary hops. A gateway is a NestJS app with its
-own controllers (`@Controller('acme/auditoria')`), so frontend calls
+own controllers (`@Controller('gateway/audit')`), so frontend calls
 match it exactly. It forwards with `proxy.forward('get', BASE_PATH)` to
 `/api/auditoria`, which matches the backend route under its
 `setGlobalPrefix('api')`. A proxy call is a fact only when the injected

@@ -1,5 +1,5 @@
 // Layer taxonomy: suffix, directory and entry-point rules plus decorator
-// refinement. Real paths from the ACME pilot double as regression cases.
+// refinement. Realistic paths double as regression cases.
 import { describe, expect, it } from "vitest";
 import {
   ARCH_LAYERS,

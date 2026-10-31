@@ -811,7 +811,7 @@ it("keeps Send adjustment disabled when empty", async () => {
 - Modify: `README.md`, every tracked file naming the client project (tests, `docs/`, `structureTypes.ts`)
 - Create: `.env.example`, `LICENSE` (only after the owner picks a license)
 
-- [ ] **Step 1: Replace client names** in tests and docs with neutral ones (`acme`, `orders`), keeping every assertion's meaning. `git grep -il acme` must print nothing.
+- [ ] **Step 1: Replace private example names** in tests and docs with neutral ones (`acme`, `orders`), keeping every assertion's meaning. `git grep -il acme` must print nothing.
 
 - [ ] **Step 2: Rewrite `README.md` in English, under 150 lines:** what Ruth does, how Meta models are used and for what, install, run, tests, the sample project, limits, and a statement separating the earlier exploratory prototype from work done during the event. Move the milestone history to `docs/`.
 
