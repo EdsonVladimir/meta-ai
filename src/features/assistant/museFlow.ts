@@ -100,6 +100,32 @@ export function pickMuseFiles(candidates: MuseFile[], message: string): MuseFile
   return picked.slice(0, MUSE_MAX_FILES);
 }
 
+/**
+ * What an adjustment reads: files already accepted first, because they
+ * are on disk now and Muse must see them to change them, then the
+ * scope of the proposal being adjusted.
+ */
+export function adjustmentScope(
+  proposals: Array<{
+    scope: MuseFile[];
+    files: Array<MuseFile & { state: string }>;
+  }>,
+): MuseFile[] {
+  const accepted = proposals.flatMap((proposal) =>
+    proposal.files.filter((file) => file.state === "accepted"),
+  );
+  const newest = proposals[proposals.length - 1]?.scope ?? [];
+  const seen = new Set<string>();
+  const out: MuseFile[] = [];
+  for (const { rootId, rel } of [...accepted, ...newest]) {
+    const key = `${rootId}\n${rel}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ rootId, rel });
+  }
+  return out.slice(0, MUSE_MAX_FILES);
+}
+
 export interface MuseLinkDeps {
   listModules: (projectId: string) => Promise<Array<{ id: string; name: string; archived: boolean }>>;
   createProject: () => Promise<{ id: string; name: string }>;

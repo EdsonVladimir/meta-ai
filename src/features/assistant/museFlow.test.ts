@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   collectMuseFiles,
   composeAnswers,
+  adjustmentScope,
   linkMuseTarget,
   moduleNameOf,
   MUSE_MAX_CANDIDATES,
@@ -101,6 +102,26 @@ describe("pickMuseFiles", () => {
 
   it("returns everything when it fits", () => {
     expect(pickMuseFiles(files(["a.ts"]), "x")).toHaveLength(1);
+  });
+});
+
+describe("adjustmentScope", () => {
+  const file = (rel: string, state = "pending") => ({ rootId: "r", rel, state });
+  const scope = (rels: string[]) => rels.map((rel) => ({ rootId: "r", rel }));
+
+  it("puts files accepted in any proposal first, without repeats", () => {
+    const out = adjustmentScope([
+      { scope: scope(["a.ts"]), files: [file("new.ts", "accepted"), file("no.ts", "discarded")] },
+      { scope: scope(["a.ts", "b.ts"]), files: [file("two.ts", "pending"), file("a.ts", "accepted")] },
+    ]);
+    expect(out.map((entry) => entry.rel)).toEqual(["new.ts", "a.ts", "b.ts"]);
+  });
+
+  it("stays inside the file limit, keeping what is on disk", () => {
+    const many = Array.from({ length: MUSE_MAX_FILES }, (_, i) => `s${i}.ts`);
+    const out = adjustmentScope([{ scope: scope(many), files: [file("new.ts", "accepted")] }]);
+    expect(out).toHaveLength(MUSE_MAX_FILES);
+    expect(out[0].rel).toBe("new.ts");
   });
 });
 

@@ -252,6 +252,13 @@ still holds. Commits are on `code-xray`.
   set, so one click may decide it, and the button names how many files
   it writes. Stopping keeps the rest pending, with the reason in view.
 
+- **An adjustment sees what was already accepted.** After Accept, a
+  later adjustment could not reach those files: Muse had not read them
+  and marked them `create`, which can never be accepted. They now go
+  first in its scope, and a `create` over an existing file is recorded as
+  the `modify` it is, with the file's real fingerprint, so View diff
+  shows what it replaces. Nothing is overwritten without Accept.
+
 **From the first-time developer audit**
 
 - **Every close route protects drafts.** The title-bar button asked, but

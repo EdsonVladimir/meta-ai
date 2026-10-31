@@ -414,6 +414,9 @@ pub struct RecordCodeGenInput {
 /// `modify`'s expected fingerprint is the scope's when the file
 /// was in it; when modifying outside the scope is proposed, the
 /// current on-disk fingerprint is taken (and accepting revalidates anyway).
+/// A `create` over a file that exists is recorded as the `modify` it
+/// is: an adjustment often repeats a file accepted moments ago, and a
+/// create could never be accepted. The diff shows what it replaces.
 pub fn build_stored_codegen(
     roots: &CodeWorkspace,
     ids: &mut IdGen,
@@ -427,28 +430,33 @@ pub fn build_stored_codegen(
                 format!("Folder \"{}\" outside the workspace", file.root_id),
             ));
         };
-        let expected_fingerprint = match file.operation {
-            ruth_meta::code::CodeOperation::Create => None,
-            ruth_meta::code::CodeOperation::Modify => {
+        let root_path = PathBuf::from(&root.path);
+        let creates = file.operation == ruth_meta::code::CodeOperation::Create
+            && !ruth_code::file_exists(&root_path, &file.rel).unwrap_or(false);
+        let (operation, expected_fingerprint) = if creates {
+            (ruth_meta::code::CodeOperation::Create, None)
+        } else {
+            let expected = {
                 if let Some(known) = input
                     .context
                     .files
                     .iter()
                     .find(|read| read.root_id == file.root_id && read.rel == file.rel)
                 {
-                    Some(known.fingerprint.clone())
+                    known.fingerprint.clone()
                 } else {
-                    let read = ruth_code::read_file(&PathBuf::from(&root.path), &file.rel)
-                        .map_err(code_err)?;
-                    Some(read.fingerprint)
+                    ruth_code::read_file(&root_path, &file.rel)
+                        .map_err(code_err)?
+                        .fingerprint
                 }
-            }
+            };
+            (ruth_meta::code::CodeOperation::Modify, Some(expected))
         };
         files.push(StoredProposalFile {
             pos: pos as u32,
             root_id: file.root_id.clone(),
             rel: file.rel.clone(),
-            operation: file.operation.as_str().to_string(),
+            operation: operation.as_str().to_string(),
             expected_fingerprint,
             content: file.content.clone(),
             state: CodeFileState::Pending,

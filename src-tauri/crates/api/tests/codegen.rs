@@ -4,7 +4,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use ruth_api::{
-    read_ask_scope, snapshot_code_context, AcceptCheck, IdGen, RecordCodeGenInput, ScopeFileInput,
+    build_stored_codegen, read_ask_scope, snapshot_code_context, AcceptCheck, IdGen,
+    RecordCodeGenInput, ScopeFileInput,
 };
 use ruth_code::{CodeRoot, CodeWorkspace};
 use ruth_core::application::Store;
@@ -114,6 +115,40 @@ fn create(rel: &str, content: &str) -> ValidatedCodeFile {
         operation: CodeOperation::Create,
         content: content.to_string(),
     }
+}
+
+#[test]
+fn a_create_over_an_existing_file_is_recorded_as_a_modify() {
+    let mut baby = baby();
+    let context = snapshot_code_context(
+        &baby.store,
+        &baby.roots,
+        &baby.project,
+        &baby.module,
+        &baby.req,
+        &scope_one(),
+    )
+    .expect("context");
+    let existing = context.files[0].rel.clone();
+    let stored = build_stored_codegen(
+        &baby.roots,
+        &mut baby.ids,
+        RecordCodeGenInput {
+            context,
+            code: proposal(vec![
+                create(&existing, "new\n"),
+                create("brand/new.ts", "x\n"),
+            ]),
+            model: "m".to_string(),
+            usage: None,
+            created_at: "t".to_string(),
+        },
+    )
+    .expect("stored");
+    assert_eq!(stored.files[0].operation, "modify");
+    assert!(stored.files[0].expected_fingerprint.is_some());
+    assert_eq!(stored.files[1].operation, "create");
+    assert!(stored.files[1].expected_fingerprint.is_none());
 }
 
 #[test]

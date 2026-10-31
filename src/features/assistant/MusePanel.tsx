@@ -43,6 +43,7 @@ import { currentVersion } from "../requirements/types";
 import { useRequirementsUi, type MuseTarget } from "../requirements/uiStore";
 import { MarkdownLite } from "./markdownLite";
 import {
+  adjustmentScope,
   collectMuseFiles,
   composeAnswers,
   linkMuseTarget,
@@ -503,10 +504,11 @@ export function MusePanel({
           projectId: input.generation.projectId,
           moduleId: input.generation.moduleId,
           requirementId: input.generation.requirementArtifactId,
-          scope: input.generation.scope.map((entry) => ({
-            rootId: entry.rootId,
-            rel: entry.rel,
-          })),
+          scope: adjustmentScope(
+            messages.flatMap((entry) =>
+              entry.role === "proposal" ? [latest(entry.generation)] : [],
+            ),
+          ),
           previousGenerationId: input.generation.id,
         };
       }
