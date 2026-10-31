@@ -118,11 +118,17 @@ export function setRootAiBlocked(rootId: string, blocked: boolean): Promise<Code
   return call("code_set_root_ai_blocked", { input: { rootId, blocked } });
 }
 
+export interface AskTurnInput {
+  question: string;
+  answer: string;
+}
+
 export function askCode(
   question: string,
   files: Array<{ rootId: string; rel: string }>,
+  history: AskTurnInput[] = [],
 ): Promise<{ answer: string; model: string }> {
-  return call("code_ask", { input: { question, files } });
+  return call("code_ask", { input: { question, files, history } });
 }
 
 export function addModuleLink(

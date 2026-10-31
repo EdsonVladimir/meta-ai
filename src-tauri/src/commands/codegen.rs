@@ -520,9 +520,19 @@ pub async fn code_generate(
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CodeAskTurnInput {
+    pub question: String,
+    pub answer: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CodeAskInput {
     pub question: String,
     pub files: Vec<CodeScopeFileInput>,
+    /// Previous answered questions, oldest first; missing on old clients.
+    #[serde(default)]
+    pub history: Vec<CodeAskTurnInput>,
 }
 
 #[derive(serde::Serialize)]
@@ -565,7 +575,15 @@ pub async fn code_ask(
         })
         .collect();
     let config = ruth_meta::MetaConfig::from_env().map_err(ApiError::from_meta)?;
-    let prompt = ruth_meta::code::build_ask_input(&input.question, &scope);
+    let history: Vec<ruth_meta::code::AskTurn> = input
+        .history
+        .iter()
+        .map(|turn| ruth_meta::code::AskTurn {
+            question: turn.question.clone(),
+            answer: turn.answer.clone(),
+        })
+        .collect();
+    let prompt = ruth_meta::code::build_ask_input(&input.question, &history, &scope);
     let result = ruth_meta::code::ask_code(&config, &prompt)
         .await
         .map_err(ApiError::from_meta)?;
@@ -741,5 +759,21 @@ mod tests {
             CodeGenSourceInput::Screen { mockup_id, screen_id }
                 if mockup_id == "mock-1" && screen_id == "s-1"
         ));
+    }
+
+    #[test]
+    fn reads_ask_history_as_the_frontend_sends_it() {
+        let input: CodeAskInput = serde_json::from_str(
+            r#"{"question":"Why?","files":[{"rootId":"r","rel":"a.ts"}],"history":[{"question":"First?","answer":"One."}]}"#,
+        )
+        .expect("ask");
+        assert_eq!(input.question, "Why?");
+        assert_eq!(input.files.len(), 1);
+        assert_eq!(input.history.len(), 1);
+        assert_eq!(input.history[0].question, "First?");
+        assert_eq!(input.history[0].answer, "One.");
+        let bare: CodeAskInput =
+            serde_json::from_str(r#"{"question":"Why?","files":[]}"#).expect("bare");
+        assert!(bare.history.is_empty());
     }
 }
