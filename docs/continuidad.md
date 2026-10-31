@@ -71,8 +71,7 @@ environment).
   the code area over the shared scope; documented layer taxonomy
   with decorator refinement; import resolution, `instantiates`,
   constructor refs and TS enums in the analyzer; inspector with
-  code navigation. Piloted headless on ACME (268 files: 3
-  unassigned per side, all honest). New work in English from here.
+  code navigation. Piloted headless on a private project. New work in English from here.
 - Top-level project maps: Map perspective next to the others
   (project-gated, no module needed); one automatic diagram per
   associated root (breadth-first TS collection, 200 files /

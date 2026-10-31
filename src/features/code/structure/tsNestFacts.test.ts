@@ -18,7 +18,7 @@ function flowOf(content: string): SymbolFlowFacts {
 }
 
 const CTRL = `@UseGuards(JwtGuard)
-@Controller('esquema-columnas')
+@Controller('items')
 export class C {
   constructor(private readonly service: S) {}
   @Public()
@@ -35,13 +35,13 @@ describe("collectNestFacts", () => {
     expect(routes[0]).toMatchObject({
       member: "createBulk",
       verb: "POST",
-      path: "/esquema-columnas/bulk",
+      path: "/items/bulk",
       bodyType: "CreateDto[]",
       decorators: ["Public"],
       guards: ["JwtGuard"],
       interceptors: ["LogInterceptor"],
     });
-    expect(routes[1]).toMatchObject({ member: "all", verb: "GET", path: "/esquema-columnas" });
+    expect(routes[1]).toMatchObject({ member: "all", verb: "GET", path: "/items" });
   });
 
   it("links repository calls to their entity", () => {

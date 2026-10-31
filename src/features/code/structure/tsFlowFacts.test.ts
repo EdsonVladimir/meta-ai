@@ -170,16 +170,16 @@ describe("collectFlowFacts", () => {
 
   const service = (body: string) => `export class S {
   private http = inject(HttpClient);
-  private apiUrl = environment.urlAcme + 'carga';
+  private apiUrl = environment.urlApi + 'carga';
   private plain = '/items';
   run(id: string) { ${body} }
 }`;
 
   it.each([
-    ["return this.http.get<Item[]>(this.apiUrl);", "GET", { base: "urlAcme", path: "carga" }, "Item[]"],
-    ["return this.http.post<Item>(`${this.apiUrl}/bulk`, id);", "POST", { base: "urlAcme", path: "carga/bulk" }, "Item"],
-    ["return this.http.get(this.apiUrl + '/x');", "GET", { base: "urlAcme", path: "carga/x" }, null],
-    ["return this.http.delete(`${this.apiUrl}/${id}`);", "DELETE", { base: "urlAcme", path: "carga/${...}" }, null],
+    ["return this.http.get<Item[]>(this.apiUrl);", "GET", { base: "urlApi", path: "carga" }, "Item[]"],
+    ["return this.http.post<Item>(`${this.apiUrl}/bulk`, id);", "POST", { base: "urlApi", path: "carga/bulk" }, "Item"],
+    ["return this.http.get(this.apiUrl + '/x');", "GET", { base: "urlApi", path: "carga/x" }, null],
+    ["return this.http.delete(`${this.apiUrl}/${id}`);", "DELETE", { base: "urlApi", path: "carga/${...}" }, null],
     ["return this.http.get(this.plain);", "GET", { base: null, path: "/items" }, null],
     ["return this.http.get('/x');", "GET", { base: null, path: "/x" }, null],
   ])("reconstructs %s", (body, verb, url, returnType) => {

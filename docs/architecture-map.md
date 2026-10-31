@@ -141,17 +141,10 @@ call at 20 files. The map draws at most 200 files and says so.
 
 ## Pilot (real project, headless)
 
-ACME NestJS backend + Angular frontend, 268
-`.ts` files via a temporary script (deleted afterwards):
-
-- Backend (126): contracts 53, services 24, composition 22,
-  controllers 17, cross-cutting 7, unassigned 3 (`excel-legacy.ts`,
-  `motor-regla.ts`, `tracing.ts` — unconventional names, honestly kept).
-- Frontend (142): ui 56, services 31, contracts 21, composition 20,
-  cross-cutting 10, unassigned 0, state 1.
-- Sample scope (one module, 9 files): 19 edges, externals
-  (`@nestjs/*`, `typeorm`, `class-validator`…) with user counts, and a
-  clean unresolved list (builtins and externals only).
+A private NestJS backend + Angular frontend, analyzed through a
+temporary script (deleted afterwards). Unconventional names stayed
+honestly unassigned, and the unresolved list held only builtins and
+externals.
 
 The pilot drove two analyzer fixes: TypeScript `enum` extraction and
 constructor-parameter references.

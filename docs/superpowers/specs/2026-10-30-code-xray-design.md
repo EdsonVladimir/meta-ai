@@ -60,20 +60,20 @@ Three questions drive the design:
 
 ## 2. Observed baseline
 
-Facts verified on the ACME pilot, which shape the extractors:
+Facts verified on a private pilot, which shape the extractors:
 
-- Frontend: Angular 21, no NgRx. State lives in 13 signal stores
+- Frontend: Angular, no NgRx. State lives in signal stores
   (`signal`, `computed`, plain methods). Their methods and signals play
   the role of actions and reducers.
 - Dependencies use both `inject(X)` fields and constructor parameters.
   Today only constructors produce relations.
-- 87 `this.http.<verb>` calls. URLs are often built from a class field,
+- `this.http.<verb>` calls. URLs are often built from a class field,
   such as `environment.urlApi + 'items'`. Today
   `this.http.get('/x')` is wrongly registered as a backend endpoint.
-- 56 components: 55 with `templateUrl`, 22 with `styleUrl(s)`, none with
-  inline templates, 13 with standalone `imports`.
+- Components mostly use `templateUrl` and `styleUrl(s)`, with no inline
+  templates, and some standalone `imports`.
 - Interceptors via `withInterceptors([...])`; guards via `canActivate`
-  with `CanActivateFn`; 22 lazy `loadComponent`/`loadChildren` uses.
+  with `CanActivateFn`; lazy `loadComponent`/`loadChildren` uses.
 - Backend: NestJS with `@Controller` + `@Get/@Post`, `@UseGuards`,
   `@UseInterceptors`, `APP_GUARD`, `APP_INTERCEPTOR`, TypeORM
   `@InjectRepository`.
@@ -127,7 +127,7 @@ text, using the existing shared hash). The hash enables method-level
 
 URL reconstruction handles literals, templates and class fields
 initialized from those, with `environment.x` kept as a base token
-(`{urlAcme}esquema-columnas/bulk`). Anything else records the verb and
+(`{urlApi}items/bulk`). Anything else records the verb and
 marks the URL unresolved.
 
 Fix: receivers that are `HttpClient` fields stop producing endpoints.
@@ -197,11 +197,11 @@ HTTP join: verb and normalized path must match after removing the base
 token. Several candidates means ambiguous; none means "no destination".
 The backend must be associated with the same Ruth project.
 
-Names resolve inside the caller's project first. ACME has classes with
+Names resolve inside the caller's project first. The pilot has classes with
 the same name in the gateway and the backend (`AuditoriaService`), so a
 global lookup would mark them ambiguous. Only HTTP links cross projects.
 
-Gateways are ordinary hops. The ACME gateway is a NestJS app with its
+Gateways are ordinary hops. A gateway is a NestJS app with its
 own controllers (`@Controller('acme/auditoria')`), so frontend calls
 match it exactly. It forwards with `proxy.forward('get', BASE_PATH)` to
 `/api/auditoria`, which matches the backend route under its
@@ -351,7 +351,7 @@ Cut order if time runs short: Adjust first, then the Pages view.
 - Component tests with injected backends, no Tauri.
 - Layout tests pinning row anchors to CSS constants, as `boardCss` does.
 - Rust tests for Git reading on temporary repositories, no network.
-- Pilot acceptance on ACME, recorded in the docs:
+- Pilot acceptance on a private project, recorded in the docs:
   - a chain from a component to `POST` and the TypeORM entity;
   - `CargaComponent` listed as a page with its children;
   - `LogoutService` linked to its three stores;

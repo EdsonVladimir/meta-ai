@@ -82,7 +82,7 @@ Entry points stay in [README.md](../README.md);
 - Inspector with members, incoming/outgoing edges, unresolved refs,
   externals and code navigation; layer/search filters, stale-scope and
   draft warnings, explicit truncation notices.
-- Piloted headless against a real NestJS+Angular project (268 files).
+- Piloted headless against a real NestJS+Angular project.
 
 ## What was implemented (structure replication as modules)
 

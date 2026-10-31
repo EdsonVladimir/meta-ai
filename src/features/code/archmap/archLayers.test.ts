@@ -33,10 +33,10 @@ describe("classifyFile", () => {
   it("classifies NestJS backend conventions", () => {
     expect(layerOf("src/app.controller.ts")).toBe("controllers");
     expect(layerOf("src/observability/health.controller.ts")).toBe("controllers");
-    expect(layerOf("src/modules/contrato-datos/contrato-datos.service.ts")).toBe("services");
+    expect(layerOf("src/modules/orders/orders.service.ts")).toBe("services");
     expect(layerOf("src/app.module.ts")).toBe("composition");
-    expect(layerOf("src/modules/contrato-datos/dto/contrato-datos.dto.ts")).toBe("contracts");
-    expect(layerOf("src/modules/contrato-datos/entities/campo-contrato.entity.ts")).toBe(
+    expect(layerOf("src/modules/orders/dto/orders.dto.ts")).toBe("contracts");
+    expect(layerOf("src/modules/orders/entities/order-line.entity.ts")).toBe(
       "contracts",
     );
     expect(layerOf("src/main.ts")).toBe("composition");

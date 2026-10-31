@@ -117,7 +117,7 @@ export interface StructureSignalAccess {
   evidence: string;
 }
 export interface HttpUrlFact {
-  /** `environment.x` property kept as a token, e.g. "urlAcme". */
+  /** `environment.x` property kept as a token, e.g. "urlApi". */
   base: string | null;
   /** Path text; substitutions appear as `${...}`. */
   path: string;
@@ -353,16 +353,16 @@ it("extracts what it can from a file with syntax errors", () => {
 ```ts
 const service = (body: string) => `export class S {
   private http = inject(HttpClient);
-  private apiUrl = environment.urlAcme + 'carga';
+  private apiUrl = environment.urlApi + 'carga';
   private plain = '/items';
   run(id: string) { ${body} }
 }`;
 
 it.each([
-  ["return this.http.get<Item[]>(this.apiUrl);", "GET", { base: "urlAcme", path: "carga" }, "Item[]"],
-  ["return this.http.post<Item>(`${this.apiUrl}/bulk`, id);", "POST", { base: "urlAcme", path: "carga/bulk" }, "Item"],
-  ["return this.http.get(this.apiUrl + '/x');", "GET", { base: "urlAcme", path: "carga/x" }, null],
-  ["return this.http.delete(`${this.apiUrl}/${id}`);", "DELETE", { base: "urlAcme", path: "carga/${...}" }, null],
+  ["return this.http.get<Item[]>(this.apiUrl);", "GET", { base: "urlApi", path: "carga" }, "Item[]"],
+  ["return this.http.post<Item>(`${this.apiUrl}/bulk`, id);", "POST", { base: "urlApi", path: "carga/bulk" }, "Item"],
+  ["return this.http.get(this.apiUrl + '/x');", "GET", { base: "urlApi", path: "carga/x" }, null],
+  ["return this.http.delete(`${this.apiUrl}/${id}`);", "DELETE", { base: "urlApi", path: "carga/${...}" }, null],
   ["return this.http.get(this.plain);", "GET", { base: null, path: "/items" }, null],
   ["return this.http.get('/x');", "GET", { base: null, path: "/x" }, null],
 ])("reconstructs %s", (body, verb, url, returnType) => {
@@ -424,7 +424,7 @@ export class S { private map = new Map(); run() { this.map.get('/b'); } }`);
 
 ```ts
 const CTRL = `@UseGuards(JwtGuard)
-@Controller('esquema-columnas')
+@Controller('items')
 export class C {
   constructor(private readonly service: S) {}
   @Public()
@@ -440,13 +440,13 @@ it("joins controller and method paths with decorators", () => {
   expect(routes[0]).toMatchObject({
     member: "createBulk",
     verb: "POST",
-    path: "/esquema-columnas/bulk",
+    path: "/items/bulk",
     bodyType: "CreateDto[]",
     decorators: ["Public"],
     guards: ["JwtGuard"],
     interceptors: ["LogInterceptor"],
   });
-  expect(routes[1]).toMatchObject({ member: "all", verb: "GET", path: "/esquema-columnas" });
+  expect(routes[1]).toMatchObject({ member: "all", verb: "GET", path: "/items" });
 });
 
 it("links repository calls to their entity", () => {
@@ -698,7 +698,7 @@ it("lists injections, calls, signals and HTTP with evidence", () => {
   expect(screen.getByText("sesionStore → SesionStore")).toBeTruthy();
   expect(screen.getByText("ejecutar → sesionStore.cerrarSesion()")).toBeTruthy();
   expect(screen.getByText("setUsuario writes #usuario")).toBeTruthy();
-  expect(screen.getByText("GET {urlAcme}carga")).toBeTruthy();
+  expect(screen.getByText("GET {urlApi}carga")).toBeTruthy();
   expect(screen.getByTitle("a.ts:3 (inject)")).toBeTruthy();
 });
 
@@ -735,10 +735,10 @@ Define `FLOW` and `COMPONENT` in the test with those values. Add one assertion t
 
 ## Stage exit check (auditor)
 
-On the ACME pilot, confirm through the inspector:
+On the private pilot, confirm through the inspector:
 
 - `LogoutService` lists `router`, `sesionStore`, `permisosStore`, `tokenStore` and its calls.
 - `SesionStore.setUsuario` writes `#usuario`.
-- A frontend service shows `GET {urlAcme}…` calls.
-- `EsquemaColumnasController.createBulk` shows `POST /esquema-columnas/bulk` with `CreateEsquemaColumnaDto[]`.
+- A frontend service shows `GET {urlApi}…` calls.
+- `ItemsController.createBulk` shows `POST /items/bulk` with `CreateItemDto[]`.
 - `CargaComponent` shows its HTML, CSS and child tags.

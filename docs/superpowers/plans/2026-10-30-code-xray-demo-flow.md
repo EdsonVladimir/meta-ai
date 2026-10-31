@@ -197,7 +197,7 @@ export interface FlowNode {
 export interface FlowHttpNode {
   id: string;
   verb: string;
-  /** `{urlAcme}carga/bulk`, or null when not reconstructed. */
+  /** `{urlApi}carga/bulk`, or null when not reconstructed. */
   url: string | null;
   depth: number;
   via: "client" | "proxy";

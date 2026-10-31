@@ -1372,7 +1372,7 @@ ready for requirements.
 
 ## 26. Nested code projects and the Architecture scope
 
-A workspace root is a container: the ACME root holds
+A workspace root is a container: a large root holds
 frontend, backend and gateway folders, each its own
 application. Ruth separates the concepts: workspace (open
 roots), detected project (manifest-backed application,

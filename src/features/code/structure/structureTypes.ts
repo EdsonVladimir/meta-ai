@@ -106,7 +106,7 @@ export interface StructureSignalAccess {
   via?: string;
 }
 export interface HttpUrlFact {
-  /** `environment.x` property kept as a token, e.g. "urlAcme". */
+  /** `environment.x` property kept as a token, e.g. "urlApi". */
   base: string | null;
   /** Path text; substitutions appear as `${...}`. */
   path: string;
