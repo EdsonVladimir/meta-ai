@@ -15,10 +15,29 @@ here yet.
 
 ## Run
 
+Backend first (NestJS + SQLite, no external database):
+
 ```sh
-cd backend && npm install && npm start
-cd frontend && npm install && npm start
+cd backend
+npm install     # first time only; compiles sqlite3, takes a while
+npm run typecheck
+npm start       # builds, then serves the API
 ```
 
-The API listens on `http://localhost:3000`, which matches
-`environment.apiUrl` in the frontend.
+`GET http://localhost:3000/reservas` answers `[]` on a fresh
+database; the `reservas.db` file is created next to the backend and
+is ignored by git. `POST /reservas` with
+`{"room": "A1", "date": "2026-11-01", "guests": 2}` stores a row.
+
+Then the frontend (Angular 18 standalone):
+
+```sh
+cd frontend
+npm install     # first time only
+npm run typecheck
+npm start       # serves on http://localhost:4200/
+```
+
+Open `http://localhost:4200/` in a browser. The API address
+matches `environment.apiUrl` in the frontend, so the UI reads the
+same data the backend serves.

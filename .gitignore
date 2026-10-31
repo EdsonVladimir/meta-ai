@@ -10,6 +10,8 @@ dist-ssr/
 target/
 src-tauri/target/
 *.node
+# Angular dev-server cache (examples/reservas/frontend)
+.angular/
 
 # Secretos y entorno local (nunca commitear claves)
 .env

@@ -20,6 +20,8 @@ function collectInputs(side: string): StructureInput[] {
     );
     for (const entry of entries) {
       if (entry.isDirectory()) {
+        // What the sample's own install and build leave behind.
+        if (["node_modules", "dist", ".angular"].includes(entry.name)) continue;
         walk(new URL(`${entry.name}/`, dir), `${prefix}${entry.name}/`);
       } else if (entry.name.endsWith(".ts")) {
         const rel = `${prefix}${entry.name}`;
