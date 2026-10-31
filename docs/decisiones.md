@@ -273,6 +273,11 @@ still holds. Commits are on `code-xray`.
   delivery.** R5 is real but blocks nobody, and users cannot be studied
   before the freeze.
 
+- **Opening a project once is enough.** Folders listed only what it
+  loaded at start, so a project opened from the first screen showed no
+  folders and the person had to pick the same one again. Any registered
+  root now reaches the panel.
+
 **Reading code**
 
 - **Each card opens its TS, HTML and CSS in a read-only popup.** Going

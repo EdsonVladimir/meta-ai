@@ -130,10 +130,10 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
   const reportRef = useRef(reportDocStatus);
   reportRef.current = reportDocStatus;
 
-  const reloadRoots = useCallback(async () => {
+  const reloadRoots = useCallback(async (quiet = false) => {
     if (!desktop) return;
     const epoch = ++rootsEpoch.current;
-    setRootsLoading(true);
+    if (!quiet) setRootsLoading(true);
     setRootsError(null);
     try {
       const next = await listCodeRoots();
@@ -150,6 +150,16 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
   useEffect(() => {
     void reloadRoots();
   }, [reloadRoots]);
+
+  // A root registered elsewhere (opening a project, a recent workspace,
+  // a Muse dialog) must appear here without picking the folder again.
+  const rootsToken = useRequirementsUi((s) => s.codeLibraryToken);
+  const seenRootsToken = useRef(rootsToken);
+  useEffect(() => {
+    if (rootsToken === seenRootsToken.current) return;
+    seenRootsToken.current = rootsToken;
+    void reloadRoots(true);
+  }, [rootsToken, reloadRoots]);
 
   // Project names for the badges (best-effort: without names, the
   // badges show the id and linking keeps working).
