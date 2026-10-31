@@ -6182,6 +6182,7 @@ button.archboard-member:hover {
 
 /* Muse dialog: what goes out is visible before anything is sent. */
 .muse-panel {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -6237,5 +6238,164 @@ button.archboard-member:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 0.85rem;
+}
+
+/* Muse chat thread: scrolling messages with a pinned composer. */
+.muse-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex: none;
+}
+
+.muse-thread {
+  flex: 1 1 auto;
+  min-height: 8rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-right: 0.075rem;
+}
+
+.muse-message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.muse-message-user {
+  align-items: flex-end;
+}
+
+.muse-question {
+  margin: 0;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 0.3rem 0.5rem;
+}
+
+.muse-message-muse {
+  align-items: flex-start;
+  border-top: 1px solid var(--line);
+  padding-top: 0.4rem;
+}
+
+.muse-working {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.muse-error-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.muse-error-row .error {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.muse-composer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.5rem;
+}
+
+.muse-composer .error,
+.muse-composer .hint {
+  margin: 0;
+}
+
+/* Lite markdown inside Muse answers. */
+.muse-md {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.muse-md > :first-child {
+  margin-top: 0;
+}
+
+.muse-md > :last-child {
+  margin-bottom: 0;
+}
+
+.muse-md p {
+  margin: 0 0 0.4rem;
+}
+
+.muse-md h1,
+.muse-md h2,
+.muse-md h3,
+.muse-md h4,
+.muse-md h5,
+.muse-md h6 {
+  margin: 0.5rem 0 0.25rem;
+  line-height: 1.3;
+}
+
+.muse-md h1 {
+  font-size: 1rem;
+}
+
+.muse-md h2 {
+  font-size: 0.925rem;
+}
+
+.muse-md h3,
+.muse-md h4,
+.muse-md h5,
+.muse-md h6 {
+  font-size: 0.85rem;
+}
+
+.muse-md ul,
+.muse-md ol {
+  margin: 0 0 0.4rem;
+  padding-left: 1.2rem;
+}
+
+.muse-md li + li {
+  margin-top: 0.15rem;
+}
+
+.muse-md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  padding: 0 0.2rem;
+}
+
+.muse-md pre {
+  margin: 0 0 0.4rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.4rem 0.5rem;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.muse-md pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  white-space: pre;
 }
 
