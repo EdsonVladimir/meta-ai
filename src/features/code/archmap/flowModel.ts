@@ -150,6 +150,23 @@ export function selectsElement(symbol: StructureSymbol, tag: string): boolean {
   return component.selector.split(",").some((entry) => entry.trim() === tag);
 }
 
+/**
+ * The component a tag means in `parent`'s template. A shared selector
+ * needs the standalone `imports` to settle it; never guessed.
+ */
+export function resolveElement(
+  symbols: StructureSymbol[],
+  parent: StructureSymbol,
+  tag: string,
+): StructureSymbol | "none" | "ambiguous" {
+  const matches = symbols.filter((symbol) => selectsElement(symbol, tag));
+  if (matches.length === 0) return "none";
+  if (matches.length === 1) return matches[0];
+  const imports = parent.component?.imports ?? [];
+  const imported = matches.filter((symbol) => imports.includes(symbol.name));
+  return imported.length === 1 ? imported[0] : "ambiguous";
+}
+
 /** Members a walk starts from: methods, plus fields that hold chain facts. */
 function startMembers(symbol: StructureSymbol): string[] {
   const facts = symbol.flow;
@@ -359,12 +376,9 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
     template.uses.forEach((use, order) => {
       if (use.kind !== "element") return;
       const evidence = `${template.rel}:${use.line} (template ${use.name})`;
-      const matches = project.result.symbols.filter((symbol) => selectsElement(symbol, use.name));
-      const imports = node.symbol.component?.imports ?? [];
-      const imported = matches.filter((symbol) => imports.includes(symbol.name));
-      const found = matches.length === 1 ? matches : imported;
-      if (matches.length === 0) return; // A library tag: no chain link, no gap.
-      if (found.length !== 1) {
+      const found = resolveElement(project.result.symbols, node.symbol, use.name);
+      if (found === "none") return; // A library tag: no chain link, no gap.
+      if (found === "ambiguous") {
         graph.pending.push({
           kind: "ambiguous",
           label: use.name,
@@ -374,9 +388,9 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
         });
         return;
       }
-      const target = ensureNode(project, found[0], node.depth + 1);
+      const target = ensureNode(project, found, node.depth + 1);
       if (target === null) return;
-      const toMember = hasTemplateFacts(found[0]) ? TEMPLATE_MEMBER : null;
+      const toMember = hasTemplateFacts(found) ? TEMPLATE_MEMBER : null;
       arrive(project, target, toMember, {
         kind: "template",
         fromNode: node.id,

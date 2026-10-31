@@ -64,3 +64,49 @@ describe("collectComponentFacts", () => {
   });
 });
 
+describe("routes and bootstrap", () => {
+  it("reads typed tables, children, guards and lazy targets", () => {
+    const { routes } = analyze(`export const routes: Routes = [
+  { path: "", redirectTo: "a", pathMatch: "full" },
+  { path: "a", component: APage, canActivate: [authGuard] },
+  { path: "b", loadComponent: () => import("./b/b.page").then((m) => m.BPage) },
+  { path: "c", loadChildren: () => import("./c/c.routes").then((m) => m.C_ROUTES) },
+  { path: "d", component: DShell, children: [{ path: "e", component: EPage }] },
+];`, "src/app/app.routes.ts");
+    expect(
+      routes?.map((r) => [r.path, r.component, r.lazyImport, r.loadsChildren, r.canActivate]),
+    ).toEqual([
+      ["a", "APage", null, false, ["authGuard"]],
+      ["b", "BPage", "./b/b.page", false, []],
+      ["c", "C_ROUTES", "./c/c.routes", true, []],
+      ["d", "DShell", null, false, []],
+      ["d/e", "EPage", null, false, []],
+    ]);
+    expect(routes?.[0].evidence).toContain("app.routes.ts");
+  });
+
+  it("finds tables by the call that receives them, once", () => {
+    const { routes } = analyze(`const table = [{ path: "x", component: X }];
+export const config = { providers: [provideRouter(table)] };
+RouterModule.forChild(table);
+RouterModule.forRoot([{ path: "y", component: Y }]);`);
+    expect(routes?.map((r) => r.path)).toEqual(["x", "y"]);
+  });
+
+  it("does not read an unrelated array as routes", () => {
+    expect(analyze(`const items = [{ path: "x", component: X }];`).routes).toBeUndefined();
+  });
+
+  it("keeps a route with a computed path, without inventing one", () => {
+    const { routes } = analyze(`export const r: Routes = [{ path: PATHS.home, component: H }];`);
+    expect(routes?.[0]).toMatchObject({ path: null, component: "H" });
+  });
+
+  it("finds what an application starts from", () => {
+    expect(analyze(`bootstrapApplication(AppComponent, {});`).bootstrap).toEqual(["AppComponent"]);
+    expect(
+      analyze(`@NgModule({ bootstrap: [Root] }) export class AppModule {}`).bootstrap,
+    ).toEqual(["Root"]);
+  });
+});
+

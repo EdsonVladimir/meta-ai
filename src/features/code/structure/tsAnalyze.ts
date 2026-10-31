@@ -52,12 +52,18 @@ import ts from "ts-compiler";
 import { fnv1aHex } from "../model";
 import { STRUCTURE_LIMITS } from "./structureTypes";
 import { collectFlowFacts, httpClientFieldsOf } from "./tsFlowFacts";
-import { collectComponentFacts, collectHttpInterceptors } from "./tsAngularFacts";
+import {
+  collectBootstrap,
+  collectComponentFacts,
+  collectHttpInterceptors,
+  collectRouteRecords,
+} from "./tsAngularFacts";
 import { collectNestPipeline } from "./tsNestFacts";
 import type {
   ApiCall,
   ApiEndpoint,
   PipelineFact,
+  RouteRecordFact,
   StructureInput,
   StructureMember,
   StructureModuleRef,
@@ -90,6 +96,8 @@ interface FileSymbols {
   partial: boolean;
   message: string | null;
   pipeline: PipelineFact[];
+  routes: RouteRecordFact[];
+  bootstrap: string[];
 }
 
 const HTTP_VERBS = new Set(["get", "post", "put", "patch", "delete", "options", "head"]);
@@ -896,7 +904,22 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
     ...collectNestPipeline(source, (target, what) => evidenceOf(source, target, what)),
     ...collectHttpInterceptors(source, (target, what) => evidenceOf(source, target, what)),
   ];
-  return { symbols, refs, endpoints, calls, rawImports, partial, message, pipeline };
+  const routes = collectRouteRecords(source, input.rel, (node, what) =>
+    evidenceOf(source, node, what),
+  );
+  const bootstrap = collectBootstrap(source);
+  return {
+    symbols,
+    refs,
+    endpoints,
+    calls,
+    rawImports,
+    partial,
+    message,
+    pipeline,
+    routes,
+    bootstrap,
+  };
 }
 
 /**
@@ -912,6 +935,8 @@ export function analyzeTsFiles(inputs: StructureInput[]): StructureResult {
   const allEndpoints: ApiEndpoint[] = [];
   const allCalls: ApiCall[] = [];
   const allPipelines: PipelineFact[] = [];
+  const allRoutes: RouteRecordFact[] = [];
+  const allBootstrap: string[] = [];
   // Import resolution scope: rels per root (imports never cross roots).
   const scopeByRoot = new Map<string, Set<string>>();
   for (const input of files) {
@@ -939,6 +964,8 @@ export function analyzeTsFiles(inputs: StructureInput[]): StructureResult {
     allEndpoints.push(...parsed.endpoints);
     allCalls.push(...parsed.calls);
     allPipelines.push(...parsed.pipeline);
+    allRoutes.push(...parsed.routes);
+    allBootstrap.push(...parsed.bootstrap);
     const scopeRels = scopeByRoot.get(input.rootId) ?? new Set<string>();
     const imports = parsed.rawImports.map((found) => {
       const resolvedRel = resolveImportSpec(input.rel, found.raw, scopeRels);
@@ -1012,5 +1039,7 @@ export function analyzeTsFiles(inputs: StructureInput[]): StructureResult {
     callsTruncated: allCalls.length > calls.length,
     limits: STRUCTURE_LIMITS,
     ...(allPipelines.length > 0 ? { pipeline: allPipelines } : {}),
+    ...(allRoutes.length > 0 ? { routes: allRoutes } : {}),
+    ...(allBootstrap.length > 0 ? { bootstrap: allBootstrap } : {}),
   };
 }

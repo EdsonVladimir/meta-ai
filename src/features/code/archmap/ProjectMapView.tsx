@@ -8,7 +8,7 @@
 // The canvas owns its compact toolbar (module filter, search,
 // layer/edge menus, grouping, details) and a bottom status bar
 // with aggregated coverage, so headers never steal board space.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fnv1aHex } from "../model";
 import { listCodeDir, listProjectLinks, normalizeCodeError, readCodeFile } from "../client";
 import type {
@@ -86,6 +86,8 @@ import {
 } from "./proposalOverlay";
 import { checkProposal, projectUsesStore, type ProposalCheck } from "./proposalChecks";
 import { loadPreview } from "./previewLoader";
+import { buildComposition, type Composition, type CompositionNode } from "./compositionModel";
+import { layoutComposition, PagesBoard } from "./PagesBoard";
 import { SourceViewer } from "./SourceViewer";
 import { sourceTabsOf, type SourceSymbol } from "./sourceTabs";
 import {
@@ -214,7 +216,7 @@ interface ProjectMapViewProps {
   /** Zoom setter (Ctrl+wheel zoom and Fit; absent = display only). */
   onZoomChange?: (zoom: number) => void;
   /** Card granularity: symbol cards, or files as a secondary view. */
-  groupBy?: "symbols" | "files";
+  groupBy?: "symbols" | "files" | "pages";
   deps?: ProjectMapDeps;
   /** Active Architecture scope (joint view, project, or folder). */
   scope: ArchScope;
@@ -449,7 +451,7 @@ export function ProjectMapView({
   const removeExternalFolder = useRequirementsUi((s) => s.removeArchExternalFolder);
   const setInspectorCollapsed = useRequirementsUi((s) => s.setArchInspectorCollapsed);
   const [innerEdgeOpts, setInnerEdgeOpts] = useState<BoardEdgeOpts>(DEFAULT_EDGE_OPTS);
-  const [innerGroupBy, setInnerGroupBy] = useState<"symbols" | "files">("symbols");
+  const [innerGroupBy, setInnerGroupBy] = useState<"symbols" | "files" | "pages">("symbols");
   const [innerZoom, setInnerZoom] = useState(1);
   const activeLayers = layersOn ?? innerLayers;
   const activeQuery = query ?? innerQuery;
@@ -1037,6 +1039,30 @@ export function ProjectMapView({
     onlyIds,
     externalFolders,
   ]);
+
+  const compositionBySection = useMemo(() => {
+    const out = new Map<string, Composition | null>();
+    if (activeGroupBy !== "pages") return out;
+    for (const section of sections) {
+      const result = mergedRef.current[section.key]?.result ?? null;
+      out.set(section.key, buildComposition(result, externalFolders));
+    }
+    return out;
+    // `states` changes when an analysis lands in the merged results.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGroupBy, sections, states, externalFolders]);
+  const pageMatches = useCallback(
+    (node: CompositionNode): boolean => {
+      if (onlyIds !== null && !onlyIds.has(node.symbol.id)) return false;
+      const needle = activeQuery.trim().toLowerCase();
+      if (needle === "") return true;
+      return (
+        node.symbol.name.toLowerCase().includes(needle) ||
+        node.routes.some((route) => route.toLowerCase().includes(needle))
+      );
+    },
+    [onlyIds, activeQuery],
+  );
 
   const librariesBySection = useMemo(() => {
     const out = new Map<string, ExternalLibrary[]>();
@@ -1736,6 +1762,8 @@ export function ProjectMapView({
                   selectedMember={selectedMember}
                   onSelectMember={handleSelectMember}
                   groupBy={activeGroupBy}
+                  composition={compositionBySection.get(section.key) ?? null}
+                  pageMatches={pageMatches}
                   collapsed={collapsed}
                   onToggleCollapsed={(id) => setCollapsed((prev) => toggleSetValue(prev, id))}
                   onRetry={() => retrySection(section.key)}
@@ -2360,7 +2388,11 @@ interface ProjectMapSectionProps {
   onSelectSymbol: (map: ArchMap | null, id: string | null) => void;
   selectedMember: number | null;
   onSelectMember: (map: ArchMap | null, symbolId: string, index: number) => void;
-  groupBy: "symbols" | "files";
+  groupBy: "symbols" | "files" | "pages";
+  /** Page hierarchy; null when the project gives none. */
+  composition: Composition | null;
+  /** Dims Pages cards outside the search or the module filter. */
+  pageMatches: (node: CompositionNode) => boolean;
   collapsed: Set<string>;
   onToggleCollapsed: (id: string) => void;
   onRetry: () => void;
@@ -2369,6 +2401,32 @@ interface ProjectMapSectionProps {
   onViewSource: (symbol: SourceSymbol, tabKey: string) => void;
   zoom: number;
   onZoomChange?: (zoom: number) => void;
+}
+
+/** What the hierarchy could not settle, said above the board. */
+function PagesNotes({ composition }: { composition: Composition }) {
+  const hasPages = composition.columns.some((column) => column.key === "pages");
+  const notes = [
+    ...(hasPages ? [] : ["No routes were found, so no page can be told apart."]),
+    ...(composition.unresolvedRoutes.length > 0
+      ? [
+          `${composition.unresolvedRoutes.length} route${composition.unresolvedRoutes.length === 1 ? "" : "s"} point to no known component: ${composition.unresolvedRoutes
+            .slice(0, 3)
+            .map((route) => `/${route.path}`)
+            .join(", ")}.`,
+        ]
+      : []),
+    ...(composition.ambiguousTags.length > 0
+      ? [`Not linked, shared selector: ${composition.ambiguousTags.slice(0, 3).join(", ")}.`]
+      : []),
+    ...(composition.cycles > 0 ? ["A component cycle was cut."] : []),
+  ];
+  if (notes.length === 0) return null;
+  return (
+    <p className="hint" role="note">
+      {notes.join(" ")}
+    </p>
+  );
 }
 
 function ProjectMapSection({
@@ -2394,6 +2452,8 @@ function ProjectMapSection({
   selectedMember,
   onSelectMember,
   groupBy,
+  composition,
+  pageMatches,
   collapsed,
   onToggleCollapsed,
   onRetry,
@@ -2405,6 +2465,11 @@ function ProjectMapSection({
 }: ProjectMapSectionProps) {
   const map = state?.map ?? null;
   const symbolMode = groupBy === "symbols";
+  const pagesMode = groupBy === "pages";
+  const pagesLayout = useMemo(
+    () => (composition === null ? null : layoutComposition(composition)),
+    [composition],
+  );
   const fileLayout = useMemo(
     () => layoutBoard(filteredFiles.columns, expansion),
     [filteredFiles.columns, expansion],
@@ -2413,10 +2478,12 @@ function ProjectMapSection({
     () => layoutSymbolBoard(filteredSymbols.columns, collapsed, referenceIds),
     [filteredSymbols.columns, collapsed, referenceIds],
   );
-  const layout = symbolMode ? symbolLayout : fileLayout;
-  const hasCards = symbolMode
-    ? filteredSymbols.columns.length > 0
-    : filteredFiles.columns.length > 0;
+  const layout = pagesMode && pagesLayout !== null ? pagesLayout : symbolMode ? symbolLayout : fileLayout;
+  const hasCards = pagesMode
+    ? composition !== null
+    : symbolMode
+      ? filteredSymbols.columns.length > 0
+      : filteredFiles.columns.length > 0;
   const busy =
     state !== null &&
     (state.status === "collecting" ||
@@ -2439,6 +2506,8 @@ function ProjectMapSection({
     ready && map !== null
       ? map.files.length === 0
         ? "No supported source files."
+        : pagesMode && composition === null
+          ? "Pages reads Angular components and routes. None were found here."
         : symbolMode && map.nodes.length === 0
           ? "No symbols detected in the analyzed files."
           : !hasCards
@@ -2506,6 +2575,7 @@ function ProjectMapSection({
           ))}
         </ul>
       )}
+      {ready && pagesMode && composition !== null && <PagesNotes composition={composition} />}
       {ready && map !== null && hasCards && (
         <BoardViewport
           zoom={zoom}
@@ -2514,7 +2584,16 @@ function ProjectMapSection({
           canvasWidth={layout.width}
           canvasHeight={layout.height}
         >
-          {symbolMode ? (
+          {pagesMode && composition !== null ? (
+            <PagesBoard
+              composition={composition}
+              selectedId={selectedSymbolId}
+              matches={pageMatches}
+              onSelect={(id) => onSelectSymbol(map, id)}
+              onShowFlow={(id) => onShowFlow(id, null)}
+              onViewSource={onViewSource}
+            />
+          ) : symbolMode ? (
             <ArchSymbolBoard
               columns={filteredSymbols.columns}
               layout={symbolLayout}

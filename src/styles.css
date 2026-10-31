@@ -6578,3 +6578,32 @@ button.archboard-member:hover {
   font-size: 0.8rem;
 }
 
+/* Pages board: columns from the routes down. */
+.pagesboard-col {
+  position: absolute;
+  top: 0;
+  padding: 6px 10px;
+  background: var(--board-col);
+  border: 1px solid var(--board-line);
+  border-radius: var(--r-md);
+  box-sizing: border-box;
+}
+
+.pagesboard-col .hint {
+  margin: 0;
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pagesboard-card {
+  position: absolute;
+  box-sizing: border-box;
+  transition: opacity 0.12s;
+}
+
+.pagesboard-card.dimmed {
+  opacity: 0.28;
+}
+

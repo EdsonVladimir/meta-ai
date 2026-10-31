@@ -5,7 +5,7 @@
 // collected; anything else is skipped, never guessed.
 import ts from "ts-compiler";
 import { scanTemplate } from "./ngTemplate";
-import type { ComponentFacts, PipelineFact } from "./structureTypes";
+import type { ComponentFacts, PipelineFact, RouteRecordFact } from "./structureTypes";
 import { decoratorsOf } from "./tsFlowFacts";
 
 const COMPONENT_KINDS: Record<string, ComponentFacts["kind"]> = {
@@ -111,4 +111,149 @@ export function collectHttpInterceptors(
   for (const stmt of source.statements) visit(stmt);
   if (names.length === 0 || first === null) return [];
   return [{ scope: "http-client", names, evidence: evidence(first, "http-client") }];
+}
+
+/** Literal target and exported name of `() => import("./x").then((m) => m.Y)`. */
+function lazyTarget(node: ts.Expression): { target: string; exported: string | null } | null {
+  let target: string | null = null;
+  let exported: string | null = null;
+  const visit = (current: ts.Node): void => {
+    if (ts.isCallExpression(current)) {
+      if (current.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        target = literalText(current.arguments[0]);
+      } else if (
+        ts.isPropertyAccessExpression(current.expression) &&
+        current.expression.name.text === "then"
+      ) {
+        const callback = current.arguments[0];
+        if (
+          callback !== undefined &&
+          ts.isArrowFunction(callback) &&
+          ts.isPropertyAccessExpression(callback.body)
+        ) {
+          exported = callback.body.name.text;
+        }
+      }
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return target === null ? null : { target, exported };
+}
+
+function joinPaths(parent: string | null, path: string | null): string | null {
+  if (parent === null || path === null) return null;
+  const joined = [parent, path].filter((part) => part !== "").join("/");
+  return joined;
+}
+
+/**
+ * Route tables: arrays typed `Routes`, or given to `provideRouter`,
+ * `RouterModule.forRoot` or `forChild`. Only literal paths and plain
+ * identifiers count; anything else stays out, never guessed.
+ */
+export function collectRouteRecords(
+  source: ts.SourceFile,
+  rel: string,
+  evidence: (node: ts.Node, what: string) => string,
+): RouteRecordFact[] {
+  const named = new Map<string, ts.ArrayLiteralExpression>();
+  const tables = new Set<ts.ArrayLiteralExpression>();
+  const arrayOf = (node: ts.Expression | undefined): ts.ArrayLiteralExpression | null => {
+    if (node === undefined) return null;
+    if (ts.isArrayLiteralExpression(node)) return node;
+    return ts.isIdentifier(node) ? (named.get(node.text) ?? null) : null;
+  };
+  const scan = (current: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(current) &&
+      ts.isIdentifier(current.name) &&
+      current.initializer !== undefined &&
+      ts.isArrayLiteralExpression(current.initializer)
+    ) {
+      named.set(current.name.text, current.initializer);
+      const type = current.type?.getText(source);
+      if (type === "Routes" || type === "Route[]") tables.add(current.initializer);
+    }
+    ts.forEachChild(current, scan);
+  };
+  const scanCalls = (current: ts.Node): void => {
+    if (ts.isCallExpression(current)) {
+      const name = ts.isIdentifier(current.expression)
+        ? current.expression.text
+        : ts.isPropertyAccessExpression(current.expression)
+          ? current.expression.name.text
+          : "";
+      if (name === "provideRouter" || name === "forRoot" || name === "forChild") {
+        const table = arrayOf(current.arguments[0]);
+        if (table !== null) tables.add(table);
+      }
+    }
+    ts.forEachChild(current, scanCalls);
+  };
+  scan(source);
+  scanCalls(source);
+
+  const out: RouteRecordFact[] = [];
+  const read = (table: ts.ArrayLiteralExpression, parent: string | null): void => {
+    for (const element of table.elements) {
+      if (!ts.isObjectLiteralExpression(element)) continue;
+      const props = new Map<string, ts.Expression>();
+      for (const prop of element.properties) {
+        if (ts.isPropertyAssignment(prop)) props.set(prop.name.getText(source), prop.initializer);
+      }
+      const path = joinPaths(parent, literalText(props.get("path")));
+      const component = props.get("component");
+      const page = props.get("loadComponent");
+      const nested = props.get("loadChildren");
+      const lazy = lazyTarget(page ?? nested ?? ts.factory.createNull());
+      const guards = props.get("canActivate");
+      if (component !== undefined || lazy !== null) {
+        out.push({
+          rel,
+          path,
+          component:
+            component !== undefined && ts.isIdentifier(component)
+              ? component.text
+              : (lazy?.exported ?? null),
+          lazyImport: lazy?.target ?? null,
+          loadsChildren: nested !== undefined,
+          canActivate:
+            guards !== undefined && ts.isArrayLiteralExpression(guards)
+              ? guards.elements.filter(ts.isIdentifier).map((entry) => entry.text)
+              : [],
+          evidence: evidence(element, `route ${path ?? "?"}`),
+        });
+      }
+      const children = props.get("children");
+      if (children !== undefined && ts.isArrayLiteralExpression(children)) read(children, path);
+    }
+  };
+  for (const table of tables) read(table, "");
+  return out;
+}
+
+/** `bootstrapApplication(App)` and `bootstrap: [App]`. */
+export function collectBootstrap(source: ts.SourceFile): string[] {
+  const out: string[] = [];
+  const visit = (current: ts.Node): void => {
+    if (
+      ts.isCallExpression(current) &&
+      ts.isIdentifier(current.expression) &&
+      current.expression.text === "bootstrapApplication"
+    ) {
+      const first = current.arguments[0];
+      if (first !== undefined && ts.isIdentifier(first)) out.push(first.text);
+    }
+    if (
+      ts.isPropertyAssignment(current) &&
+      current.name.getText(source) === "bootstrap" &&
+      ts.isArrayLiteralExpression(current.initializer)
+    ) {
+      out.push(...current.initializer.elements.filter(ts.isIdentifier).map((entry) => entry.text));
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(source);
+  return out;
 }

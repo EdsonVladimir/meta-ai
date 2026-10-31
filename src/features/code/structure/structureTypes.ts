@@ -184,12 +184,15 @@ export interface ComponentFacts {
   missingAssets?: string[];
 }
 export interface RouteRecordFact {
+  rel: string;
+  /** Full path through its parents; null when not a literal. */
   path: string | null;
   component: string | null;
   /** Literal `import()` target of loadComponent/loadChildren. */
   lazyImport: string | null;
+  /** A `loadChildren`: the target holds more routes. */
+  loadsChildren: boolean;
   canActivate: string[];
-  childOf: string | null;
   evidence: string;
 }
 export type PipelineScope = "http-client" | "global-guard" | "global-interceptor";
@@ -324,6 +327,9 @@ export interface StructureResult {
   limits: StructureLimits;
   routeRecords?: RouteRecordFact[];
   pipeline?: PipelineFact[];
+  routes?: RouteRecordFact[];
+  /** Components an application starts from. */
+  bootstrap?: string[];
 }
 
 /** Analyzer input: already-read content (saved on disk). */

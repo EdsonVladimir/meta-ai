@@ -55,8 +55,8 @@ interface ArchitectureToolbarProps {
   libraryCount: number;
   /** "20 of 34 shown", or null. */
   externalInfo: string | null;
-  groupBy: "symbols" | "files";
-  onGroupByChange: (mode: "symbols" | "files") => void;
+  groupBy: "symbols" | "files" | "pages";
+  onGroupByChange: (mode: "symbols" | "files" | "pages") => void;
   // Search.
   query: string;
   onQueryChange: (query: string) => void;
@@ -256,11 +256,12 @@ export function ArchitectureToolbar({
         <input
           type="search"
           className="archmap-search"
-          placeholder="Filter files, symbols, members…"
+          placeholder={groupBy === "pages" ? "Filter pages and components…" : "Filter files, symbols, members…"}
           aria-label="Filter boards"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
         />
+        {groupBy !== "pages" && (
         <DropMenu label="Layers" badge={layersBadge} title={hiddenByFiltersTitle}>
           <div role="group" aria-label="Layer filters">
             {ARCH_LAYERS.map((def) => (
@@ -298,6 +299,8 @@ export function ArchitectureToolbar({
             </label>
           </div>
         </DropMenu>
+        )}
+        {groupBy !== "pages" && (
         <DropMenu label="Edges" badge={null} title="Which connections draw around the selection.">
           <div role="group" aria-label="Shown connections">
             <label className="archmap-layer" title="Draw edges arriving at the selection.">
@@ -334,6 +337,7 @@ export function ArchitectureToolbar({
           </div>
           <EdgeLegend />
         </DropMenu>
+        )}
         <div className="archmap-zoomctl" role="group" aria-label="Card grouping">
           <button
             type="button"
@@ -352,6 +356,15 @@ export function ArchitectureToolbar({
             onClick={() => onGroupByChange("files")}
           >
             Files
+          </button>
+          <button
+            type="button"
+            className={`secondary small${groupBy === "pages" ? " active" : ""}`}
+            aria-pressed={groupBy === "pages"}
+            title="Pages from the routes, then the components each one uses, level by level."
+            onClick={() => onGroupByChange("pages")}
+          >
+            Pages
           </button>
         </div>
         <button

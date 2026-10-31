@@ -176,7 +176,7 @@ still holds. Commits are on `code-xray`.
   because talking to Muse is the core of the demo. Pages moved after
   delivery unless time remains. It replaced the earlier order
   (Muse test, executable, Pages) once the first real test showed that
-  the dialog was the weak point.
+  the dialog was the weak point. Pages was then built before delivery.
 - **Client code never goes to Meta and never appears in published
   material.** The demo runs on the public `examples/reservas`. The name
   was removed from the whole `code-xray` history before the first push,
@@ -280,6 +280,17 @@ still holds. Commits are on `code-xray`.
 
 **Reading code**
 
+- **Pages orders an Angular app from its routes.** Symbols and Files show
+  layers, not what a person navigates. A page is only a component a
+  route targets, never by name or folder, and levels come from template
+  tags, each at its deepest use. A component with 5 or more parents goes
+  to Shared, so it does not repeat. One with no route or parent reads
+  "No usage detected", because dynamic creation cannot be ruled out.
+  Non-literal routes are listed as unresolved, never guessed.
+- **A card never says a page is unused.** Reading the first version,
+  "used by 0 components" on a page suggested dead code. Pages say "opened
+  by 1 route", and the app says "shows the pages".
+
 - **A proposal can be validated by looking at it, before Accept.** The
   popup draws a component's template and own CSS, and lists its form
   fields, so a requirement is checked in seconds. It is labeled
@@ -334,11 +345,6 @@ still holds. Commits are on `code-xray`.
 
 **Agreed and not built yet**
 
-- **Pages view:** columns by level from the routes. A page is only a
-  component a route targets, never by name or folder. A component used
-  by many parents goes to a Shared column. One with no route or parent
-  reads "No usage detected", because dynamic creation cannot be ruled
-  out.
 - **Key screen:** store the key in the system keyring, so the app can
   start from the menu. New folders blocked by default is worth it if
   client code is opened often.
@@ -396,8 +402,6 @@ still holds. Commits are on `code-xray`.
 19. "Modal dialog for proposals from Muse" — superseded in the Muse
     thread by cards beside the X-ray. The Propose with Muse button
     keeps its dialog.
-20. "Pages view before the demo" — moved after delivery unless time
-    remains.
 
 Full detail on 1–4 in the
 [live-design decision](decision-diseno-vivo.md).

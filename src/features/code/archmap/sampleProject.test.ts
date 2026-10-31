@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { combineResults } from "../structure/structureMerge";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
+import { buildComposition } from "./compositionModel";
 import { memberSignalLines } from "./flowLayout";
 import { buildFlowGraph, TEMPLATE_MEMBER, type FlowProject } from "./flowModel";
 import { projectUsesStore } from "./proposalChecks";
@@ -76,6 +77,22 @@ it("proves the demo project routes UI through a store", () => {
     result: analyzeSample(["frontend"]),
   };
   expect(projectUsesStore([project])).toBe(true);
+});
+
+it("orders the demo app from its routes", () => {
+  const composition = buildComposition(analyzeSample(["frontend"]));
+  expect(
+    composition?.columns.map((column) => [
+      column.title,
+      column.nodes.map((node) => node.symbol.name),
+    ]),
+  ).toEqual([
+    ["App", ["AppComponent"]],
+    ["Pages", ["ReservasPageComponent"]],
+    ["Level 1", ["ReservaFormComponent"]],
+  ]);
+  expect(composition?.columns[1].nodes[0].routes).toEqual(["reservas"]);
+  expect(composition?.columns[1].nodes[0].guards).toEqual(["authGuard"]);
 });
 
 it("yields every link the demo needs", () => {
