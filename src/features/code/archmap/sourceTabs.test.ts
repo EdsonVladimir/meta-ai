@@ -36,12 +36,19 @@ describe("sourceTabsOf", () => {
           component: component({ templateRel: "src/a.html", styleRels: ["src/a.scss"] }),
         }),
       ),
-    ).toEqual(["TS", "HTML", "SCSS"]);
+    ).toEqual(["TS", "HTML", "SCSS", "Preview"]);
   });
 
   it("opens an inline template in the source file at its line", () => {
     const tabs = sourceTabsOf(symbol({ component: component({ templateLine: 9 }) }));
     expect(tabs[1]).toMatchObject({ label: "HTML", rel: "src/a.component.ts", line: 9 });
+  });
+
+  it("offers a preview only for components with a template", () => {
+    expect(labels(symbol({ component: component({ templateLine: 3 }) }))).toContain("Preview");
+    expect(
+      labels(symbol({ component: component({ kind: "directive", templateLine: 3 }) })),
+    ).not.toContain("Preview");
   });
 
   it("offers no HTML without any template", () => {

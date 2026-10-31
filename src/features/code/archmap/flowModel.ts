@@ -144,7 +144,7 @@ function hasTemplateFacts(symbol: StructureSymbol): boolean {
   );
 }
 
-function selectsElement(symbol: StructureSymbol, tag: string): boolean {
+export function selectsElement(symbol: StructureSymbol, tag: string): boolean {
   const { component } = symbol;
   if (component?.kind !== "component" || component.selector === null) return false;
   return component.selector.split(",").some((entry) => entry.trim() === tag);

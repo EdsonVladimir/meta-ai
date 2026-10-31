@@ -73,6 +73,37 @@ describe("SourceViewer", () => {
     expect(screen.queryByRole("button", { name: "Open in code" })).toBeNull();
   });
 
+  it("draws the preview in a sandbox that runs nothing, with its fields", async () => {
+    const loadPreview = vi.fn(async () => ({
+      document: "<p>form</p>",
+      fields: [{ name: "correo", type: "email", conditionallyDisabled: true, required: false }],
+      notes: ["SCSS and other style languages are not compiled here."],
+    }));
+    setup({
+      tabs: [...TABS, tab({ key: "preview", label: "Preview", rel: "a.html" })],
+      initialKey: "preview",
+      loadPreview,
+    });
+    const frame = await screen.findByTitle("Preview of AComponent");
+    expect(frame.getAttribute("sandbox")).toBe("");
+    expect(frame.getAttribute("srcdoc")).toBe("<p>form</p>");
+    expect(screen.getByText("Fields (1): correo (email, disabled by a condition)")).toBeTruthy();
+    expect(screen.getByText(/not compiled/)).toBeTruthy();
+    expect(screen.getByText(/Approximate preview/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open in code" })).toBeNull();
+  });
+
+  it("says when the preview cannot be drawn", async () => {
+    setup({
+      tabs: [tab({ key: "preview", label: "Preview", rel: "a.html" })],
+      initialKey: "preview",
+      loadPreview: async () => {
+        throw new Error("Could not read the template of A.");
+      },
+    });
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not read the template");
+  });
+
   it("goes to the editor at the file's line", async () => {
     const { onOpenCode, onClose } = setup();
     fireEvent.click(await screen.findByRole("button", { name: "Open in code" }));

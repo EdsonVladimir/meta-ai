@@ -8,7 +8,9 @@ import { DEFAULT_CODE_EDITOR_PREFS } from "../editorPrefs";
 import { languageForFile } from "../model";
 import { loadMonaco, type MonacoApi } from "../monacoLoader";
 import { ensureRuthMonacoTheme, monacoEditorOptions } from "../monacoTheme";
-import type { SourceTab } from "./sourceTabs";
+import type { PreviewResult } from "./previewLoader";
+import { PREVIEW_TAB, type SourceTab } from "./sourceTabs";
+import { fieldSummary } from "./templatePreview";
 
 type Editor = ReturnType<MonacoApi["editor"]["create"]>;
 type TextModel = ReturnType<MonacoApi["editor"]["createModel"]>;
@@ -79,15 +81,22 @@ interface SourceViewerProps {
   tabs: SourceTab[];
   initialKey: string;
   readFile: (rootId: string, rel: string) => Promise<{ text: string }>;
+  /** Draws the Preview tab; its iframe runs nothing. */
+  loadPreview?: () => Promise<PreviewResult>;
   onOpenCode?: (rootId: string, rel: string, line: number) => void;
   onClose: () => void;
   prefs?: CodeEditorPrefs;
   loader?: () => Promise<MonacoApi>;
 }
 
+function reasonOf(raw: unknown): string {
+  return raw instanceof Error ? raw.message : normalizeCodeError(raw).message;
+}
+
 type Loaded =
   | { status: "loading" }
   | { status: "ready"; text: string }
+  | { status: "preview"; result: PreviewResult }
   | { status: "error"; message: string };
 
 export function SourceViewer({
@@ -95,6 +104,7 @@ export function SourceViewer({
   tabs,
   initialKey,
   readFile,
+  loadPreview,
   onOpenCode,
   onClose,
   prefs = DEFAULT_CODE_EDITOR_PREFS,
@@ -107,6 +117,9 @@ export function SourceViewer({
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const readRef = useRef(readFile);
   readRef.current = readFile;
+  const previewRef = useRef(loadPreview);
+  previewRef.current = loadPreview;
+  const isPreview = active.key === PREVIEW_TAB;
 
   useEffect(() => {
     const opener = document.activeElement;
@@ -118,6 +131,25 @@ export function SourceViewer({
 
   useEffect(() => {
     let stale = false;
+    if (isPreview) {
+      setLoaded({ status: "loading" });
+      const load = previewRef.current;
+      if (load === undefined) {
+        setLoaded({ status: "error", message: "The preview is not available here." });
+        return;
+      }
+      load().then(
+        (result) => {
+          if (!stale) setLoaded({ status: "preview", result });
+        },
+        (raw) => {
+          if (!stale) setLoaded({ status: "error", message: reasonOf(raw) });
+        },
+      );
+      return () => {
+        stale = true;
+      };
+    }
     if (active.proposed !== null) {
       setLoaded({ status: "ready", text: active.proposed });
       return;
@@ -138,7 +170,7 @@ export function SourceViewer({
     return () => {
       stale = true;
     };
-  }, [active.key, active.rootId, active.rel, active.proposed, active.missing]);
+  }, [active.key, active.rootId, active.rel, active.proposed, active.missing, isPreview]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     if (event.key === "Escape") {
@@ -175,7 +207,10 @@ export function SourceViewer({
         <div className="modal-head">
           <h3>{title}</h3>
           <div className="button-row">
-            {onOpenCode !== undefined && active.proposed === null && !active.missing && (
+            {onOpenCode !== undefined &&
+              !isPreview &&
+              active.proposed === null &&
+              !active.missing && (
               <button
                 type="button"
                 className="secondary small"
@@ -209,14 +244,37 @@ export function SourceViewer({
           ))}
         </div>
         <p className="hint source-viewer-path" title={active.rel}>
-          {active.rel}
-          {active.proposed !== null ? " · proposed by Muse, not on disk yet" : " · read only"}
+          {isPreview
+            ? "Approximate preview: no data or logic, and the app's global styles are not applied."
+            : `${active.rel}${active.proposed !== null ? " · proposed by Muse, not on disk yet" : " · read only"}`}
         </p>
         {loaded.status === "loading" && <p className="hint">Reading the file…</p>}
         {loaded.status === "error" && (
           <p className="error" role="alert">
             {loaded.message}
           </p>
+        )}
+        {loaded.status === "preview" && (
+          <>
+            <iframe
+              className="source-viewer-preview"
+              title={`Preview of ${title}`}
+              sandbox=""
+              srcDoc={loaded.result.document}
+            />
+            <div className="source-viewer-facts">
+              <p className="hint">
+                {loaded.result.fields.length === 0
+                  ? "No form fields."
+                  : `Fields (${loaded.result.fields.length}): ${loaded.result.fields.map(fieldSummary).join(", ")}`}
+              </p>
+              {loaded.result.notes.map((note) => (
+                <p key={note} className="hint">
+                  {note}
+                </p>
+              ))}
+            </div>
+          </>
         )}
         {loaded.status === "ready" && (
           <SourceCode

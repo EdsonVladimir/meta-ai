@@ -177,6 +177,8 @@ export interface ComponentFacts {
   styleRels: string[];
   /** First line of an inline template in the source file. */
   templateLine?: number;
+  /** Inline template text, for the preview. */
+  templateText?: string;
   /** Set after the assets step. */
   template?: TemplateFacts | null;
   missingAssets?: string[];

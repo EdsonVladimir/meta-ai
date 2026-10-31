@@ -85,6 +85,7 @@ import {
   type ProposalOverlay,
 } from "./proposalOverlay";
 import { checkProposal, projectUsesStore, type ProposalCheck } from "./proposalChecks";
+import { loadPreview } from "./previewLoader";
 import { SourceViewer } from "./SourceViewer";
 import { sourceTabsOf, type SourceSymbol } from "./sourceTabs";
 import {
@@ -1819,6 +1820,15 @@ export function ProjectMapView({
           tabs={sourceTabsOf(sourceView.symbol, proposalFiles)}
           initialKey={sourceView.tabKey}
           readFile={(rootId, rel) => depsRef.current.readFile(rootId, rel)}
+          loadPreview={() =>
+            loadPreview({
+              symbol: sourceView.symbol,
+              symbols: (flowMode?.overlay?.projects ?? flowProjectsOf(sections, mergedRef.current))
+                .flatMap((project) => project.result.symbols),
+              readFile: (rootId, rel) => depsRef.current.readFile(rootId, rel),
+              proposalFiles,
+            })
+          }
           onOpenCode={onOpenCode}
           onClose={() => setSourceView(null)}
           prefs={prefs}

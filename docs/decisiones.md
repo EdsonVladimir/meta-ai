@@ -280,6 +280,15 @@ still holds. Commits are on `code-xray`.
 
 **Reading code**
 
+- **A proposal can be validated by looking at it, before Accept.** The
+  popup draws a component's template and own CSS, and lists its form
+  fields, so a requirement is checked in seconds. It is labeled
+  approximate: no data, no logic, no global styles, no SCSS. A running
+  app would need the code on disk, which defeats reviewing first.
+- **The preview trusts nothing it draws.** That HTML may come from a
+  model, so attributes are an allowlist, the document carries a CSP with
+  no network, and the iframe sandbox runs no scripts.
+
 - **Each card opens its TS, HTML and CSS in a read-only popup.** Going
   to Folders broke the reading of a board. It stays read-only because
   editing here would duplicate the editor and its saving rules; Open in

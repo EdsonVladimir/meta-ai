@@ -6549,6 +6549,27 @@ button.archboard-member:hover {
   min-height: 0;
 }
 
+.source-viewer-preview {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: #fff;
+}
+
+.source-viewer-facts {
+  flex: none;
+  max-height: 5rem;
+  overflow-y: auto;
+  padding-top: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.source-viewer-facts .hint {
+  margin: 0 0 0.15rem;
+}
+
 .source-viewer-text {
   flex: 1;
   min-height: 0;

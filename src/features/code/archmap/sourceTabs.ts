@@ -26,6 +26,8 @@ export interface SourceTab {
   proposed: string | null;
 }
 
+export const PREVIEW_TAB = "preview";
+
 function extensionLabel(rel: string): string {
   const dot = rel.lastIndexOf(".");
   return dot === -1 ? "CSS" : rel.slice(dot + 1).toUpperCase();
@@ -62,5 +64,9 @@ export function sourceTabsOf(
       tab(`style:${rel}`, repeated ? `${labels[index]} ${index + 1}` : labels[index], rel, null),
     );
   });
+  if (component?.kind === "component" && tabs.some((entry) => entry.key === "template")) {
+    const template = tabs[1];
+    tabs.push({ ...template, key: PREVIEW_TAB, label: "Preview", proposed: null });
+  }
   return tabs;
 }

@@ -26,9 +26,10 @@ about its speed.
 | 1:00 | Right-click `reservas/frontend` → Ask Muse. Ask: "How do bookings reach the API?" | Now I talk to Muse from a folder. Ruth tells me exactly what goes to Meta before I send it. |
 | 1:20 | Propose change with the request below. Cut the wait | I ask for a real feature. It is saved as a versioned requirement. |
 | 1:35 | Card and X-ray side by side | Muse's proposal arrives as a separate review. Nothing is on disk. The new code appears on the X-ray in pink, and Ruth verifies it on its own. |
-| 2:00 | Answer a question on the card, or Adjust proposal. Cut the wait | Muse asks, I answer, and it revises. Each change is a new version of the same requirement. |
-| 2:20 | View diff on one file, then Accept all | I decide. Only now does it reach the disk. |
-| 2:30 | Terminal: `npm run typecheck` and `npx ng build`. Board with the new cards | It compiles, and the map already shows the new feature. |
+| 1:55 | Card button Preview on the new form. Point at the field list, then Esc | Before accepting, I see the form and check it against my request: every field, and the email locked on edit. It runs nothing and reaches nothing. |
+| 2:10 | Answer a question on the card, or Adjust proposal. Cut the wait | Muse asks, I answer, and it revises. Each change is a new version of the same requirement. |
+| 2:25 | Accept all | I decide. Only now does it reach the disk. |
+| 2:32 | Terminal: `npm run typecheck` and `npx ng build`. Board with the new cards | It compiles, and the map already shows the new feature. |
 | 2:45 | Folder menu: Never send to Muse | Private code stays private: this is enforced in the backend, not only in the interface. |
 | 2:52 | Board | Ruth: Muse does the work, you keep the understanding and the decision. |
 
