@@ -72,6 +72,18 @@ use commands::terminal::{
 use commands::window::{app_allow_close_once, app_set_unsaved_drafts, CloseDecision, CloseGuard};
 use state::AppState;
 
+/// Database file name inside the app data directory. Development and
+/// the installed app never share one, so both can run at the same
+/// time (SQLite locks a second opener). The installed app keeps
+/// `ruth.db`; development starts empty in `ruth-dev.db`.
+pub fn database_file_name(debug: bool) -> &'static str {
+    if debug {
+        "ruth-dev.db"
+    } else {
+        "ruth.db"
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -79,11 +91,16 @@ pub fn run() {
         .manage(TestLock::default())
         .setup(|app| {
             // The database lives in the application data directory
-            // (e.g. ~/.local/share/ide.ruth.app/ruth.db on Linux), never in
-            // the repo or in fixed paths. If it cannot open, the app
-            // still starts in degraded mode: the UI shows the recoverable
-            // error without deleting or replacing anything.
-            let path = app.path().app_data_dir().map(|dir| dir.join("ruth.db"));
+            // (e.g. ~/.local/share/ide.ruth.app/ on Linux), never in
+            // the repo or in fixed paths. Debug builds use ruth-dev.db
+            // so `tauri dev` never locks the installed app's ruth.db.
+            // If it cannot open, the app still starts in degraded
+            // mode: the UI shows the recoverable error without
+            // deleting or replacing anything.
+            let path = app
+                .path()
+                .app_data_dir()
+                .map(|dir| dir.join(database_file_name(cfg!(debug_assertions))));
             let state = match path {
                 Ok(path) => match ruth_store::DbActor::spawn(&path) {
                     Ok((db, loaded)) => AppState::ready(
@@ -245,4 +262,19 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ruth IDE");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::database_file_name;
+
+    #[test]
+    fn debug_builds_use_the_dev_database() {
+        assert_eq!(database_file_name(true), "ruth-dev.db");
+    }
+
+    #[test]
+    fn release_builds_keep_the_installed_database() {
+        assert_eq!(database_file_name(false), "ruth.db");
+    }
 }

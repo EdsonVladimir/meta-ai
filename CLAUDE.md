@@ -113,8 +113,9 @@ Frontend (`src/`):
   as unresolved, never connected.
 - The export package includes only persisted versions.
 - User data is stored in `ruth.db` in the app data directory
-  (`~/.local/share/ide.ruth.app/` on Linux). `*.db` files are never
-  committed.
+  (`~/.local/share/ide.ruth.app/` on Linux); debug builds (`tauri
+  dev`) use `ruth-dev.db` in the same folder so both can run at
+  once. `*.db` files are never committed.
 
 Some older comments are still in Spanish (for example `vite.config.ts`).
 docs/continuidad.md tracks the English migration. New content goes in

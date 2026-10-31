@@ -194,7 +194,8 @@ screen provenance (NULL columns = requirement source) +
 Policy: transactional and idempotent migrations; each version
 opens earlier databases intact; `*.db` excluded from the repo
 (`.gitignore`). User database:
-`~/.local/share/ide.ruth.app/ruth.db` (Linux).
+`~/.local/share/ide.ruth.app/ruth.db` (Linux); debug builds use
+`ruth-dev.db` in the same folder and start empty.
 
 ## Known errors
 
