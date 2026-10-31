@@ -68,7 +68,7 @@ Facts verified on the ACME pilot, which shape the extractors:
 - Dependencies use both `inject(X)` fields and constructor parameters.
   Today only constructors produce relations.
 - 87 `this.http.<verb>` calls. URLs are often built from a class field,
-  such as `environment.urlAcme + 'esquema-columnas'`. Today
+  such as `environment.urlApi + 'items'`. Today
   `this.http.get('/x')` is wrongly registered as a backend endpoint.
 - 56 components: 55 with `templateUrl`, 22 with `styleUrl(s)`, none with
   inline templates, 13 with standalone `imports`.

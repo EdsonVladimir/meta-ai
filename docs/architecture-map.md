@@ -141,7 +141,7 @@ call at 20 files. The map draws at most 200 files and says so.
 
 ## Pilot (real project, headless)
 
-ACME NestJS backend + Angular frontend (`CODIGO ACME-code`), 268
+ACME NestJS backend + Angular frontend, 268
 `.ts` files via a temporary script (deleted afterwards):
 
 - Backend (126): contracts 53, services 24, composition 22,
@@ -149,7 +149,7 @@ ACME NestJS backend + Angular frontend (`CODIGO ACME-code`), 268
   `motor-regla.ts`, `tracing.ts` — unconventional names, honestly kept).
 - Frontend (142): ui 56, services 31, contracts 21, composition 20,
   cross-cutting 10, unassigned 0, state 1.
-- Sample scope (`contrato-datos`, 9 files): 19 edges, externals
+- Sample scope (one module, 9 files): 19 edges, externals
   (`@nestjs/*`, `typeorm`, `class-validator`…) with user counts, and a
   clean unresolved list (builtins and externals only).
 

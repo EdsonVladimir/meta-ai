@@ -16,6 +16,8 @@ src-tauri/target/
 # Secretos y entorno local (nunca commitear claves)
 .env
 .env.*
+# The example ships; real keys stay in the environment, never in files.
+!.env.example
 *.pem
 *.key
 
