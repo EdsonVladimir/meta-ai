@@ -2,17 +2,31 @@
 // pinned composer. Ruth picks what Muse reads and says how much; the
 // list stays one click away. Ask answers and changes nothing, sending
 // the previous turns as history; Propose saves the message as a
-// requirement and hands it to the proposal flow, so AI output stays a
-// separate proposal. The thread lives in memory only.
+// requirement, generates the proposal in the thread and hands it to
+// the X-ray, so AI output stays a separate proposal. The thread lives
+// in memory only.
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
+  acceptCodeFile,
   askCode,
+  discardCodeFile,
+  generateCode,
   listCodeDir,
   normalizeCodeError,
+  readCodeFile,
   setRootProject,
   type AskTurnInput,
+  type CodeGenRequest,
 } from "../code/client";
-import type { CodeRootDto } from "../code/types";
+import type {
+  CodeAcceptDto,
+  CodeFileDto,
+  CodeGenerationDto,
+  CodeRootDto,
+} from "../code/types";
+import { DEFAULT_CODE_EDITOR_PREFS, type CodeEditorPrefs } from "../code/editorPrefs";
+import { loadMonaco, type MonacoApi } from "../code/monacoLoader";
+import { ProposalFiles } from "../code/structure/ProposalFiles";
 import {
   createModule,
   createProject,
@@ -21,7 +35,7 @@ import {
   renameModule,
   renameProject,
 } from "../requirements/client";
-import type { MuseTarget } from "../requirements/uiStore";
+import { useRequirementsUi, type MuseTarget } from "../requirements/uiStore";
 import { MarkdownLite } from "./markdownLite";
 import {
   collectMuseFiles,
@@ -35,6 +49,10 @@ import {
 export interface MusePanelApi extends MuseLinkDeps {
   listDir: (rootId: string, rel: string) => ReturnType<typeof listCodeDir>;
   ask: typeof askCode;
+  generate: (input: CodeGenRequest) => Promise<CodeGenerationDto>;
+  acceptFile: (generationId: string, pos: number) => Promise<CodeAcceptDto>;
+  discardFile: (generationId: string, pos: number) => Promise<CodeGenerationDto>;
+  readFile: (rootId: string, rel: string) => Promise<CodeFileDto>;
   createRequirement: (input: {
     projectId: string;
     moduleId: string;
@@ -46,6 +64,10 @@ export interface MusePanelApi extends MuseLinkDeps {
 const defaultApi: MusePanelApi = {
   listDir: listCodeDir,
   ask: askCode,
+  generate: generateCode,
+  acceptFile: acceptCodeFile,
+  discardFile: discardCodeFile,
+  readFile: readCodeFile,
   createRequirement,
   listModules,
   createProject,
@@ -57,11 +79,25 @@ const defaultApi: MusePanelApi = {
     renameModule({ projectId, moduleId, expectedName, name }),
 };
 
-interface Message {
+interface UserMessage {
   id: number;
-  role: "user" | "muse";
+  role: "user";
   text: string;
 }
+
+interface MuseMessage {
+  id: number;
+  role: "muse";
+  text: string;
+}
+
+interface ProposalMessage {
+  id: number;
+  role: "proposal";
+  generation: CodeGenerationDto;
+}
+
+type Message = UserMessage | MuseMessage | ProposalMessage;
 
 interface FailedAsk {
   question: string;
@@ -76,14 +112,13 @@ interface MusePanelProps {
   target: MuseTarget;
   roots: CodeRootDto[];
   onClose: () => void;
-  /** Requirement saved: the workspace opens the proposal. */
-  onPropose: (request: {
-    projectId: string;
-    moduleId: string;
-    requirementId: string;
-    files: MuseFile[];
-  }) => void;
+  /** Stays mounted while another tab shows: the thread must survive. */
+  hidden?: boolean;
+  /** Proposal generated: the workspace shows it on the X-ray, no dialog. */
+  onPropose: (generation: CodeGenerationDto) => void;
   api?: MusePanelApi;
+  prefs?: CodeEditorPrefs;
+  loader?: () => Promise<MonacoApi>;
 }
 
 function reason(raw: unknown): string {
@@ -96,14 +131,29 @@ function historyOf(messages: Message[]): AskTurnInput[] {
   for (let index = 0; index + 1 < messages.length; index += 1) {
     const first = messages[index];
     const second = messages[index + 1];
-    if (first.role === "user" && second.role === "muse") {
-      turns.push({ question: first.text, answer: second.text });
+    if (first.role !== "user") continue;
+    if (second.role === "muse") turns.push({ question: first.text, answer: second.text });
+    if (second.role === "proposal") {
+      const rels = second.generation.files.map((file) => file.rel).join(", ");
+      turns.push({
+        question: first.text,
+        answer: `${second.generation.explanation}\nProposed files: ${rels}`,
+      });
     }
   }
   return turns;
 }
 
-export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi }: MusePanelProps) {
+export function MusePanel({
+  target,
+  roots,
+  onClose,
+  hidden = false,
+  onPropose,
+  api = defaultApi,
+  prefs = DEFAULT_CODE_EDITOR_PREFS,
+  loader = loadMonaco,
+}: MusePanelProps) {
   const root = roots.find((entry) => entry.id === target.rootId) ?? null;
   const [candidates, setCandidates] = useState<MuseFile[] | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -143,7 +193,9 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
     return () => {
       stale = true;
     };
-  }, [target]);
+    // By value: asking again about the same folder keeps the thread.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.rootId, target.rel, target.kind]);
 
   useEffect(() => {
     const end = endRef.current;
@@ -157,6 +209,11 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
   const files =
     chosen === null ? pickMuseFiles(all, text) : all.filter((file) => chosen.has(file.rel));
   const picked = new Set(files.map((file) => file.rel));
+  const rootNames = Object.fromEntries(roots.map((entry) => [entry.id, entry.name]));
+  /** A decision taken on the X-ray reaches the card through the store. */
+  const museGeneration = useRequirementsUi((s) => s.museGeneration);
+  const latest = (generation: CodeGenerationDto): CodeGenerationDto =>
+    museGeneration?.id === generation.id ? museGeneration : generation;
   const canSend =
     busy === null && !blocked && root !== null && text.trim() !== "" && files.length > 0;
 
@@ -169,7 +226,36 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
   function appendMessage(role: "user" | "muse", message: string): void {
     idRef.current += 1;
     const id = idRef.current;
-    setMessages((prev) => [...prev, { id, role, text: message }]);
+    const entry: Message =
+      role === "user" ? { id, role, text: message } : { id, role, text: message };
+    setMessages((prev) => [...prev, entry]);
+  }
+
+  function appendProposal(generation: CodeGenerationDto): void {
+    idRef.current += 1;
+    const id = idRef.current;
+    setMessages((prev) => [...prev, { id, role: "proposal", generation }]);
+  }
+
+  /** An accept or discard in the thread: the turn and the X-ray stay in sync. */
+  function updateProposal(id: number, generation: CodeGenerationDto): void {
+    setMessages((prev) =>
+      prev.map((entry) =>
+        entry.id === id && entry.role === "proposal" ? { ...entry, generation } : entry,
+      ),
+    );
+    useRequirementsUi.getState().setMuseGeneration(generation);
+  }
+
+  /** A file written from the thread: the X-ray re-reads it. */
+  function proposalAccepted(rootId: string, rel: string): void {
+    const ui = useRequirementsUi.getState();
+    ui.setMuseAccepted({ rootId, rel, nonce: (ui.museAccepted?.nonce ?? 0) + 1 });
+  }
+
+  function showOnXray(generation: CodeGenerationDto): void {
+    useRequirementsUi.getState().setMuseGeneration(generation);
+    onPropose(generation);
   }
 
   async function runAsk(
@@ -217,6 +303,9 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
     if (root === null) return;
     const message = raw.trim();
     if (message === "") return;
+    const thread = threadRef.current;
+    appendMessage("user", message);
+    setText("");
     setBusy("propose");
     setNotice(null);
     try {
@@ -227,10 +316,17 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
         content: message,
         author: "Muse dialog",
       });
-      onPropose({ projectId, moduleId, requirementId: created.artifact.id, files });
-      setText("");
+      const generation = await api.generate({
+        projectId,
+        moduleId,
+        source: { kind: "requirement", artifactId: created.artifact.id },
+        scope: files,
+      });
+      if (thread !== threadRef.current) return;
+      appendProposal(generation);
+      showOnXray(generation);
     } catch (raw) {
-      setNotice(reason(raw));
+      if (thread === threadRef.current) setNotice(reason(raw));
     } finally {
       setBusy(null);
     }
@@ -245,6 +341,7 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
 
   function clearConversation(): void {
     threadRef.current += 1;
+    useRequirementsUi.getState().setMuseGeneration(null);
     setMessages([]);
     setFailed(null);
     setNotice(null);
@@ -253,14 +350,15 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
   /** The question a Muse message answers: its nearest user message above. */
   function questionOf(index: number): string {
     for (let at = index - 1; at >= 0; at -= 1) {
-      if (messages[at].role === "user") return messages[at].text;
+      const entry = messages[at];
+      if (entry.role === "user") return entry.text;
     }
     return "";
   }
 
   const label = target.rel === "" ? (root?.name ?? target.rootId) : target.rel;
   return (
-    <section className="muse-panel" aria-label="Muse dialog">
+    <section className="muse-panel" aria-label="Muse dialog" hidden={hidden}>
       <div className="muse-target">
         <code title={label}>{label}</code>
         <span className="muse-actions">
@@ -296,7 +394,7 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
                 <div key={message.id} className="muse-message muse-message-user">
                   <p className="muse-question">{message.text}</p>
                 </div>
-              ) : (
+              ) : message.role === "muse" ? (
                 <div key={message.id} className="muse-message muse-message-muse">
                   <div className="muse-md">
                     <MarkdownLite text={message.text} />
@@ -310,9 +408,58 @@ export function MusePanel({ target, roots, onClose, onPropose, api = defaultApi 
                     Propose this as a change
                   </button>
                 </div>
+              ) : (
+                <div key={message.id} className="muse-message muse-message-proposal">
+                  <div className="muse-md">
+                    <MarkdownLite text={message.generation.explanation} />
+                    {message.generation.assumptions.length > 0 && (
+                      <>
+                        <h4>Assumptions</h4>
+                        <ul>
+                          {message.generation.assumptions.map((note, noteIndex) => (
+                            <li key={noteIndex}>{note}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {message.generation.questions.length > 0 && (
+                      <>
+                        <h4>Questions</h4>
+                        <ul>
+                          {message.generation.questions.map((note, noteIndex) => (
+                            <li key={noteIndex}>{note}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                  <ProposalFiles
+                    key={message.generation.id}
+                    generation={latest(message.generation)}
+                    rootNames={rootNames}
+                    api={api}
+                    prefs={prefs}
+                    loader={loader}
+                    onChange={(generation) => updateProposal(message.id, generation)}
+                    onAccepted={proposalAccepted}
+                  />
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="secondary small"
+                      disabled={busy !== null}
+                      onClick={() => showOnXray(latest(message.generation))}
+                    >
+                      Show on X-ray
+                    </button>
+                  </div>
+                </div>
               ),
             )}
             {busy === "ask" && <div className="muse-message muse-working">Working…</div>}
+            {busy === "propose" && (
+              <div className="muse-message muse-working">Generating proposal…</div>
+            )}
             {failed !== null && (
               <div className="muse-error-row" role="alert">
                 <span className="error">{failed.error}</span>

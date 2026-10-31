@@ -58,7 +58,7 @@ import { RequirementEditor } from "./RequirementEditor";
 import { ReviewPanel } from "./ReviewPanel";
 import { UnsavedDialog } from "./UnsavedDialog";
 import { withDesign, withMockup, withRequirement, withScreen } from "./navigation";
-import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, useRequirementsUi, type CenterView, type DocSaveState, type MuseProposalRequest, type PanelName, type RightTab, type Selection } from "./uiStore";
+import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, useRequirementsUi, type CenterView, type DocSaveState, type PanelName, type RightTab, type Selection } from "./uiStore";
 import { dirtyDocKeys, docKey } from "./saveStatus";
 import { GenerationPanel } from "../proposals/GenerationPanel";
 import {
@@ -85,7 +85,7 @@ import { CodeMainPane } from "../code/CodeMainPane";
 import { CodeTreePane } from "../code/CodeTreePane";
 import { CodeWorkspaceProvider } from "../code/useCodeWorkspace";
 import { listCodeRoots } from "../code/client";
-import type { CodeRootDto } from "../code/types";
+import type { CodeGenerationDto, CodeRootDto } from "../code/types";
 import { listTerminals } from "../terminal/client";
 import { listProjects } from "./client";
 import {
@@ -2575,18 +2575,18 @@ export function RequirementsWorkspace() {
     useRequirementsUi.getState().togglePanel(panel);
   }
 
-  // A Muse dialog saved its requirement: show its module and propose.
-  function handleMuseProposal(request: MuseProposalRequest) {
+  // A Muse thread generated its proposal: show its module on the
+  // X-ray, with no dialog. The panel already stored the generation.
+  function handleMuseProposal(generation: CodeGenerationDto) {
     setExplorerRefresh((t) => t + 1);
     const ui = useRequirementsUi.getState();
     ui.bumpCodeLibrary();
     void listCodeRoots().then(setCodeRoots);
     applySelection(
-      { projectId: request.projectId, moduleId: request.moduleId, requirementId: null, designId: null, mockupId: null, screenId: null },
+      { projectId: generation.projectId, moduleId: generation.moduleId, requirementId: null, designId: null, mockupId: null, screenId: null },
       false,
     );
     ui.setCenterView("architecture");
-    ui.setMuseProposal(request);
   }
 
   function showRightTab(tab: RightTab) {
@@ -3182,15 +3182,17 @@ export function RequirementsWorkspace() {
                 Assistant
               </button>
             </div>
+            {museTarget !== null && (
+              <MusePanel
+                target={museTarget}
+                roots={codeRoots}
+                hidden={rightTab !== "assistant"}
+                onClose={() => useRequirementsUi.getState().setMuseTarget(null)}
+                onPropose={handleMuseProposal}
+              />
+            )}
             {rightTab === "assistant" ? (
-              museTarget !== null ? (
-                <MusePanel
-                  target={museTarget}
-                  roots={codeRoots}
-                  onClose={() => useRequirementsUi.getState().setMuseTarget(null)}
-                  onPropose={handleMuseProposal}
-                />
-              ) : projectId !== null && moduleId !== null ? (
+              museTarget !== null ? null : projectId !== null && moduleId !== null ? (
                 <AssistantPanel
                   projectId={projectId}
                   moduleId={moduleId}

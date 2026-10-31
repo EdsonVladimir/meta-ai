@@ -2207,8 +2207,8 @@ function BoardInspector({
               <section className="archmap-section" aria-label="Also in this proposal">
                 <h5 className="flow-inspector-title">Also in this proposal</h5>
                 <ul className="archmap-list">
-                  {flow.otherChanges.map((name) => (
-                    <li key={name}>
+                  {flow.otherChanges.map((name, index) => (
+                    <li key={`${name}:${index}`}>
                       <code>{name}</code>
                     </li>
                   ))}

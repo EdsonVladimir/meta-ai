@@ -10,6 +10,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ExternalFolder } from "../code/archmap/externalLibraries";
 import type { LayerOverrides } from "../code/archmap/mapFilter";
+import type { CodeGenerationDto } from "../code/types";
 
 export interface Selection {
   projectId: string | null;
@@ -40,12 +41,11 @@ export interface MuseTarget {
   kind: "folder" | "file";
 }
 
-/** Requirement written in a Muse dialog, on its way to a proposal. */
-export interface MuseProposalRequest {
-  projectId: string;
-  moduleId: string;
-  requirementId: string;
-  files: Array<{ rootId: string; rel: string }>;
+/** File accepted from a Muse thread proposal. The nonce tells repeats apart. */
+export interface MuseAcceptedFile {
+  rootId: string;
+  rel: string;
+  nonce: number;
 }
 
 /** Folder picked in the code tree for exploring (never a scope). */
@@ -194,7 +194,10 @@ interface RequirementsUiState {
   /** Folder picked in the code tree for exploring (session-only). */
   codeFolderSelection: CodeFolderSelection | null;
   museTarget: MuseTarget | null;
-  museProposal: MuseProposalRequest | null;
+  /** Thread proposal shown on the X-ray (session-only). */
+  museGeneration: CodeGenerationDto | null;
+  /** File accepted from a Muse thread proposal (session-only). */
+  museAccepted: MuseAcceptedFile | null;
   /** Board inspector width (null = CSS default); collapse is session-only. */
   archInspectorWidth: number | null;
   archInspectorCollapsed: boolean;
@@ -239,7 +242,8 @@ interface RequirementsUiState {
   setCodeFolderSelection: (selection: CodeFolderSelection | null) => void;
   /** Opens the Muse dialog on the target, in the Assistant tab. */
   setMuseTarget: (target: MuseTarget | null) => void;
-  setMuseProposal: (request: MuseProposalRequest | null) => void;
+  setMuseGeneration: (generation: CodeGenerationDto | null) => void;
+  setMuseAccepted: (accepted: MuseAcceptedFile | null) => void;
   setArchInspectorWidth: (width: number | null) => void;
   setArchInspectorCollapsed: (collapsed: boolean) => void;
   /** Sets (or clears, with null) the manual layer of one symbol. */
@@ -451,7 +455,8 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   mapHiddenProjects: {},
   codeFolderSelection: null,
   museTarget: null,
-  museProposal: null,
+  museGeneration: null,
+  museAccepted: null,
   archInspectorWidth: null,
   archInspectorCollapsed: true,
   layerOverrides: {},
@@ -479,7 +484,8 @@ export const useRequirementsUi = create<RequirementsUiState>()(
             panels: { ...state.panels, assistant: true },
           },
     ),
-  setMuseProposal: (museProposal) => set({ museProposal }),
+  setMuseGeneration: (museGeneration) => set({ museGeneration }),
+  setMuseAccepted: (museAccepted) => set({ museAccepted }),
   setArchInspectorWidth: (archInspectorWidth) => set({ archInspectorWidth }),
   setArchInspectorCollapsed: (archInspectorCollapsed) => set({ archInspectorCollapsed }),
   setLayerOverride: (id, value) =>

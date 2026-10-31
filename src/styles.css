@@ -6181,6 +6181,10 @@ button.archboard-member:hover {
 }
 
 /* Muse dialog: what goes out is visible before anything is sent. */
+.muse-panel[hidden] {
+  display: none;
+}
+
 .muse-panel {
   flex: 1;
   display: flex;
@@ -6255,6 +6259,13 @@ button.archboard-member:hover {
   flex-direction: column;
   gap: 0.6rem;
   padding-right: 0.075rem;
+}
+
+.muse-message-proposal,
+.muse-message-proposal * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .muse-message {
@@ -6397,5 +6408,16 @@ button.archboard-member:hover {
   border: none;
   padding: 0;
   white-space: pre;
+}
+
+/* Proposal turn in the Muse thread: same file cards as the dialog. */
+.muse-message-proposal {
+  align-items: stretch;
+  border-top: 1px solid var(--line);
+  padding-top: 0.4rem;
+}
+
+.muse-message-proposal .code-proposal-files {
+  margin: 0;
 }
 

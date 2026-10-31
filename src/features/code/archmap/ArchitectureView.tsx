@@ -5,7 +5,7 @@
 // content only; drafts warn where analyzed.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCodeWorkspace } from "../useCodeWorkspace";
-import { useRequirementsUi, type MuseProposalRequest } from "../../requirements/uiStore";
+import { useRequirementsUi } from "../../requirements/uiStore";
 import { StructureView, scopeKey, type ScopeFile } from "../structure/StructureView";
 import { CodeProposalDialog } from "../structure/CodeProposalDialog";
 import { acceptCodeFile, discardCodeFile, normalizeCodeError } from "../client";
@@ -53,24 +53,32 @@ export function ArchitectureView() {
   const [chainFiles, setChainFiles] = useState<ScopeFile[]>([]);
   const [proposal, setProposal] = useState<CodeGenerationDto | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
-  // A Muse dialog hands its requirement here once its module is selected.
-  const museProposal = useRequirementsUi((s) => s.museProposal);
-  const setMuseProposal = useRequirementsUi((s) => s.setMuseProposal);
-  const [museRequest, setMuseRequest] = useState<MuseProposalRequest | null>(null);
-  useEffect(() => {
-    if (museProposal === null) return;
-    if (museProposal.projectId !== selectedProjectId || museProposal.moduleId !== selectedModuleId) {
-      return;
-    }
-    setMuseRequest(museProposal);
-    setProposeOpen(true);
-    setProposeHidden(false);
-    setMuseProposal(null);
-  }, [museProposal, selectedProjectId, selectedModuleId, setMuseProposal]);
+  // A Muse thread hands its proposal here: the same shared
+  // proposal as the dialog, so the overlay and the inspector work.
+  const museGeneration = useRequirementsUi((s) => s.museGeneration);
+  const setMuseGeneration = useRequirementsUi((s) => s.setMuseGeneration);
+  const museAccepted = useRequirementsUi((s) => s.museAccepted);
+  const setPanel = useRequirementsUi((s) => s.setPanel);
+  const setRightTab = useRequirementsUi((s) => s.setRightTab);
   const handleGeneration = useCallback((generation: CodeGenerationDto | null): void => {
     setProposal(generation);
   }, []);
   const proposalFiles = proposal === null ? null : proposal.files;
+  // Clearing the thread takes its proposal off the board; a dialog
+  // proposal is not the thread's to clear.
+  const threadProposalId = useRef<string | null>(null);
+  useEffect(() => {
+    if (museGeneration !== null) {
+      threadProposalId.current = museGeneration.id;
+      setProposal(museGeneration);
+      return;
+    }
+    const cleared = threadProposalId.current;
+    threadProposalId.current = null;
+    if (cleared !== null) {
+      setProposal((current) => (current?.id === cleared ? null : current));
+    }
+  }, [museGeneration]);
   const reanalyzeNonce = useRef(0);
   const [reanalyzeRequest, setReanalyzeRequest] = useState<ReanalyzeRequest | null>(null);
   const requestReanalyze = useCallback(
@@ -80,8 +88,19 @@ export function ArchitectureView() {
     },
     [],
   );
+  // A file accepted from the thread: the same refresh as accepting
+  // in the dialog. Once per nonce: notifyFileChanged is a new function
+  // on every render, and re-running would re-analyze forever.
+  const seenAccepted = useRef(museAccepted?.nonce ?? 0);
+  useEffect(() => {
+    if (museAccepted === null || museAccepted.nonce === seenAccepted.current) return;
+    seenAccepted.current = museAccepted.nonce;
+    notifyFileChanged(museAccepted.rootId, museAccepted.rel);
+    requestReanalyze([{ rootId: museAccepted.rootId, rel: museAccepted.rel }]);
+  }, [museAccepted, notifyFileChanged, requestReanalyze]);
   // Accept from the inspector: the same command as the dialog, then
-  // the owning section re-analyzes and the mark leaves the card.
+  // the owning section re-analyzes and the mark leaves the card. A
+  // thread proposal writes back to the store so the thread stays in sync.
   const acceptProposalFile = useCallback(
     (pos: number): void => {
       if (proposal === null) return;
@@ -91,6 +110,7 @@ export function ArchitectureView() {
           setDecisionError(null);
           const outcome = await acceptCodeFile(generationId, pos);
           setProposal(outcome.generation);
+          if (generationId === museGeneration?.id) setMuseGeneration(outcome.generation);
           if (outcome.alreadyAccepted) return;
           const file = outcome.generation.files.find((entry) => entry.pos === pos);
           if (file === undefined) return;
@@ -101,7 +121,7 @@ export function ArchitectureView() {
         }
       })();
     },
-    [proposal, notifyFileChanged, requestReanalyze],
+    [proposal, museGeneration, setMuseGeneration, notifyFileChanged, requestReanalyze],
   );
   const discardProposalFile = useCallback(
     (pos: number): void => {
@@ -110,13 +130,15 @@ export function ArchitectureView() {
       void (async () => {
         try {
           setDecisionError(null);
-          setProposal(await discardCodeFile(generationId, pos));
+          const updated = await discardCodeFile(generationId, pos);
+          setProposal(updated);
+          if (generationId === museGeneration?.id) setMuseGeneration(updated);
         } catch (raw) {
           setDecisionError(normalizeCodeError(raw).message);
         }
       })();
     },
-    [proposal],
+    [proposal, museGeneration, setMuseGeneration],
   );
   const handleOpenCode = useCallback(
     (rootId: string, rel: string, line: number): void => {
@@ -142,7 +164,7 @@ export function ArchitectureView() {
   }
   const rootNames = Object.fromEntries(roots.map((root) => [root.id, root.name]));
   const canPropose = selectedProjectId !== null && selectedModuleId !== null;
-  const proposalScope = museRequest?.files ?? (scope.length > 0 ? scope : chainFiles);
+  const proposalScope = scope.length > 0 ? scope : chainFiles;
   const footerActions = (
     <>
       <button
@@ -216,12 +238,21 @@ export function ArchitectureView() {
         onShowAllProjects={showAllMapProjects}
         onToggleProject={toggleMapProject}
         proposalFiles={proposalFiles}
-        onOpenProposal={() => setProposeHidden(false)}
+        onOpenProposal={() => {
+          if (proposeOpen) {
+            setProposeHidden(false);
+          } else {
+            // A thread proposal has no dialog: back to the thread.
+            setPanel("assistant", true);
+            setRightTab("assistant");
+          }
+        }}
         onCloseProposal={() => {
           setDecisionError(null);
           setProposeOpen(false);
           setProposeHidden(false);
           setProposal(null);
+          setMuseGeneration(null);
         }}
         onChainFiles={setChainFiles}
         footerActions={footerActions}
@@ -249,12 +280,10 @@ export function ArchitectureView() {
             requestReanalyze([{ rootId, rel }]);
           }}
           onGeneration={handleGeneration}
-          autoRequirementId={museRequest?.requirementId ?? null}
           onViewOnXray={() => setProposeHidden(true)}
           hidden={proposeHidden}
           onClose={() => {
             setProposeOpen(false);
-            setMuseRequest(null);
           }}
           prefs={prefs}
           loader={loader}

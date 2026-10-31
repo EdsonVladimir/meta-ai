@@ -9,7 +9,6 @@ import type { ArtifactDto } from "../../requirements/types";
 import { listRequirements } from "../../requirements/client";
 import { useRequirementsUi } from "../../requirements/uiStore";
 import { docKey } from "../../requirements/saveStatus";
-import { CodeConflictDiff } from "../CodeConflictDiff";
 import {
   acceptCodeFile,
   discardCodeFile,
@@ -28,12 +27,11 @@ import type {
   CodeGenContextDto,
   CodeGenerationDto,
   CodeMockupScreensDto,
-  CodeProposalFileDto,
 } from "../types";
 import type { MonacoApi } from "../monacoLoader";
 import type { CodeEditorPrefs } from "../editorPrefs";
-import { languageForFile } from "../model";
 import { diffIsEmpty, diffStructure } from "./diffStructure";
+import { ProposalFiles } from "./ProposalFiles";
 import type { ScopeFile } from "./StructureView";
 import type { StructureResult } from "./structureTypes";
 
@@ -81,8 +79,6 @@ interface CodeProposalDialogProps {
   onFileAccepted: (rootId: string, rel: string) => void;
   /** Reports the current generation (null when cleared or closed) for overlays. */
   onGeneration?: (generation: CodeGenerationDto | null) => void;
-  /** Requirement just written in a Muse dialog: generates on open. */
-  autoRequirementId?: string | null;
   /** Steps aside so the proposal can be read on the X-ray; keeps its state. */
   onViewOnXray?: () => void;
   /** Mounted but out of the way: nothing is lost while the X-ray is on screen. */
@@ -107,7 +103,6 @@ export function CodeProposalDialog({
   onReanalyze,
   onFileAccepted,
   onGeneration,
-  autoRequirementId = null,
   onViewOnXray,
   hidden = false,
   onClose,
@@ -133,10 +128,6 @@ export function CodeProposalDialog({
   const [adjustment, setAdjustment] = useState("");
   const [previous, setPrevious] = useState<CodeGenerationDto[] | null>(null);
   const [previousBusy, setPreviousBusy] = useState(false);
-  const [expanded, setExpanded] = useState<number | null>(null);
-  const [currentTexts, setCurrentTexts] = useState<Record<number, string>>({});
-  const [busyPos, setBusyPos] = useState<number | null>(null);
-  const [fileNotice, setFileNotice] = useState<string | null>(null);
   const [runs, setRuns] = useState(0);
   const [reanalyzing, setReanalyzing] = useState(false);
   const live = useRef(true);
@@ -248,9 +239,6 @@ export function CodeProposalDialog({
       if (!live.current) return;
       setGeneration(created);
       setAdjustment("");
-      setExpanded(null);
-      setCurrentTexts({});
-      setFileNotice(null);
     } catch (raw) {
       if (!live.current) return;
       setOpError(normalizeCodeError(raw).message);
@@ -258,21 +246,6 @@ export function CodeProposalDialog({
       if (live.current) setGenerating(false);
     }
   }
-
-  // The Muse dialog already said what to do: one request, once.
-  const autoRan = useRef(false);
-  useEffect(() => {
-    if (autoRequirementId === null || autoRan.current || requirements === null) return;
-    if (selectedReq !== autoRequirementId) {
-      if (requirements.some((req) => req.id === autoRequirementId)) {
-        setSelectedReq(autoRequirementId);
-      }
-      return;
-    }
-    autoRan.current = true;
-    void runGenerate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRequirementId, requirements, selectedReq]);
 
   async function loadPrevious(): Promise<void> {
     setPreviousBusy(true);
@@ -286,65 +259,6 @@ export function CodeProposalDialog({
       setOpError(normalizeCodeError(raw).message);
     } finally {
       if (live.current) setPreviousBusy(false);
-    }
-  }
-
-  async function toggleDiff(file: CodeProposalFileDto): Promise<void> {
-    if (expanded === file.pos) {
-      setExpanded(null);
-      return;
-    }
-    setExpanded(file.pos);
-    if (file.operation === "create" || currentTexts[file.pos] !== undefined) return;
-    try {
-      const read = await api.readFile(file.rootId, file.rel);
-      if (!live.current) return;
-      setCurrentTexts((prev) => ({ ...prev, [file.pos]: read.text }));
-    } catch (raw) {
-      if (!live.current) return;
-      setCurrentTexts((prev) => ({ ...prev, [file.pos]: "" }));
-      setFileNotice(`Could not read the current file: ${normalizeCodeError(raw).message}`);
-    }
-  }
-
-  async function accept(generationId: string, file: CodeProposalFileDto): Promise<void> {
-    setBusyPos(file.pos);
-    setOpError(null);
-    setFileNotice(null);
-    try {
-      const outcome = await api.acceptFile(generationId, file.pos);
-      if (!live.current) return;
-      setGeneration(outcome.generation);
-      if (outcome.alreadyAccepted) {
-        setFileNotice(`"${file.rel}" was already accepted; not written again.`);
-      } else {
-        setFileNotice(
-          `"${file.rel}" written to disk (fingerprint ${outcome.fingerprint ?? "?"}). Re-analyze to see the change.`,
-        );
-        onFileAccepted(file.rootId, file.rel);
-      }
-    } catch (raw) {
-      if (!live.current) return;
-      setOpError(normalizeCodeError(raw).message);
-    } finally {
-      if (live.current) setBusyPos(null);
-    }
-  }
-
-  async function discard(generationId: string, file: CodeProposalFileDto): Promise<void> {
-    setBusyPos(file.pos);
-    setOpError(null);
-    setFileNotice(null);
-    try {
-      const updated = await api.discardFile(generationId, file.pos);
-      if (!live.current) return;
-      setGeneration(updated);
-      setFileNotice(`"${file.rel}" discarded.`);
-    } catch (raw) {
-      if (!live.current) return;
-      setOpError(normalizeCodeError(raw).message);
-    } finally {
-      if (live.current) setBusyPos(null);
     }
   }
 
@@ -618,9 +532,6 @@ export function CodeProposalDialog({
                         className="struct-link"
                         onClick={() => {
                           setGeneration(item);
-                          setExpanded(null);
-                          setCurrentTexts({});
-                          setFileNotice(null);
                           setOpError(null);
                         }}
                       >
@@ -649,7 +560,6 @@ export function CodeProposalDialog({
                   setGeneration(null);
                   setPreview(null);
                   setOpError(null);
-                  setFileNotice(null);
                 }}
               >
                 ← New proposal
@@ -714,77 +624,16 @@ export function CodeProposalDialog({
                 {opError}
               </p>
             )}
-            {fileNotice !== null && (
-              <p className="hint" role="status">
-                {fileNotice}
-              </p>
-            )}
-            <ul className="code-proposal-files">
-              {generation.files.map((file) => (
-                <li key={file.pos} className="code-proposal-file">
-                  <div className="code-proposal-file-head">
-                    <code>
-                      {file.operation === "create" ? "+" : "~"} {rootNames[file.rootId] ?? file.rootId}/
-                      {file.rel}
-                    </code>{" "}
-                    <span className="hint">
-                      {file.operation === "create" ? "create" : "modify"} · {file.state}
-                      {file.decidedAt !== null ? ` · ${file.decidedAt}` : ""}
-                    </span>
-                  </div>
-                  <div className="button-row">
-                    <button
-                      type="button"
-                      className="secondary small"
-                      onClick={() => void toggleDiff(file)}
-                    >
-                      {expanded === file.pos ? "Hide diff" : "View diff"}
-                    </button>
-                    <button
-                      type="button"
-                      className="primary small"
-                      disabled={file.state !== "pending" || generation.stale || busyPos !== null}
-                      title={
-                        generation.stale
-                          ? "Blocked: the proposal is stale"
-                          : file.state !== "pending"
-                            ? `Already ${file.state === "accepted" ? "accepted" : "discarded"}`
-                            : file.operation === "create"
-                              ? "Create the file on disk"
-                              : "Replace the file on disk"
-                      }
-                      onClick={() => void accept(generation.id, file)}
-                    >
-                      {busyPos === file.pos ? "Accepting…" : "Accept"}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary small"
-                      disabled={file.state !== "pending" || busyPos !== null}
-                      onClick={() => void discard(generation.id, file)}
-                    >
-                      Discard
-                    </button>
-                  </div>
-                  {expanded === file.pos && (
-                    <div className="code-proposal-diff">
-                      {file.operation === "modify" && currentTexts[file.pos] === undefined ? (
-                        <p className="hint">Reading the current file…</p>
-                      ) : (
-                        <CodeConflictDiff
-                          key={`${generation.id}:${file.pos}`}
-                          diskText={currentTexts[file.pos] ?? ""}
-                          draftText={file.content}
-                          language={languageForFile(file.rel)}
-                          prefs={prefs}
-                          loader={loader}
-                        />
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <ProposalFiles
+              key={generation.id}
+              generation={generation}
+              rootNames={rootNames}
+              api={api}
+              prefs={prefs}
+              loader={loader}
+              onChange={setGeneration}
+              onAccepted={onFileAccepted}
+            />
             <div className="code-proposal-reanalyze">
               <button
                 type="button"
