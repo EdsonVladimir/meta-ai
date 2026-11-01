@@ -1,35 +1,49 @@
 // Welcome screen: the launch state without an open workspace.
 // Three explicit entries plus saved workspaces. No empty analysis
 // panels, no forced requirements or modules.
+import { AllProjectsList } from "./AllProjectsList";
 import { RecentsList } from "./RecentsList";
+import type { ProjectDto } from "../requirements/types";
 import type { RecentWorkspaceDto } from "./types";
 
 interface WelcomeScreenProps {
   recents: RecentWorkspaceDto[];
   recentsLoading: boolean;
   recentsError: string | null;
+  projects: ProjectDto[];
+  projectsLoading: boolean;
+  projectsError: string | null;
   busy: boolean;
   busyRecentId: string | null;
+  busyProjectId: string | null;
   error: string | null;
   onOpenProject: () => void;
   onOpenRecent: (recent: RecentWorkspaceDto) => void;
   onRemoveRecent: (id: string) => void;
   onNewProject: () => void;
+  onOpenProjectById: (projectId: string) => void;
   onRetryRecents: () => void;
+  onRetryProjects: () => void;
 }
 
 export function WelcomeScreen({
   recents,
   recentsLoading,
   recentsError,
+  projects,
+  projectsLoading,
+  projectsError,
   busy,
   busyRecentId,
+  busyProjectId,
   error,
   onOpenProject,
   onOpenRecent,
   onRemoveRecent,
   onNewProject,
+  onOpenProjectById,
   onRetryRecents,
+  onRetryProjects,
 }: WelcomeScreenProps) {
   return (
     <div className="welcome">
@@ -75,11 +89,22 @@ export function WelcomeScreen({
         recents={recents}
         loading={recentsLoading}
         error={recentsError}
-        busyId={busyRecentId}
+        busyId={busyRecentId ?? busyProjectId}
         restoreError={null}
         onOpen={onOpenRecent}
         onRemove={onRemoveRecent}
         onRetry={onRetryRecents}
+      />
+      <h3>All projects</h3>
+      <p className="hint">Every stored project, with or without folders.</p>
+      <AllProjectsList
+        projects={projects}
+        loading={projectsLoading}
+        error={projectsError}
+        busyId={busyProjectId}
+        busyRecentId={busyRecentId}
+        onOpen={onOpenProjectById}
+        onRetry={onRetryProjects}
       />
     </div>
   );

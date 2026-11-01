@@ -10,6 +10,7 @@
 // with aggregated coverage, so headers never steal board space.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fnv1aHex } from "../model";
+import { serviceEyeOpen } from "./serviceEyes";
 import { listCodeDir, listProjectLinks, normalizeCodeError, readCodeFile } from "../client";
 import type {
   CodeFileDto,
@@ -117,7 +118,6 @@ import {
   rootsOfProject,
   type ListDirFn,
 } from "./projectMaps";
-import { publishAnalysisSummary } from "../../workspace/analysisCache";
 
 export interface ProjectMapDeps {
   listDir: ListDirFn;
@@ -223,9 +223,11 @@ interface ProjectMapViewProps {
   onScopeChange: (scope: ArchScope) => void;
   /** Detected projects hidden from the joint view, by scope key. */
   hiddenProjects: Record<string, boolean>;
+  /** Detected projects the person opened before, by scope key. */
+  openedProjects?: Record<string, boolean>;
   onShowAllProjects: () => void;
-  /** Restores one hidden project (Details panel; absent = Show all only). */
-  onToggleProject?: (key: string) => void;
+  /** Opens one hidden project (Details panel; absent = Show all only). */
+  onOpenProject?: (key: string) => void;
   /** Muse proposal files overlaid on Flow mode (absent = no overlay). */
   proposalFiles?: CodeProposalFileDto[] | null;
   /** Reopens the proposal dialog from the X-ray. */
@@ -254,6 +256,10 @@ interface ProjectMapViewProps {
   prefs?: CodeEditorPrefs;
   /** Shared Monaco loader for the proposal diff. */
   loader?: () => Promise<MonacoApi>;
+  /** Adds a folder to the project (empty state, absent = no action). */
+  onAddFolder?: () => void;
+  /** Root list still loading: the empty state waits for it. */
+  rootsLoading?: boolean;
 }
 
 /** Scope a proposal can read (`MAX_CODE_SCOPE_FILES` in `ruth-meta`). */
@@ -417,8 +423,9 @@ export function ProjectMapView({
   scope,
   onScopeChange,
   hiddenProjects,
+  openedProjects = {},
   onShowAllProjects,
-  onToggleProject,
+  onOpenProject,
   proposalFiles = null,
   onOpenProposal,
   onCloseProposal,
@@ -433,6 +440,8 @@ export function ProjectMapView({
   reanalyzeRequest = null,
   prefs,
   loader,
+  onAddFolder,
+  rootsLoading = false,
 }: ProjectMapViewProps) {
   // Canvas filters live here (the toolbar renders here too). Provided
   // props pin values from the outside (tests, embeds); otherwise the
@@ -534,15 +543,9 @@ export function ProjectMapView({
     {},
   );
 
-  // The tree lists every workspace root, so the scoped root joins
-  // discovery even when it is not associated with this project.
-  const scopeRootId = scope.kind === "all" ? null : scope.rootId;
-  const discoveryRoots = useMemo(() => {
-    if (scopeRootId === null) return projectRoots;
-    if (projectRoots.some((root) => root.id === scopeRootId)) return projectRoots;
-    const extra = roots.find((root) => root.id === scopeRootId) ?? null;
-    return extra === null ? projectRoots : [...projectRoots, extra];
-  }, [projectRoots, roots, scopeRootId]);
+  // One active project: discovery covers its roots only. A scope
+  // naming another project's folder renders nothing (see scopeIssue).
+  const discoveryRoots = projectRoots;
   const discoverySig = discoveryRoots.map((root) => root.id).join(",");
 
   // Nested project discovery per root (manifest names + small reads
@@ -610,8 +613,13 @@ export function ProjectMapView({
 
   const scopeIssue = useMemo((): string | null => {
     if (scope.kind === "all") return null;
-    const root = roots.find((candidate) => candidate.id === scope.rootId) ?? null;
-    if (root === null) return "The scoped folder is no longer in the workspace.";
+    const root = projectRoots.find((candidate) => candidate.id === scope.rootId) ?? null;
+    if (root === null) {
+      const known = roots.some((candidate) => candidate.id === scope.rootId);
+      return known
+        ? "The scoped folder belongs to another project."
+        : "The scoped folder is no longer in the workspace.";
+    }
     if (root.missing) return `The scoped folder "${root.name}" is no longer on disk.`;
     if (scope.kind === "project") {
       const found = discovered[root.id];
@@ -620,12 +628,12 @@ export function ProjectMapView({
       if (!match) return "The scoped project was not detected anymore.";
     }
     return null;
-  }, [scope, roots, discovered]);
+  }, [scope, roots, projectRoots, discovered]);
 
   const sections = useMemo((): MapSection[] => {
     if (scopeIssue !== null) return [];
     if (scope.kind === "project" || scope.kind === "folder") {
-      const root = roots.find((candidate) => candidate.id === scope.rootId) ?? null;
+      const root = projectRoots.find((candidate) => candidate.id === scope.rootId) ?? null;
       if (root === null || root.missing) return [];
       if (scope.kind === "project") {
         const found = discovered[root.id];
@@ -684,7 +692,11 @@ export function ProjectMapView({
         continue;
       }
       for (const project of found.projects) {
-        if (hiddenProjects[project.key] === true) continue;
+        // The joint view shows open eyes only; above the threshold a
+        // service waits for its first click in Folders.
+        if (!serviceEyeOpen(project.key, hiddenProjects, openedProjects, detectedAll.length)) {
+          continue;
+        }
         const nested = found.projects
           .filter((item) => item.rel !== project.rel && item.rel.startsWith(`${project.rel}/`))
           .map((item) => item.rel);
@@ -701,7 +713,7 @@ export function ProjectMapView({
       }
     }
     return out;
-  }, [scope, scopeIssue, roots, projectRoots, discovered, hidden, hiddenProjects]);
+  }, [scope, scopeIssue, roots, projectRoots, discovered, detectedAll, hidden, hiddenProjects, openedProjects]);
 
   const visibleSig = sections.map((section) => section.key).join(",");
   const retrySig = sections
@@ -852,21 +864,6 @@ export function ProjectMapView({
           const result = base;
           const built = buildArchMap(result);
           const analyzedRels = result.files.map((file) => file.rel);
-          publishAnalysisSummary({
-            rootId: section.root.id,
-            scopeRel: section.rel,
-            scopeName: section.title,
-            files: built.files.length,
-            edges: built.edges.length,
-            truncated:
-              collected.truncated ||
-              built.filesTruncated ||
-              built.edgesTruncated ||
-              result.symbolsTruncated ||
-              result.relationsTruncated ||
-              analyzedRels.length < inputs.length,
-            at: Date.now(),
-          });
           patch({
             status: "ready",
             map: { ...built, skipped: [...built.skipped, ...skipped] },
@@ -1239,6 +1236,15 @@ export function ProjectMapView({
   }
 
   function handleShowAllHidden(): void {
+    // Opens every detected service of the project and records them,
+    // even above the threshold (which analyzes all of them).
+    for (const project of detectedAll) {
+      if (
+        !serviceEyeOpen(project.key, hiddenProjects, openedProjects, detectedAll.length)
+      ) {
+        onOpenProject?.(project.key);
+      }
+    }
     onShowAllProjects();
     for (const root of projectRoots) {
       if (hidden[root.id] === true) onToggleRoot(root.id);
@@ -1247,7 +1253,7 @@ export function ProjectMapView({
 
   function handleShowHidden(entry: ToolbarHiddenEntry): void {
     if (entry.kind === "root") onToggleRoot(entry.key);
-    else onToggleProject?.(entry.key);
+    else onOpenProject?.(entry.key);
   }
 
   const totals = useMemo((): CoverageTotals => {
@@ -1493,12 +1499,20 @@ export function ProjectMapView({
       }
     }
     for (const project of detectedAll) {
-      if (hiddenProjects[project.key] === true) {
+      if (!serviceEyeOpen(project.key, hiddenProjects, openedProjects, detectedAll.length)) {
         out.push({ key: project.key, label: project.name, kind: "project" });
       }
     }
     return out;
-  }, [projectRoots, hidden, detectedAll, hiddenProjects]);
+  }, [projectRoots, hidden, detectedAll, hiddenProjects, openedProjects]);
+
+  const servicesHidden = useMemo(
+    () =>
+      detectedAll.some(
+        (project) => !serviceEyeOpen(project.key, hiddenProjects, openedProjects, detectedAll.length),
+      ),
+    [detectedAll, hiddenProjects, openedProjects],
+  );
 
   const detailsBadge =
     totals.errors > 0
@@ -1620,12 +1634,24 @@ export function ProjectMapView({
         onShowHidden={handleShowHidden}
         onShowAllHidden={handleShowAllHidden}
       />
-      {projectRoots.length === 0 && (
-        <p className="hint" role="note">
-          No folders linked to this project yet. Open or link a folder in Folders and its
-          diagrams will appear here.
-        </p>
-      )}
+      {projectRoots.length === 0 &&
+        (rootsLoading ? (
+          <p className="hint" role="status">
+            Loading folders…
+          </p>
+        ) : (
+          <div className="archmap-empty" role="note">
+            <p className="hint">
+              No folders linked to this project yet. Add a folder and its diagrams will appear
+              here.
+            </p>
+            {onAddFolder !== undefined && (
+              <button type="button" className="secondary small" onClick={onAddFolder}>
+                Add folder
+              </button>
+            )}
+          </div>
+        ))}
       {projectRoots.length > 0 && scopeIssue !== null && (
         <p className="hint" role="note">
           {scopeIssue}{" "}
@@ -1648,7 +1674,9 @@ export function ProjectMapView({
         !detectionPending &&
         sections.length === 0 && (
           <p className="hint" role="note">
-            Everything is hidden from view.{" "}
+            {servicesHidden
+              ? "All services are hidden. Click a service in Folders to map it."
+              : "Everything is hidden from view."}{" "}
             <button type="button" className="secondary small" onClick={handleShowAllHidden}>
               Show all
             </button>
@@ -2407,7 +2435,7 @@ interface ProjectMapSectionProps {
 }
 
 const MODE_HINTS = {
-  symbols: "Symbols: one card per class or function, grouped by architecture layer.",
+  symbols: "Classes: one card per class or function, grouped by architecture layer.",
   files: "Files: one card per file, grouped by architecture layer.",
   pages: "Pages: what a route opens, then the components each one uses, level by level.",
 };
@@ -2518,7 +2546,7 @@ function ProjectMapSection({
       ? map.files.length === 0
         ? "No supported source files."
         : pagesMode && composition === null
-          ? "Pages reads Angular components and routes. None were found here: choose an Angular folder, or use Symbols."
+          ? "Pages reads Angular components and routes. None were found here: choose an Angular folder, or use Classes."
         : symbolMode && map.nodes.length === 0
           ? "No symbols detected in the analyzed files."
           : !hasCards

@@ -30,8 +30,8 @@ Angular 18 standalone UI). Its own
 [Run section](examples/reservas/README.md) starts both.
 
 1. `npm run tauri dev`, export `META_API_KEY` first (below).
-2. Open project on `examples/reservas` and go to Architecture.
-   The map draws the UI → store → service chains with evidence,
+2. Open project on `examples/reservas`. It lands on Architecture:
+   the map draws the UI → store → service chains with evidence,
    and Pages orders the app from its routes.
 3. Right-click a folder → Ask Muse. Ask about the code, then
    use Propose change for the missing user registration.

@@ -71,7 +71,7 @@ describe("header save state", () => {
       mockupId: null,
       screenId: null,
     };
-    expect(activeDocKey(selection, "overview", "root-1::a.ts")).toBe("code:root-1::a.ts");
-    expect(activeDocKey(selection, "overview", null)).toBeNull();
+    expect(activeDocKey(selection, "architecture", "root-1::a.ts")).toBe("code:root-1::a.ts");
+    expect(activeDocKey(selection, "architecture", null)).toBeNull();
   });
 });

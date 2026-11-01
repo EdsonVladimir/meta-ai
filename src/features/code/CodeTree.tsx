@@ -7,6 +7,7 @@ import { RuthEyeIcon, RuthEyeOffIcon } from "../../components/icons";
 import { listCodeDir, normalizeCodeError, readCodeFile } from "./client";
 import { CodeFileIcon, CodeFolderIcon, CodeOtherIcon } from "./CodeFileIcon";
 import { discoverRootProjects, type DetectedCodeProject } from "./detectProjects";
+import { serviceEyeOpen } from "./archmap/serviceEyes";
 import type { ArchScope } from "../requirements/uiStore";
 import type { CodeEntryDto, CodeError, CodeRootDto } from "./types";
 
@@ -90,7 +91,8 @@ interface CodeTreeProps {
   onToggleMapRoot?: (rootId: string) => void;
   /** Active Architecture scope (marks the project row, never expands). */
   archScope?: ArchScope;
-  onArchScope?: (scope: ArchScope) => void;
+  /** Focuses a detected service: opens its eye and scopes the board to it. */
+  onFocusProject?: (rootId: string, rel: string) => void;
   /** Folder picked for exploring (highlight only, never a scope). */
   folderSelection?: { rootId: string; rel: string } | null;
   onSelectFolder?: (rootId: string, rel: string) => void;
@@ -102,7 +104,10 @@ interface CodeTreeProps {
   onAnalyzeFolder?: (rootId: string, rel: string) => void;
   /** Detected projects hidden from Architecture, by `rootId::rel`. */
   hiddenProjects?: Record<string, boolean>;
-  onToggleMapProject?: (key: string) => void;
+  /** Detected projects the person opened before, by `rootId::rel`. */
+  openedProjects?: Record<string, boolean>;
+  /** Sets a service eye (`show` opens it, records included upstream). */
+  onToggleMapProject?: (key: string, show: boolean) => void;
 }
 
 export function CodeTree({
@@ -127,13 +132,14 @@ export function CodeTree({
   mapHidden,
   onToggleMapRoot,
   archScope,
-  onArchScope,
+  onFocusProject,
   folderSelection,
   onSelectFolder,
   onAnalyzeFolder,
   onAskMuse,
   onSetRootAiBlocked,
   hiddenProjects,
+  openedProjects,
   onToggleMapProject,
 }: CodeTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -220,13 +226,24 @@ export function CodeTree({
     );
   }
 
-  /** Name click: projects activate the scope, plain folders just select. */
+  /** Name click: projects focus, plain folders just select. */
   function activateName(root: CodeRootDto, rel: string): void {
     if (projectAt(root.id, rel) !== null) {
-      onArchScope?.({ kind: "project", rootId: root.id, rel });
+      onFocusProject?.(root.id, rel);
     } else {
       onSelectFolder?.(root.id, rel);
     }
+  }
+
+  /** Effective service eye: explicit choices win over the open-by-default rule. */
+  function isProjectHidden(rootId: string, rel: string): boolean {
+    const total = Object.values(detected).reduce((count, list) => count + list.length, 0);
+    return !serviceEyeOpen(
+      scopeKeyOf(rootId, rel),
+      hiddenProjects ?? {},
+      openedProjects ?? {},
+      total,
+    );
   }
 
   useEffect(() => {
@@ -389,6 +406,8 @@ export function CodeTree({
       <>
         {state.entries.map((entry) => {
           const isOpenDir = entry.kind === "dir" && expanded.has(nodeKey(root.id, entry.rel));
+          // The eye already shows its direction: a hidden service offers Show.
+          const serviceHidden = entry.kind === "dir" && isProjectHidden(root.id, entry.rel);
           return (
             <DirRow
               key={`${key}/${entry.name}`}
@@ -402,11 +421,11 @@ export function CodeTree({
               project={entry.kind === "dir" ? projectAt(root.id, entry.rel) : null}
               scopeActive={isScopeActive(root.id, entry.rel)}
               folderSelected={isFolderSelected(root.id, entry.rel)}
-              projectHidden={hiddenProjects?.[scopeKeyOf(root.id, entry.rel)] === true}
+              projectHidden={serviceHidden}
               onToggleProject={
                 onToggleMapProject === undefined || entry.kind !== "dir"
                   ? undefined
-                  : () => onToggleMapProject(scopeKeyOf(root.id, entry.rel))
+                  : () => onToggleMapProject(scopeKeyOf(root.id, entry.rel), serviceHidden)
               }
               onMenu={(event) =>
                 openMenu(event, {
@@ -696,7 +715,7 @@ export function CodeTree({
                   type="button"
                   role="menuitem"
                   disabled={associatingRootId === menu.target.root.id}
-                  title="The folder stays in the workspace, but loose (files are untouched)"
+                  title="The folder stays stored, but loose and hidden while a project is active (files are untouched)"
                   onClick={() => {
                     const root = menu.target.root;
                     setMenu(null);

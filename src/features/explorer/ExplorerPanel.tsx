@@ -14,6 +14,7 @@ import { ExplorerTree } from "./ExplorerTree";
 import type { ArchiveAction, ArchiveTarget } from "../requirements/archive";
 import { buildForest, moduleKey, type ArtifactMeta, type FlatNode } from "./explorerModel";
 import { useExplorerData, type ModuleGraph } from "./useExplorerData";
+import { activeProjects } from "../workspace/activeProject";
 
 interface ExplorerPanelProps {
   storageReady: boolean;
@@ -170,10 +171,18 @@ export function ExplorerPanel({
     return merged;
   }, [data.graphsByModule]);
 
+  // One active project: the panel keeps its modules, requirements,
+  // designs and mockups; every other project is reached from Recents
+  // on the Welcome screen.
+  const visibleProjects = useMemo(
+    () => activeProjects(data.projects, selection.projectId),
+    [data.projects, selection.projectId],
+  );
+
   const forest = useMemo(
     () =>
       buildForest({
-        projects: data.projects,
+        projects: visibleProjects,
         modulesByProject: data.modulesByProject,
         artifactsByModule: data.artifactsByModule,
         loadingKeys: data.loadingKeys,
@@ -186,7 +195,7 @@ export function ExplorerPanel({
         mockupScreens,
         showArchived,
       }),
-    [data, selection, meta, designLinks, linksStatus, mockupScreens, showArchived],
+    [data, visibleProjects, selection, meta, designLinks, linksStatus, mockupScreens, showArchived],
   );
 
   // Selected module's data for the center views and impact.
@@ -379,17 +388,21 @@ export function ExplorerPanel({
           {globalError}
         </p>
       )}
-      {data.projectsLoading && data.projects.length === 0 ? (
+      {data.projectsLoading && visibleProjects.length === 0 ? (
         <p className="hint">Loading projects…</p>
-      ) : data.projectsError !== null && data.projects.length === 0 ? (
+      ) : data.projectsError !== null && visibleProjects.length === 0 ? (
         <p className="error" role="alert">
           {data.projectsError}{" "}
           <button type="button" className="secondary small" onClick={data.reloadProjects}>
             Retry
           </button>
         </p>
-      ) : data.projects.length === 0 ? (
-        <p className="hint">No projects. Create the first to start.</p>
+      ) : visibleProjects.length === 0 ? (
+        data.projects.length === 0 ? (
+          <p className="hint">No projects. Create the first to start.</p>
+        ) : (
+          <p className="hint">No active project. Open one from Recents on the Welcome screen.</p>
+        )
       ) : (
         <ExplorerTree
           forest={forest}

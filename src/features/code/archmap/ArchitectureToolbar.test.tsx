@@ -122,7 +122,7 @@ describe("ArchitectureToolbar", () => {
     renderToolbar({ ...props, moduleKey: "dir:be::::src/sales", groupBy: "files" });
     const toggle = screen.getByLabelText("Outside module") as HTMLInputElement;
     expect(toggle.disabled).toBe(true);
-    expect(toggle.closest("label")?.getAttribute("title")).toContain("Symbols board");
+    expect(toggle.closest("label")?.getAttribute("title")).toContain("Classes board");
   });
 
   it("explains an empty module list instead of hiding the select", () => {

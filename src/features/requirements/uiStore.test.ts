@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   LAYOUT_STORAGE_KEY,
+  WORKSPACE_LANDING_VIEW,
   useRequirementsUi,
   validateLayoutPartial,
 } from "./uiStore";
@@ -22,9 +23,11 @@ beforeEach(() => {
     mapHiddenRoots: {},
     archScope: { kind: "all" },
     mapHiddenProjects: {},
+    mapOpenedProjects: {},
     codeFolderSelection: null,
     centerDoc: null,
     discardSignal: 0,
+    codeTabsCloseSignal: 0,
     terminalMaximized: false,
     archInspectorWidth: null,
     archInspectorCollapsed: false,
@@ -74,9 +77,9 @@ describe("workspace navigation state", () => {
 
   it("tracks the open document independently of the view", () => {
     const ui = useRequirementsUi.getState();
-    ui.setCenterView("overview");
+    ui.setCenterView("architecture");
     ui.setCenterDoc("root-1::a.ts");
-    expect(useRequirementsUi.getState().centerView).toBe("overview");
+    expect(useRequirementsUi.getState().centerView).toBe("architecture");
     expect(useRequirementsUi.getState().centerDoc).toBe("root-1::a.ts");
     ui.setCenterDoc(null);
     expect(useRequirementsUi.getState().centerDoc).toBeNull();
@@ -88,6 +91,18 @@ describe("workspace navigation state", () => {
     expect(useRequirementsUi.getState().discardSignal).toBe(1);
     ui.setTerminalMaximized(true);
     expect(useRequirementsUi.getState().terminalMaximized).toBe(true);
+  });
+
+  it("lands opened projects on Architecture", () => {
+    expect(WORKSPACE_LANDING_VIEW).toBe("architecture");
+  });
+
+  it("requests closing the code tabs without touching drafts", () => {
+    const ui = useRequirementsUi.getState();
+    ui.requestCloseCodeTabs();
+    const state = useRequirementsUi.getState();
+    expect(state.codeTabsCloseSignal).toBe(1);
+    expect(state.discardSignal).toBe(0);
   });
 
   it("resets layout sizes without touching visibility", () => {
@@ -142,23 +157,30 @@ describe("architecture scope and project visibility", () => {
     expect(useRequirementsUi.getState().archScope).toEqual({ kind: "all" });
   });
 
-  it("toggles one project without touching selection or the others", () => {
+  it("sets one project eye without touching selection or the others", () => {
     const ui = useRequirementsUi.getState();
-    ui.toggleMapProject("r1::apps/fe");
+    ui.setMapProjectHidden("r1::apps/fe", true);
     expect(useRequirementsUi.getState().mapHiddenProjects).toEqual({ "r1::apps/fe": true });
     expect(useRequirementsUi.getState().archScope).toEqual({ kind: "all" });
-    ui.toggleMapProject("r1::apps/be");
-    ui.toggleMapProject("r1::apps/fe");
+    ui.setMapProjectHidden("r1::apps/be", true);
+    ui.setMapProjectHidden("r1::apps/fe", false);
     expect(useRequirementsUi.getState().mapHiddenProjects).toEqual({
       "r1::apps/fe": false,
       "r1::apps/be": true,
     });
   });
 
+  it("records opened projects without touching the hidden ones", () => {
+    const ui = useRequirementsUi.getState();
+    ui.recordMapProjectOpened("r1::apps/fe");
+    expect(useRequirementsUi.getState().mapOpenedProjects).toEqual({ "r1::apps/fe": true });
+    expect(useRequirementsUi.getState().mapHiddenProjects).toEqual({});
+  });
+
   it("shows every project again with one action", () => {
     const ui = useRequirementsUi.getState();
-    ui.toggleMapProject("r1::apps/fe");
-    ui.toggleMapProject("r1::apps/be");
+    ui.setMapProjectHidden("r1::apps/fe", true);
+    ui.setMapProjectHidden("r1::apps/be", true);
     ui.showAllMapProjects();
     expect(useRequirementsUi.getState().mapHiddenProjects).toEqual({});
   });
@@ -209,7 +231,8 @@ describe("persisted panel sizes", () => {
     ui.setRightWidth(400);
     ui.setTerminalHeight(300);
     ui.setTerminalPaneWidths([0.4, 0.6]);
-    ui.toggleMapProject("r1::apps/fe");
+    ui.setMapProjectHidden("r1::apps/fe", true);
+    ui.recordMapProjectOpened("r1::apps/be");
     ui.setArchScope({ kind: "project", rootId: "r1", rel: "apps/fe" });
     ui.setArchInspectorWidth(320);
     ui.setArchInspectorCollapsed(true);
@@ -217,7 +240,7 @@ describe("persisted panel sizes", () => {
     ui.setArchModule("declared:mod:s1");
     ui.setArchShowExternalRefs(true);
     ui.addArchExternalFolder({ rootId: "r1", rel: "vendor" });
-    ui.setCenterView("overview");
+    ui.setCenterView("architecture");
     const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
     expect(raw).not.toBeNull();
     const stored = JSON.parse(raw ?? "{}") as { state?: Record<string, unknown> };
@@ -228,6 +251,7 @@ describe("persisted panel sizes", () => {
       terminalHeight: 300,
       terminalPaneWidths: [0.4, 0.6],
       mapHiddenProjects: { "r1::apps/fe": true },
+      mapOpenedProjects: { "r1::apps/be": true },
       archInspectorWidth: 320,
       layerOverrides: { s1: { layer: "state", name: "Billing" } },
       archExternalFolders: [{ rootId: "r1", rel: "vendor" }],
@@ -275,6 +299,7 @@ describe("persisted panel sizes", () => {
         terminalHeight: 300,
         terminalPaneWidths: [0.5, 0.5],
         mapHiddenProjects: { "r1::apps/fe": true },
+        mapOpenedProjects: { "r1::apps/be": true, "": false, "x": "yes" as unknown as boolean },
         archInspectorWidth: 320,
         layerOverrides: { s1: { layer: "state", name: "Billing" } },
       }),
@@ -285,6 +310,7 @@ describe("persisted panel sizes", () => {
       terminalHeight: 300,
       terminalPaneWidths: [0.5, 0.5],
       mapHiddenProjects: { "r1::apps/fe": true },
+      mapOpenedProjects: { "r1::apps/be": true },
       archInspectorWidth: 320,
       layerOverrides: { s1: { layer: "state", name: "Billing" } },
       archExternalFolders: [],
@@ -296,6 +322,7 @@ describe("persisted panel sizes", () => {
       terminalHeight: null,
       terminalPaneWidths: null,
       mapHiddenProjects: {},
+      mapOpenedProjects: {},
       archInspectorWidth: null,
       layerOverrides: {},
       archExternalFolders: [],

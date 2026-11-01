@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const backend = vi.hoisted(() => ({
-  roots: [{ id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: null }],
+  roots: [{ id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: "proy-1" }],
   dirs: {
     "root-1::": [{ name: "main.ts", rel: "main.ts", kind: "file", size: 10 }],
   } as Record<string, Array<{ name: string; rel: string; kind: string; size: number | null }>>,
@@ -53,7 +53,9 @@ import { createMonacoFake } from "./monacoFake";
 
 beforeEach(() => {
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-  useRequirementsUi.getState().setCenterView("overview");
+  useRequirementsUi.getState().setCenterView("architecture");
+  // One active project: the folder below belongs to it, so it shows.
+  useRequirementsUi.getState().setSelection({ projectId: "proy-1", moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null });
 });
 
 describe("CodeSplit", () => {

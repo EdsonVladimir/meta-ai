@@ -147,6 +147,8 @@ interface MusePanelProps {
   onClose: () => void;
   /** Proposal generated: the workspace shows it on the X-ray, no dialog. */
   onPropose: (generation: CodeGenerationDto) => void;
+  /** Pending-file count, so the close gate can protect this thread. */
+  onPendingChange?: (count: number) => void;
   api?: MusePanelApi;
   prefs?: CodeEditorPrefs;
   loader?: () => Promise<MonacoApi>;
@@ -236,6 +238,7 @@ export function MusePanel({
   roots,
   onClose,
   onPropose,
+  onPendingChange,
   api = defaultApi,
   prefs = DEFAULT_CODE_EDITOR_PREFS,
   loader = loadMonaco,
@@ -329,6 +332,13 @@ export function MusePanel({
     newest === null
       ? 0
       : latest(newest.generation).files.filter((file) => file.state === "pending").length;
+  const pendingRef = useRef(onPendingChange);
+  pendingRef.current = onPendingChange;
+  useEffect(() => {
+    pendingRef.current?.(pendingFiles);
+    return () => pendingRef.current?.(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFiles]);
   const canAdjust =
     busy === null &&
     !pendingRetry &&

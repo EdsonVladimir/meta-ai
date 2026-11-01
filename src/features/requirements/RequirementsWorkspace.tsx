@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauriEnvironment } from "../../lib/env";
 import { createProjectFromFolder } from "./projectFromFolder";
@@ -58,7 +58,7 @@ import { RequirementEditor } from "./RequirementEditor";
 import { ReviewPanel } from "./ReviewPanel";
 import { UnsavedDialog } from "./UnsavedDialog";
 import { withDesign, withMockup, withRequirement, withScreen } from "./navigation";
-import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, useRequirementsUi, type CenterView, type DocSaveState, type MuseTarget, type PanelName, type RightTab, type Selection } from "./uiStore";
+import { DEFAULT_RIGHT_WIDTH, MAX_RIGHT_WIDTH, MIN_RIGHT_WIDTH, RESIZE_KEYBOARD_STEP_PX, EMPTY_SELECTION, WORKSPACE_LANDING_VIEW, useRequirementsUi, type CenterView, type DocSaveState, type MuseTarget, type PanelName, type RightTab, type Selection } from "./uiStore";
 import { dirtyDocKeys, docKey } from "./saveStatus";
 import { GenerationPanel } from "../proposals/GenerationPanel";
 import {
@@ -95,10 +95,23 @@ import {
   touchRecent,
 } from "../workspace/client";
 import type { RecentWorkspaceDto } from "../workspace/types";
-import { openProjectFromFolder, samePath } from "../workspace/openProject";
+import { openProjectFromFolder, resolvePickedProject } from "../workspace/openProject";
+import {
+  activeProjectRoots,
+  mergeRecentPaths,
+  planRecentRestore,
+  removedLastFolder,
+} from "../workspace/activeProject";
+import {
+  closeGateMode,
+  needsCloseGate,
+  pendingMuseNotice,
+  postCloseErrorSurface,
+  replicationCancelNotice,
+} from "../workspace/closeGate";
+import type { CloseGateMode } from "../workspace/closeGate";
 import { WelcomeScreen } from "../workspace/WelcomeScreen";
 import { WorkspaceSelector } from "../workspace/WorkspaceSelector";
-import { OverviewView } from "../workspace/OverviewView";
 import { WorkspaceCloseDialog } from "../workspace/WorkspaceCloseDialog";
 import { ModuleCodeLinks } from "../code/ModuleCodeLinks";
 import { ModuleDesigns } from "../design/ModuleDesigns";
@@ -126,6 +139,7 @@ import {
   type ArtifactDto,
   type CoreStatus,
   type ModuleDto,
+  type ProjectDto,
   type RequirementDetail,
 } from "./types";
 
@@ -172,6 +186,8 @@ export function RequirementsWorkspace() {
   const museTarget = useRequirementsUi((s) => s.museTarget);
   // One thread per folder or file: going to another keeps this one.
   const [museThreads, setMuseThreads] = useState<MuseTarget[]>([]);
+  // Pending files per thread, so the close gate can protect them.
+  const [musePending, setMusePending] = useState<Record<string, number>>({});
   useEffect(() => {
     if (museTarget === null) return;
     setMuseThreads((prev) =>
@@ -179,9 +195,16 @@ export function RequirementsWorkspace() {
     );
   }, [museTarget]);
   function closeMuseThread(target: MuseTarget) {
-    setMuseThreads((prev) => prev.filter((entry) => museKey(entry) !== museKey(target)));
+    const key = museKey(target);
+    setMuseThreads((prev) => prev.filter((entry) => museKey(entry) !== key));
+    setMusePending((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
     const ui = useRequirementsUi.getState();
-    if (ui.museTarget !== null && museKey(ui.museTarget) === museKey(target)) ui.setMuseTarget(null);
+    if (ui.museTarget !== null && museKey(ui.museTarget) === key) ui.setMuseTarget(null);
   }
   const rootsToken = useRequirementsUi((s) => s.codeLibraryToken);
   const projectsPaneFrac = useRequirementsUi((s) => s.projectsPaneFrac);
@@ -757,7 +780,7 @@ export function RequirementsWorkspace() {
         (showCreateForm || showPropose
           ? "requirements"
           : ui.centerView === "welcome"
-            ? "overview"
+            ? WORKSPACE_LANDING_VIEW
             : ui.centerView);
       ui.setCenterView(derived);
       // Only what belongs to the changed artifact restarts: the requirement
@@ -834,12 +857,12 @@ export function RequirementsWorkspace() {
   }, [mockupPresent, mockupPinsKey]);
 
   function requestTab(view: CenterView) {
-    // Overview and Architecture need a project; design views need a
+    // Architecture needs a project; design views need a
     // module too. Switching views never touches drafts or terminals.
     // Welcome has no tab: close flows are the only way back to it.
     if (view === centerView || view === "welcome") return;
     if (projectId === null) return;
-    if (view !== "overview" && view !== "architecture" && moduleId === null) return;
+    if (view !== "architecture" && moduleId === null) return;
     const ui = useRequirementsUi.getState();
     ui.setCenterView(view);
     ui.setCenterDoc(null);
@@ -865,24 +888,39 @@ export function RequirementsWorkspace() {
     );
   }, []);
 
-  async function handleCreateProject() {
+  // Creates a project and makes it the active one: with a workspace
+  // open this switches projects, so it goes through the close gate
+  // (guardedCreateProject). The new project lands on Architecture
+  // and stays in Recents, so it is reachable after switching away.
+  async function doCreateProject() {
     const before = selectionSnapshot();
     setNavBusy(true);
     setNavError(null);
     try {
       const created = await createProject();
       setExplorerRefresh((t) => t + 1);
-      if (sameSelection(before, selectionSnapshot())) {
+      const now = selectionSnapshot();
+      // Selects the new project unless the user moved on meanwhile;
+      // an emptied selection is the expected post-close state.
+      if (sameSelection(before, now) || sameSelection(EMPTY_SELECTION, now)) {
         applySelection(
           { projectId: created.id, moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null },
           false,
+          false,
+          WORKSPACE_LANDING_VIEW,
         );
+        await recordRecent(created.id);
       }
     } catch (raw) {
-      setNavError(normalizeCoreError(raw).message);
+      reportOpError(normalizeCoreError(raw).message);
     } finally {
       setNavBusy(false);
     }
+  }
+
+  function guardedCreateProject() {
+    if (centerView === "welcome") void doCreateProject();
+    else void requestWorkspaceAction(() => void doCreateProject());
   }
 
   // ---- Workspace open/close (welcome, recents, close gate) ----
@@ -892,6 +930,10 @@ export function RequirementsWorkspace() {
   const [welcomeBusy, setWelcomeBusy] = useState(false);
   const [welcomeError, setWelcomeError] = useState<string | null>(null);
   const [busyRecentId, setBusyRecentId] = useState<string | null>(null);
+  const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
+  const [welcomeProjects, setWelcomeProjects] = useState<ProjectDto[]>([]);
+  const [welcomeProjectsLoading, setWelcomeProjectsLoading] = useState(false);
+  const [welcomeProjectsError, setWelcomeProjectsError] = useState<string | null>(null);
   const welcomeEpoch = useRef(0);
 
   const loadRecents = useCallback(async () => {
@@ -911,13 +953,31 @@ export function RequirementsWorkspace() {
     }
   }, []);
 
+  const loadWelcomeProjects = useCallback(async () => {
+    if (!isNative) return;
+    setWelcomeProjectsLoading(true);
+    try {
+      setWelcomeProjects(await listProjects());
+      setWelcomeProjectsError(null);
+    } catch (raw) {
+      setWelcomeProjectsError(normalizeWorkspaceError(raw).message);
+    } finally {
+      setWelcomeProjectsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (centerView === "welcome") void loadRecents();
-  }, [centerView, loadRecents]);
+    if (centerView === "welcome") {
+      void loadRecents();
+      void loadWelcomeProjects();
+    }
+  }, [centerView, loadRecents, loadWelcomeProjects]);
 
   // Records the open workspace in recents. Touches are best-effort after
   // the workspace is already visible; a failure never blocks the user.
-  async function recordRecent(projectId: string, id?: string) {
+  // `keepPaths` stay in the entry even when they are not the project's
+  // folders (skipped foreign or loose folders are never dropped).
+  async function recordRecent(projectId: string, id?: string, keepPaths: string[] = []) {
     try {
       const [projects, roots] = await Promise.all([listProjects(), listCodeRoots()]);
       const name = projects.find((p) => p.id === projectId)?.name ?? projectId;
@@ -925,7 +985,10 @@ export function RequirementsWorkspace() {
         id,
         label: name,
         projectId,
-        rootPaths: roots.filter((r) => r.projectId === projectId).map((r) => r.path),
+        rootPaths: mergeRecentPaths(
+          roots.filter((r) => r.projectId === projectId).map((r) => r.path),
+          keepPaths,
+        ),
       });
     } catch (raw) {
       setWelcomeError(
@@ -937,20 +1000,19 @@ export function RequirementsWorkspace() {
     void loadRecents();
   }
 
-  async function handleOpenProject() {
+  async function pickProjectFolder(title: string): Promise<string | null> {
+    const chosen = await open({ directory: true, multiple: false, title });
+    return typeof chosen === "string" ? chosen : null;
+  }
+
+  async function handleOpenProject(prepicked: string | null = null) {
     if (!isNative || welcomeBusy) return;
     setWelcomeBusy(true);
     setWelcomeError(null);
     try {
       const result = await openProjectFromFolder({
-        pickFolder: async () => {
-          const chosen = await open({
-            directory: true,
-            multiple: false,
-            title: "Open project folder",
-          });
-          return typeof chosen === "string" ? chosen : null;
-        },
+        pickFolder: async () =>
+          prepicked ?? (await pickProjectFolder("Open project folder")),
         listRoots: listCodeRoots,
         listProjects,
         createProject,
@@ -966,7 +1028,7 @@ export function RequirementsWorkspace() {
         { ...EMPTY_SELECTION, projectId: result.projectId },
         false,
         false,
-        "overview",
+        WORKSPACE_LANDING_VIEW,
       );
       if (result.warnings.length > 0) setWelcomeError(result.warnings.join(" "));
       await recordRecent(result.projectId);
@@ -978,51 +1040,63 @@ export function RequirementsWorkspace() {
   }
 
   async function handleOpenRecent(recent: RecentWorkspaceDto) {
-    if (!isNative || welcomeBusy || busyRecentId !== null) return;
+    if (!isNative || welcomeBusy || busyRecentId !== null || busyProjectId !== null) return;
     setBusyRecentId(recent.id);
     setWelcomeError(null);
     try {
-      const roots = await listCodeRoots();
-      const restored = roots.map((root) => root.path);
+      const [roots, projects] = await Promise.all([listCodeRoots(), listProjects()]);
+      let projectId = recent.projectId;
+      if (projectId !== null && !projects.some((p) => p.id === projectId)) projectId = null;
+      const plan = planRecentRestore(roots, recent.rootPaths, projectId);
       const failed: string[] = [];
-      const restoredCount = { current: 0 };
-      for (const path of recent.rootPaths) {
-        if (restored.some((known) => samePath(known, path))) {
-          restoredCount.current += 1;
-          continue;
-        }
+      const unbound: string[] = [];
+      let restoredCount = plan.kept.length;
+      for (const path of plan.missing) {
         try {
-          await addCodeRoot(path);
-          restoredCount.current += 1;
+          const created = await addCodeRoot(path);
+          restoredCount += 1;
+          // A re-added folder joins the project being opened: loose
+          // folders stay hidden while a project is active. Folders
+          // already known are never rebound here.
+          if (projectId !== null) {
+            try {
+              await setRootProject(created.id, projectId);
+            } catch {
+              unbound.push(path);
+            }
+          }
         } catch {
           failed.push(path);
         }
       }
       setExplorerRefresh((token) => token + 1);
       useRequirementsUi.getState().bumpCodeLibrary();
-      let projectId = recent.projectId;
-      if (projectId !== null) {
-        const projects = await listProjects();
-        if (!projects.some((p) => p.id === projectId)) projectId = null;
-      }
       if (projectId !== null) {
         applySelection(
           { ...EMPTY_SELECTION, projectId },
           false,
           false,
-          "overview",
+          WORKSPACE_LANDING_VIEW,
         );
-        await recordRecent(projectId, recent.id);
+        await recordRecent(projectId, recent.id, plan.skipped);
       }
       if (projectId === null) {
         setWelcomeError(
           recent.projectId === null
-            ? `Restored ${restoredCount.current} folder(s) without an associated project. Open one as a project to continue.`
+            ? `Restored ${restoredCount} folder(s) without an associated project. Open one as a project to continue.`
             : "The project for this entry no longer exists; its folders were restored loose. Open one as a project or forget the entry.",
         );
       } else if (failed.length > 0) {
         setWelcomeError(
           `Opened with ${failed.length} missing folder(s). Re-add them from the explorer or forget the entry.`,
+        );
+      } else if (unbound.length > 0) {
+        setWelcomeError(
+          `Opened, but ${unbound.length} folder(s) could not be linked to the project and stay hidden. Re-add them from the explorer or forget the entry.`,
+        );
+      } else if (plan.skipped.length > 0) {
+        setWelcomeError(
+          `Opened without ${plan.skipped.length} folder(s) already linked elsewhere: ${plan.skipped.join(", ")}. They stay in this entry; move one from Folders to use it here.`,
         );
       }
     } catch (raw) {
@@ -1037,21 +1111,18 @@ export function RequirementsWorkspace() {
     setWelcomeBusy(true);
     setWelcomeError(null);
     try {
-      await handleCreateProject();
+      await doCreateProject();
       const created = useRequirementsUi.getState().selection.projectId;
       if (created === null) {
-        setWelcomeError("Could not create the project.");
-        return;
+        setWelcomeError((prev) => prev ?? "Could not create the project.");
       }
-      useRequirementsUi.getState().setCenterView("overview");
-      await recordRecent(created);
     } finally {
       setWelcomeBusy(false);
     }
   }
 
   async function handleRemoveRecent(id: string) {
-    if (!isNative || busyRecentId !== null) return;
+    if (!isNative || busyRecentId !== null || busyProjectId !== null) return;
     setBusyRecentId(id);
     try {
       await removeRecent(id);
@@ -1069,16 +1140,19 @@ export function RequirementsWorkspace() {
   // (any tab: design, code, mockup) and live terminals survive view
   // switches but the user must know before the context goes away.
   const [closeGate, setCloseGate] = useState<{
+    mode: CloseGateMode;
     dirtyLabels: string[];
     terminalCount: number;
     terminalCwds: string[];
     terminalsUnknown: boolean;
+    museNotice: string | null;
     saving: boolean;
     saveError: string | null;
   } | null>(null);
   const pendingAfterClose = useRef<(() => void) | null>(null);
+  const pendingCancel = useRef<(() => void) | null>(null);
 
-  async function requestWorkspaceAction(afterClose: (() => void) | null) {
+  async function requestWorkspaceAction(afterClose: (() => void) | null, onCancel?: () => void) {
     if (centerView === "welcome") {
       afterClose?.();
       return;
@@ -1097,17 +1171,30 @@ export function RequirementsWorkspace() {
         terminalsUnknown = true;
       }
     }
-    if (dirtyLabels.length === 0 && terminalCount === 0 && !terminalsUnknown) {
-      if (afterClose !== null) afterClose();
-      else doCloseWorkspace();
+    const museTotal = Object.values(musePending).reduce((sum, count) => sum + count, 0);
+    if (
+      !needsCloseGate({
+        dirtyCount: dirtyLabels.length,
+        terminalCount,
+        terminalsUnknown,
+        musePending: museTotal,
+      })
+    ) {
+      // Switching closes first, even with nothing to settle: tabs and
+      // threads of the previous project never stay open.
+      doCloseWorkspace();
+      afterClose?.();
       return;
     }
     pendingAfterClose.current = afterClose;
+    pendingCancel.current = onCancel ?? null;
     setCloseGate({
+      mode: closeGateMode(afterClose !== null),
       dirtyLabels,
       terminalCount,
       terminalCwds,
       terminalsUnknown,
+      museNotice: pendingMuseNotice(museTotal),
       saving: false,
       saveError: null,
     });
@@ -1115,12 +1202,25 @@ export function RequirementsWorkspace() {
 
   function doCloseWorkspace() {
     pendingAfterClose.current = null;
+    pendingCancel.current = null;
     setCloseGate(null);
     setCreating(false);
     setProposing(false);
-    useRequirementsUi.getState().requestDiscard();
+    const ui = useRequirementsUi.getState();
+    ui.requestDiscard();
+    // One active project: closing also closes its code tabs and Muse
+    // threads, clears the thread proposal off the X-ray, and drops the
+    // folder-pinned view states. Persisted generations stay reachable
+    // from Propose with Muse; nothing stored changes.
+    ui.requestCloseCodeTabs();
+    setMuseThreads([]);
+    setMusePending({});
+    ui.setMuseTarget(null);
+    ui.setMuseGeneration(null);
+    ui.setArchScope({ kind: "all" });
+    ui.setCodeFolderSelection(null);
     applySelection({ ...EMPTY_SELECTION }, false, false, "welcome");
-    useRequirementsUi.getState().setCenterDoc(null);
+    ui.setCenterDoc(null);
     setWelcomeError(null);
     void loadRecents();
   }
@@ -1155,15 +1255,53 @@ export function RequirementsWorkspace() {
   }
 
   function handleCancelClose() {
+    const onCancel = pendingCancel.current;
     pendingAfterClose.current = null;
+    pendingCancel.current = null;
     setCloseGate(null);
+    // Cancelling keeps everything; the notice only informs.
+    onCancel?.();
+  }
+
+  // After a close the workspace is gone: errors belong on Welcome.
+  function reportOpError(message: string) {
+    if (postCloseErrorSurface(useRequirementsUi.getState().centerView) === "welcome") {
+      setWelcomeError(message);
+    } else {
+      setNavError(message);
+    }
   }
 
   // Open-project/new-project entries: from welcome they run directly;
-  // with a workspace open they first settle the current context.
-  function guardedOpenProject() {
-    if (centerView === "welcome") void handleOpenProject();
-    else void requestWorkspaceAction(() => void handleOpenProject());
+  // with a workspace open the folder is picked first, so cancelling
+  // keeps the current project, and only a chosen folder closes it.
+  async function guardedOpenProject() {
+    if (centerView === "welcome") {
+      void handleOpenProject();
+      return;
+    }
+    if (closeGate !== null) return;
+    let chosen: string | null;
+    try {
+      chosen = await pickProjectFolder("Open project folder");
+    } catch (raw) {
+      setNavError(normalizeWorkspaceError(raw).message);
+      return;
+    }
+    if (chosen === null) return;
+    // Opening the active project does nothing: no close, tabs and
+    // threads stay.
+    try {
+      const target = await resolvePickedProject(
+        { listRoots: listCodeRoots, listProjects },
+        chosen,
+      );
+      if (target !== null && target === useRequirementsUi.getState().selection.projectId) return;
+    } catch (raw) {
+      setNavError(normalizeWorkspaceError(raw).message);
+      return;
+    }
+    void requestWorkspaceAction(() => void handleOpenProject(chosen));
   }
 
   function guardedNewProject() {
@@ -1176,15 +1314,117 @@ export function RequirementsWorkspace() {
   }
 
   function guardedOpenRecent(recent: RecentWorkspaceDto) {
-    if (centerView === "welcome") void handleOpenRecent(recent);
-    else void requestWorkspaceAction(() => void handleOpenRecent(recent));
+    if (centerView === "welcome") {
+      void handleOpenRecent(recent);
+      return;
+    }
+    // Opening the active project does nothing: no close, tabs and
+    // threads stay. The project is open, so the id cannot be stale.
+    if (
+      recent.projectId !== null &&
+      recent.projectId === useRequirementsUi.getState().selection.projectId
+    ) {
+      return;
+    }
+    void requestWorkspaceAction(() => void handleOpenRecent(recent));
+  }
+
+  // Opens any stored project, with or without a Recents entry or
+  // folders. An existing entry reopens through it, so folders
+  // restore and no duplicate entry appears.
+  async function handleOpenProjectById(projectId: string) {
+    if (!isNative || welcomeBusy || busyRecentId !== null || busyProjectId !== null) return;
+    const existing = recents.find((entry) => entry.projectId === projectId);
+    if (existing !== undefined) {
+      void handleOpenRecent(existing);
+      return;
+    }
+    setBusyProjectId(projectId);
+    setWelcomeError(null);
+    try {
+      const projects = await listProjects();
+      if (!projects.some((project) => project.id === projectId)) {
+        setWelcomeError("That project no longer exists.");
+        return;
+      }
+      setExplorerRefresh((token) => token + 1);
+      useRequirementsUi.getState().bumpCodeLibrary();
+      applySelection(
+        { ...EMPTY_SELECTION, projectId },
+        false,
+        false,
+        WORKSPACE_LANDING_VIEW,
+      );
+      await recordRecent(projectId);
+    } catch (raw) {
+      setWelcomeError(normalizeWorkspaceError(raw).message);
+    } finally {
+      setBusyProjectId(null);
+    }
+  }
+
+  // A folder left the workspace (files untouched): its tabs are
+  // already closed by the code session. Recents keeps the remaining
+  // folders so reopening never resurrects the removed one; when the
+  // active project lost its last folder, it closes through the same
+  // close gate. The project stays stored and reachable from Recents.
+  async function handleRootRemoved(root: CodeRootDto) {
+    const active = useRequirementsUi.getState().selection.projectId;
+    if (active === null || root.projectId !== active) return;
+    void recordRecent(active);
+    let fresh: CodeRootDto[];
+    try {
+      fresh = await listCodeRoots();
+    } catch {
+      return;
+    }
+    if (removedLastFolder(fresh, root, active)) {
+      void requestWorkspaceAction(null);
+    }
+  }
+
+  // A replication opened another project: switch to it through the
+  // close gate, like any other switch, and keep it in Recents. The
+  // entry is recorded before the gate, so a cancelled switch still
+  // leaves the new project reachable, with a notice saying where.
+  function handleReplicatedProject(
+    projectId: string,
+    moduleId: string | null,
+    projectName: string,
+  ) {
+    void recordRecent(projectId);
+    const active = useRequirementsUi.getState().selection.projectId;
+    if (projectId === active && active !== null) {
+      // Replicated into the active project: already there, no switch.
+      return;
+    }
+    void requestWorkspaceAction(
+      () => {
+        applySelection(
+          { projectId, moduleId, requirementId: null, designId: null, mockupId: null, screenId: null },
+          false,
+          false,
+          "requirements",
+        );
+        void recordRecent(projectId);
+      },
+      () => setNavError(replicationCancelNotice(projectName)),
+    );
   }
 
   // Project header data: name and associated roots for the workspace
-  // bar and the Overview. Reloaded with the explorer refresh token so
+  // bar and the Muse threads. Reloaded with the explorer refresh token so
   // folder changes are reflected without a dedicated subscription.
   const [projectName, setProjectName] = useState<string | null>(null);
   const [codeRoots, setCodeRoots] = useState<CodeRootDto[]>([]);
+
+  // One active project: views show its roots only. Other projects'
+  // folders and loose folders stay stored but hidden (and keep Never
+  // send to Muse, enforced in the backend for every root).
+  const visibleCodeRoots = useMemo(
+    () => activeProjectRoots(codeRoots, projectId),
+    [codeRoots, projectId],
+  );
 
   useEffect(() => {
     if (!isNative || projectId === null || centerView === "welcome") {
@@ -1211,50 +1451,19 @@ export function RequirementsWorkspace() {
     };
   }, [isNative, projectId, centerView, explorerRefresh, rootsToken]);
 
-  async function handleAddFolder() {
-    if (!isNative || projectId === null || navBusy) return;
-    setNavBusy(true);
-    setNavError(null);
-    try {
-      const chosen = await open({
-        directory: true,
-        multiple: false,
-        title: "Add folder to project",
-      });
-      if (typeof chosen !== "string") return;
-      const roots = await listCodeRoots();
-      const existing = roots.find((root) => samePath(root.path, chosen));
-      if (existing !== undefined) {
-        if (existing.projectId !== projectId) await setRootProject(existing.id, projectId);
-      } else {
-        const created = await addCodeRoot(chosen);
-        await setRootProject(created.id, projectId);
-      }
-      setExplorerRefresh((token) => token + 1);
-      useRequirementsUi.getState().bumpCodeLibrary();
-      void recordRecent(projectId);
-    } catch (raw) {
-      setNavError(`Could not add the folder: ${normalizeWorkspaceError(raw).message}`);
-    } finally {
-      setNavBusy(false);
-    }
-  }
-
-  async function handleCreateProjectFromFolder() {
+  // Creates a project from a code folder and makes it the active
+  // one: with a workspace open this switches projects, so it goes
+  // through the close gate (guardedCreateProjectFromFolder). The new
+  // project lands on Architecture and stays in Recents.
+  async function doCreateProjectFromFolder(prepicked: string | null = null) {
     if (!isNative) return;
     const before = selectionSnapshot();
     setNavBusy(true);
     setNavError(null);
     try {
       const result = await createProjectFromFolder({
-        pickFolder: async () => {
-          const chosen = await open({
-            directory: true,
-            multiple: false,
-            title: "Create a project from a code folder",
-          });
-          return typeof chosen === "string" ? chosen : null;
-        },
+        pickFolder: async () =>
+          prepicked ?? (await pickProjectFolder("Create a project from a code folder")),
         createProject,
         renameProject: (projectId, expectedName, name) =>
           renameProject({ projectId, expectedName, name }),
@@ -1265,20 +1474,45 @@ export function RequirementsWorkspace() {
       setExplorerRefresh((t) => t + 1);
       useRequirementsUi.getState().bumpCodeLibrary();
       if (result.warnings.length > 0) {
-        setNavError(result.warnings.join(" "));
+        reportOpError(result.warnings.join(" "));
       }
-      if (sameSelection(before, selectionSnapshot())) {
+      const now = selectionSnapshot();
+      // Selects the new project unless the user moved on meanwhile;
+      // an emptied selection is the expected post-close state.
+      if (sameSelection(before, now) || sameSelection(EMPTY_SELECTION, now)) {
         applySelection(
           { projectId: result.projectId, moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null },
           false,
+          false,
+          WORKSPACE_LANDING_VIEW,
         );
+        await recordRecent(result.projectId);
       }
     } catch (raw) {
       // Creating the project or the dialog failed: nothing to select.
-      setNavError(normalizeCoreError(raw).message);
+      reportOpError(normalizeCoreError(raw).message);
     } finally {
       setNavBusy(false);
     }
+  }
+
+  // With a workspace open the folder is picked first, so cancelling
+  // keeps the current project, and only a chosen folder closes it.
+  async function guardedCreateProjectFromFolder() {
+    if (centerView === "welcome") {
+      void doCreateProjectFromFolder();
+      return;
+    }
+    if (closeGate !== null) return;
+    let chosen: string | null;
+    try {
+      chosen = await pickProjectFolder("Create a project from a code folder");
+    } catch (raw) {
+      setNavError(normalizeWorkspaceError(raw).message);
+      return;
+    }
+    if (chosen === null) return;
+    void requestWorkspaceAction(() => void doCreateProjectFromFolder(chosen));
   }
 
   async function handleCreateModule(pid: string) {
@@ -1858,6 +2092,11 @@ export function RequirementsWorkspace() {
       }
       setArchiveRequest(null);
       setArchivePreview(null);
+      // Deleting the active project leaves no project: back to Welcome,
+      // where the other projects are reached from Recents.
+      if (target.kind === "project") {
+        doCloseWorkspace();
+      }
     } catch (raw) {
       if (!isFresh("archive", key, epoch)) return;
       // Failure: the dialog keeps the summary; selection and drafts intact.
@@ -2615,7 +2854,7 @@ export function RequirementsWorkspace() {
 
   const workspaceOpen = centerView !== "welcome";
   const terminalMaximized = useRequirementsUi((s) => s.terminalMaximized);
-  const associatedRoots = projectId === null ? [] : codeRoots.filter((root) => root.projectId === projectId);
+  const associatedRoots = visibleCodeRoots;
 
   return (
     <section
@@ -2634,7 +2873,7 @@ export function RequirementsWorkspace() {
             }
             recents={recents}
             busy={welcomeBusy}
-            onOpenProject={guardedOpenProject}
+            onOpenProject={() => void guardedOpenProject()}
             onNewProject={guardedNewProject}
             onOpenRecent={(recent) => void guardedOpenRecent(recent)}
             onSwitchWorkspace={guardedCloseWorkspace}
@@ -2648,20 +2887,32 @@ export function RequirementsWorkspace() {
         saveApiRef={codeSaveRef}
         onDocStatus={setCodeDocStatus}
         visible={centerDoc !== null}
+        onRootRemoved={(root) => void handleRootRemoved(root)}
+        onRootAdded={() => {
+          const active = useRequirementsUi.getState().selection.projectId;
+          if (active !== null) void recordRecent(active);
+        }}
+        onReplicatedProject={handleReplicatedProject}
       >
       {centerView === "welcome" ? (
         <WelcomeScreen
           recents={recents}
           recentsLoading={recentsLoading}
           recentsError={recentsError}
+          projects={welcomeProjects}
+          projectsLoading={welcomeProjectsLoading}
+          projectsError={welcomeProjectsError}
           busy={welcomeBusy}
           busyRecentId={busyRecentId}
+          busyProjectId={busyProjectId}
           error={welcomeError}
-          onOpenProject={guardedOpenProject}
+          onOpenProject={() => void guardedOpenProject()}
           onOpenRecent={(recent) => void guardedOpenRecent(recent)}
           onRemoveRecent={(id) => void handleRemoveRecent(id)}
           onNewProject={guardedNewProject}
+          onOpenProjectById={(projectId) => void handleOpenProjectById(projectId)}
           onRetryRecents={() => void loadRecents()}
+          onRetryProjects={() => void loadWelcomeProjects()}
         />
       ) : (
       <div
@@ -2846,8 +3097,8 @@ export function RequirementsWorkspace() {
               requestSelect(withScreen(selectionSnapshot(), pid, mid, id, screen), false, false, "mockups");
             }
           }}
-          onCreateProject={() => void handleCreateProject()}
-          onCreateProjectFromFolder={isNative ? () => void handleCreateProjectFromFolder() : undefined}
+          onCreateProject={() => void guardedCreateProject()}
+          onCreateProjectFromFolder={isNative ? () => void guardedCreateProjectFromFolder() : undefined}
           onCreateModule={(pid) => void handleCreateModule(pid)}
           onNewRequirement={(pid, mid) => {
             requestSelect(
@@ -2907,19 +3158,7 @@ export function RequirementsWorkspace() {
           ) : (
             <>
               <CodeMainPane bare tabsOnly />
-              {centerView === "overview" ? (
-                projectId === null ? (
-                  <p className="hint">Open a project to see its overview.</p>
-                ) : (
-                  <OverviewView
-                    projectId={projectId}
-                    projectName={projectName ?? projectId}
-                    roots={codeRoots}
-                    onOpenArchitecture={() => requestTab("architecture")}
-                    onAddFolder={() => void handleAddFolder()}
-                  />
-                )
-              ) : centerView === "architecture" ? (
+              {centerView === "architecture" ? (
                 <ArchitectureView />
               ) : centerView === "requirements" ? (
             detailBusy && detail === null ? (
@@ -3204,7 +3443,7 @@ export function RequirementsWorkspace() {
               <MusePanel
                 key={museKey(target)}
                 target={target}
-                roots={codeRoots}
+                roots={visibleCodeRoots}
                 hidden={
                   rightTab !== "assistant" ||
                   museTarget === null ||
@@ -3212,6 +3451,13 @@ export function RequirementsWorkspace() {
                 }
                 onClose={() => closeMuseThread(target)}
                 onPropose={handleMuseProposal}
+                onPendingChange={(count) =>
+                  setMusePending((prev) => {
+                    const key = museKey(target);
+                    if (prev[key] === count) return prev;
+                    return { ...prev, [key]: count };
+                  })
+                }
               />
             ))}
             {rightTab === "assistant" ? (
@@ -3345,10 +3591,12 @@ export function RequirementsWorkspace() {
 
       {closeGate !== null && (
         <WorkspaceCloseDialog
+          mode={closeGate.mode}
           dirtyLabels={closeGate.dirtyLabels}
           terminalCount={closeGate.terminalCount}
           terminalCwds={closeGate.terminalCwds}
           terminalsUnknown={closeGate.terminalsUnknown}
+          museNotice={closeGate.museNotice}
           saving={closeGate.saving}
           saveError={closeGate.saveError}
           onSaveAndClose={() => void handleSaveAndClose()}

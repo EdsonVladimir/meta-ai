@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // Code tree scope: chevron expands without touching the Architecture
-// scope, project names activate it, plain folders only select for
-// exploring, and every detected project (nested included) carries
-// its own visibility eye. Backend fully mocked.
+// scope, project names focus it (eye opens, board narrows), plain
+// folders only select for exploring, and every detected project
+// (nested included) carries its own visibility eye.
+// Backend fully mocked.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { CodeTree } from "./CodeTree";
@@ -62,12 +63,12 @@ function mockBackend() {
 
 function renderTree(options: {
   archScope?: ArchScope;
-  onArchScope?: (scope: ArchScope) => void;
+  onFocusProject?: (rootId: string, rel: string) => void;
   folderSelection?: { rootId: string; rel: string } | null;
   onSelectFolder?: (rootId: string, rel: string) => void;
   onAnalyzeFolder?: (rootId: string, rel: string) => void;
   hiddenProjects?: Record<string, boolean>;
-  onToggleMapProject?: (key: string) => void;
+  onToggleMapProject?: (key: string, show: boolean) => void;
   onOpenFile?: (root: CodeRootDto, entry: CodeEntryDto) => void;
 }) {
   const props = {
@@ -81,7 +82,7 @@ function renderTree(options: {
     onOpenFile: options.onOpenFile ?? (() => {}),
     onTerminalAt: () => {},
     archScope: options.archScope ?? { kind: "all" as const },
-    onArchScope: options.onArchScope ?? (() => {}),
+    onFocusProject: options.onFocusProject ?? (() => {}),
     folderSelection: options.folderSelection ?? null,
     onSelectFolder: options.onSelectFolder ?? (() => {}),
     onAnalyzeFolder: options.onAnalyzeFolder ?? (() => {}),
@@ -99,40 +100,42 @@ async function expandRow(name: string) {
 describe("code tree scope", () => {
   it("expands with the chevron without changing the scope", async () => {
     mockBackend();
-    const onArchScope = vi.fn();
+    const onFocusProject = vi.fn();
     const onSelectFolder = vi.fn();
-    renderTree({ onArchScope, onSelectFolder });
+    renderTree({ onFocusProject, onSelectFolder });
     await expandRow("ACME");
     expect(await screen.findByText("apps")).toBeTruthy();
     await expandRow("apps");
     expect(await screen.findByText("fe")).toBeTruthy();
-    expect(onArchScope).not.toHaveBeenCalled();
+    expect(onFocusProject).not.toHaveBeenCalled();
     expect(onSelectFolder).not.toHaveBeenCalled();
   });
 
-  it("activates the project when its name is clicked", async () => {
+  it("focuses the project when its name is clicked", async () => {
     mockBackend();
-    const onArchScope = vi.fn();
-    renderTree({ onArchScope });
+    const onFocusProject = vi.fn();
+    const onSelectFolder = vi.fn();
+    renderTree({ onFocusProject, onSelectFolder });
     await expandRow("ACME");
     await expandRow("apps");
     expect(await screen.findByText("NestJS")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "be" }));
-    expect(onArchScope).toHaveBeenCalledWith({ kind: "project", rootId: "r1", rel: "apps/be" });
-    // Activating never expands by itself.
+    expect(onFocusProject).toHaveBeenCalledWith("r1", "apps/be");
+    expect(onSelectFolder).not.toHaveBeenCalled();
+    // Focusing never expands by itself.
     expect(screen.queryByText("nest-cli.json")).toBeNull();
   });
 
-  it("selects plain folders for exploring without touching the scope", async () => {
+  it("selects plain folders for exploring without touching services", async () => {
     mockBackend();
-    const onArchScope = vi.fn();
+    const onFocusProject = vi.fn();
     const onSelectFolder = vi.fn();
-    renderTree({ onArchScope, onSelectFolder });
+    renderTree({ onFocusProject, onSelectFolder });
     await expandRow("ACME");
     expect(await screen.findByText("docs")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "docs" }));
     expect(onSelectFolder).toHaveBeenCalledWith("r1", "docs");
-    expect(onArchScope).not.toHaveBeenCalled();
+    expect(onFocusProject).not.toHaveBeenCalled();
   });
 
   it("analyzes an explicit folder from its menu", async () => {
@@ -146,20 +149,20 @@ describe("code tree scope", () => {
     expect(onAnalyzeFolder).toHaveBeenCalledWith("r1", "docs");
   });
 
-  it("toggles project visibility without touching scope or files", async () => {
+  it("sets project visibility without touching services or files", async () => {
     mockBackend();
     const onToggleMapProject = vi.fn();
-    const onArchScope = vi.fn();
+    const onFocusProject = vi.fn();
     const onOpenFile = vi.fn();
-    renderTree({ onToggleMapProject, onArchScope, onOpenFile });
+    renderTree({ onToggleMapProject, onFocusProject, onOpenFile });
     await expandRow("ACME");
     await expandRow("apps");
     const eye = await screen.findByRole("button", { name: "Hide fe from architecture" });
     expect(eye.getAttribute("aria-pressed")).toBe("true");
     expect(eye.getAttribute("title")).toBe("Hide from architecture");
     fireEvent.click(eye);
-    expect(onToggleMapProject).toHaveBeenCalledWith("r1::apps/fe");
-    expect(onArchScope).not.toHaveBeenCalled();
+    expect(onToggleMapProject).toHaveBeenCalledWith("r1::apps/fe", false);
+    expect(onFocusProject).not.toHaveBeenCalled();
     expect(onOpenFile).not.toHaveBeenCalled();
     // The click never propagates to the row (nothing expands).
     expect(screen.queryByText("angular.json")).toBeNull();
@@ -184,13 +187,39 @@ describe("code tree scope", () => {
     expect(name.getAttribute("aria-current")).toBe("true");
   });
 
+  it("starts services closed above 3 detected, and the name still opens them", async () => {
+    const apps = ["fe", "be", "billing", "auth"];
+    mockedListDir.mockImplementation(async (_rootId: string, rel: string) => {
+      if (rel === "") return listing([dir("apps")]);
+      if (rel === "apps") return listing(apps.map((name) => dir(`apps/${name}`)));
+      const manifest = apps.indexOf(rel.split("/").pop() ?? "") % 2 === 0 ? "angular.json" : "nest-cli.json";
+      return listing([file(`${rel}/package.json`), file(`${rel}/${manifest}`)]);
+    });
+    mockedReadFile.mockImplementation(async (_rootId: string, rel: string) => ({
+      text: rel.endsWith("package.json") ? `{"name":"${rel}"}` : "",
+      fingerprint: "h",
+      size: 10,
+    }));
+    const onFocusProject = vi.fn();
+    renderTree({ onFocusProject });
+    await expandRow("ACME");
+    await expandRow("apps");
+    expect(await screen.findByText("auth")).toBeTruthy();
+    // Four detected: every eye starts closed, showing Show.
+    const eye = await screen.findByRole("button", { name: "Show fe in architecture" });
+    expect(eye.getAttribute("aria-pressed")).toBe("false");
+    // The first click opens the service in place.
+    fireEvent.click(screen.getByRole("button", { name: "fe" }));
+    expect(onFocusProject).toHaveBeenCalledWith("r1", "apps/fe");
+  });
+
   it("opening a file keeps the active project", async () => {
     mockBackend();
-    const onArchScope = vi.fn();
+    const onFocusProject = vi.fn();
     const onOpenFile = vi.fn();
     renderTree({
       archScope: { kind: "project", rootId: "r1", rel: "apps/be" },
-      onArchScope,
+      onFocusProject,
       onOpenFile,
     });
     await expandRow("ACME");
@@ -199,6 +228,6 @@ describe("code tree scope", () => {
     expect(await screen.findByText("nest-cli.json")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "nest-cli.json" }));
     expect(onOpenFile).toHaveBeenCalledTimes(1);
-    expect(onArchScope).not.toHaveBeenCalled();
+    expect(onFocusProject).not.toHaveBeenCalled();
   });
 });

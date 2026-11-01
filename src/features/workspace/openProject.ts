@@ -27,6 +27,28 @@ export function samePath(a: string, b: string): boolean {
   return clean(a) === clean(b);
 }
 
+/**
+ * Project a picked folder would open: the live project of a known
+ * folder, or null when opening proceeds to create or link (unknown
+ * folder, loose folder, dead project). Lets the workspace skip the
+ * close when the target is already active, before anything moves.
+ */
+export async function resolvePickedProject(
+  deps: Pick<OpenProjectDeps, "listRoots" | "listProjects">,
+  picked: string,
+): Promise<string | null> {
+  const [roots, projects] = await Promise.all([deps.listRoots(), deps.listProjects()]);
+  const existing = roots.find((root) => samePath(root.path, picked));
+  if (
+    existing !== undefined &&
+    existing.projectId !== null &&
+    projects.some((project) => project.id === existing.projectId)
+  ) {
+    return existing.projectId;
+  }
+  return null;
+}
+
 function reason(raw: unknown): string {
   if (typeof raw === "object" && raw !== null && "message" in raw) {
     const message = (raw as { message?: unknown }).message;

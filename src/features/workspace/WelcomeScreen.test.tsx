@@ -26,15 +26,21 @@ function renderWelcome(overrides: Partial<Parameters<typeof WelcomeScreen>[0]> =
     onOpenRecent: vi.fn(),
     onRemoveRecent: vi.fn(),
     onNewProject: vi.fn(),
+    onOpenProjectById: vi.fn(),
     onRetryRecents: vi.fn(),
+    onRetryProjects: vi.fn(),
   };
   render(
     <WelcomeScreen
       recents={[]}
       recentsLoading={false}
       recentsError={null}
+      projects={[]}
+      projectsLoading={false}
+      projectsError={null}
       busy={false}
       busyRecentId={null}
+      busyProjectId={null}
       error={null}
       {...handlers}
       {...overrides}
@@ -76,5 +82,33 @@ describe("WelcomeScreen", () => {
     expect(screen.getByText("Database locked.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(handlers.onRetryRecents).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists every stored project even with no recents entry", () => {
+    const handlers = renderWelcome({
+      projects: [
+        { id: "proy-1", name: "Shop" },
+        { id: "proy-2", name: "Blog" },
+      ],
+    });
+    expect(screen.getByText("All projects")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Shop/ }));
+    expect(handlers.onOpenProjectById).toHaveBeenCalledWith("proy-1");
+    expect(handlers.onOpenRecent).not.toHaveBeenCalled();
+  });
+
+  it("disables the project list while one opens", () => {
+    renderWelcome({
+      projects: [{ id: "proy-1", name: "Shop" }],
+      busyProjectId: "proy-1",
+    });
+    expect(screen.getByRole("button", { name: /Shop/ })).toHaveProperty("disabled", true);
+    expect(screen.getByText("Opening…")).toBeTruthy();
+  });
+
+  it("retries the project list after a load error", () => {
+    const handlers = renderWelcome({ projectsError: "Database locked." });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(handlers.onRetryProjects).toHaveBeenCalledTimes(1);
   });
 });

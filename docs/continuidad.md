@@ -81,8 +81,8 @@ environment).
 - Nested scope fix: manifest-based nested project discovery,
   active Architecture scope (joint/project/folder), split tree
   rows (chevron vs. name), per-project persisted eye, per-scope
-  contextual boards with batches and cancel, per-scope Overview
-  lines; all covered by the suite (see below).
+  contextual boards with batches and cancel; all covered by the
+  suite (see below).
 - Delivery A: inspector promoted to the top-level maps; symbol
   selection with incoming/outgoing relations (kind, status,
   evidence) and member details; hash-verified opening via
@@ -108,6 +108,28 @@ environment).
 - Compact density and undecorated window: implemented.
 - Browser without Tauri: reports that desktop is required; does
   not fake it.
+- Single active project: Folders and Projects show the active
+  project only (loose and foreign roots stay stored but hidden,
+  never rebound); switching goes through the close gate (tabs
+  and threads close, nothing stored changes); other projects
+  open from Recents; removing the last folder closes the
+  project, while a project with no folders never closes itself.
+  No project becomes unreachable: Welcome lists recents plus
+  All projects (every stored project, folders or not); the gate
+  says Switch project on switches, reports pending Muse files,
+  and leaves a cancelled replication in Recents with a notice.
+- No Overview tab: opening lands on Architecture (one tested
+  constant); one Add folder (Folders button, or the
+  Architecture empty state) with a confirmation naming the
+  other project on cross-project moves; stack detection kept
+  for Folders service tags, analysis-summaries cache removed.
+- Services on demand: above 3 detected services unopened ones
+  start closed until clicked; the name opens, records and
+  focuses the board on that service (chip plus way back), the
+  eye only opens, and Show all opens every detected service.
+  Opened ones persist; scope "all" shows open eyes only;
+  all-closed boards point at Folders; scopes never render
+  outside the active project.
 
 ## Folder and key-file map
 
@@ -264,7 +286,7 @@ the full suite at close.
 3. Minors from the §23 audit (if addressed, in this order):
    close the ⋯ menu on outside click; focus traps in modals;
    Escape on export/close gates and baselines; empty Review
-   column with document/Overview/Architecture (hide or switch
+   column with document/Architecture (hide or switch
    to Assistant on its own; the Code perspective no longer
    exists).
 4. Decide the next functional milestone (candidates in the
@@ -314,6 +336,47 @@ Acceptance criteria:
 
 ## Executed tests (latest session)
 
+- Audit-fixes session: pick-first open/create, All-projects list,
+  gate protects pending Muse files, recents skip foreign/loose
+  folders and keep them, same-project reopen no-op, replication
+  cancel recorded with notice, Switch-vs-Close wording, roots
+  loading states, service click focuses again, Show-all opens
+  everything, Symbols view renamed to Classes (visible text).
+  New pure `closeGate`/`planRecentRestore`/`resolvePickedProject`
+  units plus dialog, welcome, pane, map and Rust touch tests.
+  Gates: `npx tsc --noEmit` clean, `npm test` 1112/1112 in 118
+  files (one unrelated flake in `CodeProposalDialog` on the
+  first full run, green alone and on re-run), `npm run build`
+  OK, `cargo fmt --check` clean, `cargo test --workspace
+  --offline` 459 passed / 0 failed. No Meta calls. No schema,
+  core-rule or Accept/fingerprint change. Interactive desktop
+  run still pending.
+- No-Overview + services-on-demand session: removed the Overview
+  tab/view/cache (stack detection kept for Folders tags);
+  opening lands on a tested `WORKSPACE_LANDING_VIEW`; unified
+  Add folder with a cross-project confirmation (`addFolderPlan`
+  pure + dialog tests); service eyes above 3 detected with
+  persisted opened set (`serviceEyes` pure + tree/map/pane
+  tests); fixed the foreign-scope leak behind the "No folders
+  linked" screenshot (membership-checked sections/discovery +
+  regression tests). Gates: `npx tsc --noEmit` clean, `npm
+  test` 1083/1083 in 116 files, `cargo test --workspace
+  --offline` 456 passed / 0 failed, `npm run build` OK. No
+  Meta calls. No schema, core-rule or Accept/fingerprint
+  change. Interactive desktop run still pending.
+- Single-active-project session: new `activeProject` pure scope
+  (14 tests) + provider close/bind/remove/replicate (6),
+  Folders filter (3), Projects-panel single listing (2) and
+  store close-tabs signal (1) tests; adapted 4 Code fixtures
+  (`CodeWorkspace`, `CodeEditing`, `CodePresentation`,
+  `CodeSplit`) to bound roots with an active project (same
+  assertions, new required setup); Rust +1 recents
+  remove-keeps-rest unit test. Gates: `npx tsc --noEmit`
+  clean, `npm test` 1064/1064 in 116 files, `cargo test
+  --workspace --offline` 456 passed / 0 failed in 37 suites,
+  `cargo fmt --check` clean. No Meta calls. No schema,
+  core-rule or Accept/fingerprint change. Interactive desktop
+  run still pending.
 - Symbol granularity session: per-symbol cards (`ArchMapNode`,
   `classifySymbol`, `ArchSymbolBoard`) with full members
   (modifiers, signatures, ctor param properties), Files board

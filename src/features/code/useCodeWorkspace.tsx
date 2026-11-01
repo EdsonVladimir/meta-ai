@@ -21,6 +21,7 @@ import {
   writeCodeFile,
 } from "./client";
 import { listProjects } from "../requirements/client";
+import { planAddFolder } from "./addFolderPlan";
 import {
   analyzableLanguage,
   closeTab,
@@ -69,11 +70,21 @@ export interface CodeWorkspaceStateArgs {
   visible?: boolean;
   loader?: () => Promise<MonacoApi>;
   analyzeTs?: (files: StructureInput[]) => Promise<StructureResult>;
+  /** A root was removed (files untouched): the workspace updates recents and closes the project when its last folder is gone. */
+  onRootRemoved?: (root: CodeRootDto) => void;
+  /** A folder joined the active project: the workspace keeps it in recents. */
+  onRootAdded?: (root: CodeRootDto) => void;
+  /** A replication created (or reused) a project: the workspace switches to it through the close gate. */
+  onReplicatedProject?: (
+    projectId: string,
+    moduleId: string | null,
+    projectName: string,
+  ) => void;
 }
 
 const noopDocStatus = (_next: Record<string, DocSaveState>) => {};
 
-export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader, analyzeTs }: CodeWorkspaceStateArgs) {
+export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader, analyzeTs, onRootRemoved, onRootAdded, onReplicatedProject }: CodeWorkspaceStateArgs) {
   const desktop = isTauriEnvironment();
   const show = visible ?? true;
   const reportDocStatus = onDocStatus ?? noopDocStatus;
@@ -82,6 +93,11 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
   const [rootsError, setRootsError] = useState<CodeError | null>(null);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  /** Cross-project move waiting for confirmation (null = none). */
+  const [addConfirm, setAddConfirm] = useState<{
+    root: CodeRootDto;
+    fromProjectId: string;
+  } | null>(null);
   const [tabs, setTabs] = useState<CodeTab[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<CodeRootDto | null>(null);
@@ -129,6 +145,12 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
   activeRef.current = active;
   const reportRef = useRef(reportDocStatus);
   reportRef.current = reportDocStatus;
+  const removedRef = useRef(onRootRemoved);
+  removedRef.current = onRootRemoved;
+  const addedRef = useRef(onRootAdded);
+  addedRef.current = onRootAdded;
+  const replicatedRef = useRef(onReplicatedProject);
+  replicatedRef.current = onReplicatedProject;
 
   const reloadRoots = useCallback(async (quiet = false) => {
     if (!desktop) return;
@@ -215,22 +237,103 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
     setAddError(null);
     let chosen: string | string[] | null;
     try {
-      chosen = await open({ directory: true, multiple: false, title: "Open code folder" });
+      chosen = await open({ directory: true, multiple: false, title: "Add folder to project" });
     } catch (raw) {
       setAddError(normalizeCodeError(raw).message);
       return;
     }
     // Cancelling the dialog is not an error: it does nothing.
     if (typeof chosen !== "string") return;
+    const activeProjectId = useRequirementsUi.getState().selection.projectId;
+    if (activeProjectId === null) {
+      setAdding(true);
+      try {
+        const root = await addCodeRoot(chosen);
+        setRoots((prev) => [...prev, root]);
+      } catch (raw) {
+        setAddError(normalizeCodeError(raw).message);
+      } finally {
+        setAdding(false);
+      }
+      return;
+    }
+    // One active project: the picked folder joins it. Known folders
+    // are reused, never duplicated; one that belongs to another
+    // project moves only after an explicit confirmation.
     setAdding(true);
     try {
+      const fresh = await listCodeRoots();
+      const plan = planAddFolder(fresh, chosen, activeProjectId);
+      if (plan.kind === "noop") {
+        setRoots(fresh);
+        return;
+      }
+      if (plan.kind === "confirm") {
+        setRoots(fresh);
+        setAddConfirm({ root: plan.root, fromProjectId: plan.fromProjectId });
+        return;
+      }
+      if (plan.kind === "bind") {
+        const bound = await setRootProject(plan.root.id, activeProjectId);
+        setRoots(fresh.map((candidate) => (candidate.id === bound.id ? bound : candidate)));
+        useRequirementsUi.getState().bumpCodeLibrary();
+        addedRef.current?.(bound);
+        return;
+      }
       const root = await addCodeRoot(chosen);
-      setRoots((prev) => [...prev, root]);
+      try {
+        const bound = await setRootProject(root.id, activeProjectId);
+        setRoots([...fresh, bound]);
+        useRequirementsUi.getState().bumpCodeLibrary();
+        addedRef.current?.(bound);
+      } catch (raw) {
+        // A loose folder would stay hidden with no way back, so a
+        // failed link drops the just-added root again instead.
+        try {
+          await removeCodeRoot(root.id);
+        } catch {
+          // Reported below; the library bump reloads the true list.
+        }
+        useRequirementsUi.getState().bumpCodeLibrary();
+        setAddError(
+          `Could not add the folder to the project: ${normalizeCodeError(raw).message}`,
+        );
+      }
     } catch (raw) {
       setAddError(normalizeCodeError(raw).message);
     } finally {
       setAdding(false);
     }
+  }
+
+  /** Confirmed cross-project move: the folder leaves its old project. */
+  async function confirmAddFolder() {
+    if (addConfirm === null || adding) return;
+    const activeProjectId = useRequirementsUi.getState().selection.projectId;
+    if (activeProjectId === null) {
+      setAddConfirm(null);
+      return;
+    }
+    setAdding(true);
+    setAddError(null);
+    try {
+      const bound = await setRootProject(addConfirm.root.id, activeProjectId);
+      setRoots((prev) =>
+        prev.map((candidate) => (candidate.id === bound.id ? bound : candidate)),
+      );
+      useRequirementsUi.getState().bumpCodeLibrary();
+      addedRef.current?.(bound);
+      setAddConfirm(null);
+    } catch (raw) {
+      setAddError(`Could not move the folder: ${normalizeCodeError(raw).message}`);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  /** Cancelling the move changes nothing. */
+  function cancelAddFolder() {
+    setAddConfirm(null);
   }
 
   async function doRemoveRoot(root: CodeRootDto) {
@@ -240,6 +343,7 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
       setRoots((prev) => prev.filter((candidate) => candidate.id !== root.id));
       closeKeys(new Set(tabsOfRoot(tabsRef.current, root.id)));
       setConfirmRemove(null);
+      removedRef.current?.(root);
     } catch (raw) {
       setAddError(normalizeCodeError(raw).message);
     } finally {
@@ -268,7 +372,8 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
   /**
    * Replica created: updates the root (link), notifies the project
    * tree and opens the project with its first module so perspectives
-   * enable. It touches no drafts or files.
+   * enable. It touches no drafts or files. Switching projects goes
+   * through the workspace close gate, like any other switch.
    */
   function handleReplicated(result: ReplicateResultDto): void {
     setRoots((prev) =>
@@ -279,6 +384,11 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
     ui.bumpExplorer();
     ui.bumpCodeLibrary();
     const first = result.modules.length > 0 ? result.modules[0].moduleId : null;
+    const switchToReplica = replicatedRef.current;
+    if (switchToReplica !== undefined) {
+      switchToReplica(result.projectId, first, result.projectName);
+      return;
+    }
     ui.setSelection({
       projectId: result.projectId,
       moduleId: first,
@@ -692,6 +802,33 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
 
+  // Workspace close (or project switch, which closes first): tabs of
+  // the previous project never stay open. Drafts were already saved
+  // or discarded through the close gate; the scope belongs to the old
+  // project too, so it goes with the tabs. The roots go as well: the
+  // next project reloads them, and no view may render a stale list
+  // (or an empty state for it) while that load runs.
+  const tabsCloseSignal = useRequirementsUi((s) => s.codeTabsCloseSignal);
+  const tabsCloseNonce = useRef(0);
+  useEffect(() => {
+    if (tabsCloseSignal === tabsCloseNonce.current) return;
+    tabsCloseNonce.current = tabsCloseSignal;
+    liveText.current.clear();
+    setTabs([]);
+    setActive(null);
+    scopeRef.current = [];
+    setScope([]);
+    setScopeNotice(null);
+    setCloseConfirm(null);
+    setConflict(null);
+    setComparing(false);
+    rootsEpoch.current += 1;
+    setRoots([]);
+    setRootsError(null);
+    setRootsLoading(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabsCloseSignal]);
+
   function addFileToScope(rootId: string, rel: string): boolean {
     if (analyzableLanguage(rel) === null) return false;
     const key = `${rootId}::${rel}`;
@@ -831,6 +968,9 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
     adding,
     addError,
     handleAddRoot,
+    addConfirm,
+    confirmAddFolder,
+    cancelAddFolder,
     tabs,
     active,
     setActive,

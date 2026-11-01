@@ -241,7 +241,7 @@ export function ArchitectureToolbar({
             title={
               groupBy === "symbols"
                 ? "Show direct dependencies outside the module as compact reference cards."
-                : "Outside-module references show on the Symbols board."
+                : "Outside-module references show on the Classes board."
             }
           >
             <input
@@ -346,7 +346,7 @@ export function ArchitectureToolbar({
             title="One card per class, interface, or free function."
             onClick={() => onGroupByChange("symbols")}
           >
-            Symbols
+            Classes
           </button>
           <button
             type="button"

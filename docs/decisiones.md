@@ -263,6 +263,95 @@ still holds. Commits are on `code-xray`.
   used to erase a thread, with proposals still pending. Threads now stay
   by target, and closing one with pending files asks first.
 
+**One project at a time**
+
+- **Folders and Projects show the active project only.** Roots were
+  global: opening a project piled its folder onto earlier ones,
+  closing only cleared the selection, and Remove left the project
+  with no way out of the list, because `delete_project_checked`
+  refuses a project with bound folders, baselines, deliveries or
+  generations. Opening another project now switches to it in the
+  same window through the existing close gate, so unsaved changes
+  and open terminals are covered and no tab or thread survives.
+  Earlier projects are not deleted and no data changes.
+- **No project becomes unreachable.** The Welcome screen lists
+  recent workspaces, and All projects lists every stored
+  project with or without folders or a Recents entry; opening
+  from there reuses the entry when one exists, so no duplicate
+  appears. Forget was already there and only drops the entry's
+  row (`recent_remove` rewrites the recents list and cannot
+  reach project data). Touches never match two entries by path
+  set when the set is empty, so folder-less projects keep
+  separate entries. Create project, Create a project from a
+  code folder and the Delete permanently rules stay as they
+  are; created projects land on Architecture and join Recents
+  so they stay reachable.
+- **Loose folders hide, stay stored, and are never rebound
+  silently.** No migration and no auto-linking: hiding is a
+  frontend filter over the stored rows. Opening a loose folder
+  with Open project still creates and links a project as
+  before. A folder added while a project is active joins it;
+  when the link fails the folder is dropped again instead of
+  staying hidden with no way back.
+- **Removing the last folder closes the project; a project with
+  no folders never closes itself.** The close goes through the
+  same gate and back to Welcome; the project stays stored and
+  reachable from Recents, whose entry keeps the remaining paths
+  so reopening never resurrects the removed folder.
+- **A project keeps one Recents entry.** Touches had no id when
+  folders changed, so a new entry appeared and the old one kept
+  the removed path; opening it restored that folder. A touch now
+  reuses the project's entry and drops any other entry of that
+  project.
+- **Hidden roots keep Never send to Muse.** The filter only
+  hides rows; the mark lives in the database and
+  `read_scope_files` still checks every root on every prompt
+  path, so a hidden root never becomes sendable.
+
+**No Overview tab**
+
+- **Opening a project lands on Architecture.** Overview added
+  little and owned a second, different Add folder; its Re-detect
+  stacks button went with it. Every open/create path and the
+  welcome fallback now land on one tested constant, and a
+  module-less project still reaches Architecture as its only
+  project view. Nothing persisted depended on the view and the
+  Assistant never referenced it, so removal was safe.
+- **One Add folder, with a confirmation across projects.** The
+  Folders button is the only one while the project has folders;
+  a folder-less project offers it from its Architecture empty
+  state. Known folders are reused, never duplicated; moving one
+  that belongs to another project asks first and names that
+  project, and cancelling changes nothing. Stack detection
+  stays because service detection in Folders depends on it;
+  the analysis-summaries cache left with Overview, its only
+  reader.
+
+**Services on demand**
+
+- **Above 3 detected services, unopened ones wait for a click.**
+  Scope "all" used to analyze every service on entry, too slow
+  for many microservices. At 3 or fewer everything maps by
+  itself, so examples/reservas is unchanged; above that a
+  service starts closed until clicked. Clicking its name opens
+  its eye, records it as opened, and focuses the board on that
+  service alone (chip plus way back to the joint view);
+  clicking the eye opens it without changing the scope, and
+  Show all opens every detected service and records them.
+  Opened services persist next to the hidden ones with the
+  same validation, and reopening reuses the cached board.
+  Closing an eye removes the service from scope "all" and
+  from entry analysis; with every eye closed the board says
+  to click a service in Folders. Never send to Muse and
+  proposal review never read eye state.
+- **A scope never renders outside the active project.** A stale
+  scope could paint another project's folder next to "No
+  folders linked to this project yet", with its files counted
+  as analyzed. Scoped sections and discovery now cover the
+  active project's roots only; anything else reports that the
+  folder belongs to another project, or that it left the
+  workspace.
+
 **From the first-time developer audit**
 
 - **Every close route protects drafts.** The title-bar button asked, but

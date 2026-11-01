@@ -1,6 +1,7 @@
 // Left code panel: workspace folders. It shares the session with the
 // editor through the provider (a single truth).
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { activeProjectRoots } from "../workspace/activeProject";
 import { normalizeCodeError, setRootAiBlocked } from "./client";
 import { useCodeWorkspace } from "./useCodeWorkspace";
 import { useRequirementsUi } from "../requirements/uiStore";
@@ -18,6 +19,9 @@ export function CodeTreePane() {
     adding,
     addError,
     handleAddRoot,
+    addConfirm,
+    confirmAddFolder,
+    cancelAddFolder,
     tabs,
     scopeNotice,
     treeReveal,
@@ -48,7 +52,23 @@ export function CodeTreePane() {
   const setMuseTarget = useRequirementsUi((s) => s.setMuseTarget);
   const [aiBlockError, setAiBlockError] = useState<string | null>(null);
   const hiddenProjects = useRequirementsUi((s) => s.mapHiddenProjects);
-  const toggleMapProject = useRequirementsUi((s) => s.toggleMapProject);
+  const openedProjects = useRequirementsUi((s) => s.mapOpenedProjects);
+  const setMapProjectHidden = useRequirementsUi((s) => s.setMapProjectHidden);
+  const recordMapProjectOpened = useRequirementsUi((s) => s.recordMapProjectOpened);
+  // Opening a service (name click or eye) records it, so it starts
+  // open from then on; closing only hides it.
+  function openService(rootId: string, rel: string) {
+    const key = `${rootId}::${rel}`;
+    setMapProjectHidden(key, false);
+    recordMapProjectOpened(key);
+  }
+  // One active project: other projects' folders and loose folders stay
+  // stored but hidden (their flags, including Never send to Muse, are
+  // untouched and still enforced in the backend).
+  const visibleRoots = useMemo(
+    () => activeProjectRoots(roots, selectedProjectId),
+    [roots, selectedProjectId],
+  );
 
   if (!desktop) {
     return <p className="hint">The code workspace requires desktop Ruth IDE.</p>;
@@ -57,7 +77,7 @@ export function CodeTreePane() {
   return (
     <>
       <CodeTree
-        roots={roots}
+        roots={visibleRoots}
         loading={rootsLoading}
         error={rootsError}
         onRetry={() => void reloadRoots()}
@@ -80,7 +100,12 @@ export function CodeTreePane() {
         mapHidden={mapHidden}
         onToggleMapRoot={toggleMapRoot}
         archScope={archScope}
-        onArchScope={setArchScope}
+        onFocusProject={(rootId, rel) => {
+          // Focusing opens the eye, records the service, and narrows
+          // the board to it; the eye alone never changes the scope.
+          openService(rootId, rel);
+          setArchScope({ kind: "project", rootId, rel });
+        }}
         folderSelection={folderSelection}
         onSelectFolder={(rootId, rel) => setCodeFolderSelection({ rootId, rel })}
         onAnalyzeFolder={(rootId, rel) => setArchScope({ kind: "folder", rootId, rel })}
@@ -91,7 +116,15 @@ export function CodeTreePane() {
             .catch((raw) => setAiBlockError(normalizeCodeError(raw).message));
         }}
         hiddenProjects={hiddenProjects}
-        onToggleMapProject={toggleMapProject}
+        openedProjects={openedProjects}
+        onToggleMapProject={(key, show) => {
+          if (show) {
+            const sep = key.indexOf("::");
+            openService(key.slice(0, sep), key.slice(sep + 2));
+          } else {
+            setMapProjectHidden(key, true);
+          }
+        }}
       />
       {aiBlockError !== null && (
         <p className="error" role="alert">
@@ -102,6 +135,37 @@ export function CodeTreePane() {
         <p className="error" role="alert">
           {addError}
         </p>
+      )}
+      {addConfirm !== null && (
+        <div className="modal-backdrop" onClick={cancelAddFolder}>
+          <div
+            className="modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Move folder to this project"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3>Move folder to this project?</h3>
+            <p>
+              &ldquo;{addConfirm.root.name}&rdquo; already belongs to project &ldquo;
+              {projectNames[addConfirm.fromProjectId] ?? addConfirm.fromProjectId}&rdquo;. Moving
+              it here removes it from there. No file changes on disk.
+            </p>
+            <div className="button-row">
+              <button
+                type="button"
+                className="primary"
+                disabled={adding}
+                onClick={() => void confirmAddFolder()}
+              >
+                {adding ? "Moving…" : "Move here"}
+              </button>
+              <button type="button" className="secondary" onClick={cancelAddFolder} autoFocus>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {scopeNotice !== null && (
         <p className="notice" role="status">

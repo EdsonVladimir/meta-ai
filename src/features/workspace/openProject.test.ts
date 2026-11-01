@@ -1,7 +1,12 @@
 // openProject: reuse known folders, register new ones, warn on
 // same-name projects instead of merging anything silently.
 import { describe, expect, it } from "vitest";
-import { openProjectFromFolder, samePath, type OpenProjectDeps } from "./openProject";
+import {
+  openProjectFromFolder,
+  resolvePickedProject,
+  samePath,
+  type OpenProjectDeps,
+} from "./openProject";
 
 function deps(overrides: Partial<OpenProjectDeps> = {}): OpenProjectDeps & {
   calls: { created: number; renamed: number; added: number; linked: number };
@@ -34,6 +39,30 @@ describe("samePath", () => {
   it("ignores trailing separators", () => {
     expect(samePath("/repo/a", "/repo/a/")).toBe(true);
     expect(samePath("/repo/a", "/repo/b")).toBe(false);
+  });
+});
+
+describe("resolvePickedProject", () => {
+  it("returns the live project of a known folder", async () => {
+    const clients = deps({
+      listRoots: async () => [{ id: "root-1", path: "/repo/shop/", projectId: "proy-1" }],
+      listProjects: async () => [{ id: "proy-1", name: "Shop" }],
+    });
+    expect(await resolvePickedProject(clients, "/repo/shop")).toBe("proy-1");
+    expect(clients.calls).toEqual({ created: 0, renamed: 0, added: 0, linked: 0 });
+  });
+
+  it("returns null when opening would create or link", async () => {
+    const clients = deps({
+      listRoots: async () => [
+        { id: "root-1", path: "/repo/loose", projectId: null },
+        { id: "root-2", path: "/repo/dead", projectId: "proy-gone" },
+      ],
+      listProjects: async () => [{ id: "proy-1", name: "Shop" }],
+    });
+    expect(await resolvePickedProject(clients, "/repo/unknown")).toBeNull();
+    expect(await resolvePickedProject(clients, "/repo/loose")).toBeNull();
+    expect(await resolvePickedProject(clients, "/repo/dead")).toBeNull();
   });
 });
 

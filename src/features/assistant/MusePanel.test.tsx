@@ -543,6 +543,26 @@ describe("MusePanel", () => {
     expect(useRequirementsUi.getState().museGeneration).toBeNull();
   });
 
+  it("reports pending files so the close gate can protect the thread", async () => {
+    const onPendingChange = vi.fn();
+    render(
+      <MusePanel
+        target={target}
+        roots={[root]}
+        onClose={() => {}}
+        onPropose={() => {}}
+        onPendingChange={onPendingChange}
+        api={api()}
+      />,
+    );
+    await screen.findByRole("status");
+    expect(onPendingChange).toHaveBeenCalledWith(0);
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByRole("button", { name: "Show on X-ray" });
+    expect(onPendingChange).toHaveBeenLastCalledWith(2);
+  });
+
   it("closes at once with nothing pending", async () => {
     const onClose = vi.fn();
     render(

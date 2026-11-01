@@ -63,13 +63,15 @@ export type RightTab = "review" | "assistant";
  * document tabs above every view, so no "code" view is required. */
 export type CenterView =
   | "welcome"
-  | "overview"
   | "requirements"
   | "design"
   | "impact"
   | "mockups"
   | "architecture"
   | "traceability";
+
+/** First view of an opened project: its maps, or an empty state with Add folder. */
+export const WORKSPACE_LANDING_VIEW: CenterView = "architecture";
 
 /** "Open terminal here" request from the code tree. */
 export interface TerminalCwdRequest {
@@ -183,6 +185,8 @@ interface RequirementsUiState {
   saveAllResult: SaveAllResult | null;
   /** Discard-all request counter (workspace close → draft owners). */
   discardSignal: number;
+  /** Close-code-tabs request counter (workspace close → code session). */
+  codeTabsCloseSignal: number;
   /** Terminal takes the center height temporarily (session-only). */
   terminalMaximized: boolean;
   /** Roots hidden from the project maps (session-only, never persisted). */
@@ -191,6 +195,8 @@ interface RequirementsUiState {
   archScope: ArchScope;
   /** Detected projects hidden from the joint view, by scope key. */
   mapHiddenProjects: Record<string, boolean>;
+  /** Detected projects the person opened, by scope key (start open). */
+  mapOpenedProjects: Record<string, boolean>;
   /** Folder picked in the code tree for exploring (session-only). */
   codeFolderSelection: CodeFolderSelection | null;
   museTarget: MuseTarget | null;
@@ -232,12 +238,16 @@ interface RequirementsUiState {
   requestSaveAll: () => void;
   resolveSaveAll: (result: SaveAllResult | null) => void;
   requestDiscard: () => void;
+  requestCloseCodeTabs: () => void;
   setTerminalMaximized: (maximized: boolean) => void;
   /** Clears persisted sizes back to CSS defaults (visibility untouched). */
   resetLayout: () => void;
   toggleMapRoot: (rootId: string) => void;
   setArchScope: (scope: ArchScope) => void;
-  toggleMapProject: (key: string) => void;
+  /** Explicit service eye state (hides win over the open-by-default rule). */
+  setMapProjectHidden: (key: string, hidden: boolean) => void;
+  /** Records a service the person opened (starts open above the threshold). */
+  recordMapProjectOpened: (key: string) => void;
   showAllMapProjects: () => void;
   setCodeFolderSelection: (selection: CodeFolderSelection | null) => void;
   /** Opens the Muse dialog on the target, in the Assistant tab. */
@@ -309,7 +319,7 @@ function inRange(value: unknown, min: number, max: number): value is number {
  * Validates the persisted fragment: corrupt or out-of-range values go
  * back to null (= default). Pure and tested.
  */
-function validateHiddenProjects(persisted: unknown): Record<string, boolean> {
+function validateProjectFlags(persisted: unknown): Record<string, boolean> {
   if (typeof persisted !== "object" || persisted === null || Array.isArray(persisted)) return {};
   const out: Record<string, boolean> = {};
   for (const [key, value] of Object.entries(persisted)) {
@@ -369,6 +379,7 @@ export function validateLayoutPartial(persisted: unknown): {
   terminalHeight: number | null;
   terminalPaneWidths: number[] | null;
   mapHiddenProjects: Record<string, boolean>;
+  mapOpenedProjects: Record<string, boolean>;
   archInspectorWidth: number | null;
   layerOverrides: LayerOverrides;
   archExternalFolders: ExternalFolder[];
@@ -380,6 +391,7 @@ export function validateLayoutPartial(persisted: unknown): {
     terminalHeight: null,
     terminalPaneWidths: null,
     mapHiddenProjects: {},
+    mapOpenedProjects: {},
     archInspectorWidth: null,
     layerOverrides: {},
     archExternalFolders: [],
@@ -411,7 +423,8 @@ export function validateLayoutPartial(persisted: unknown): {
       widths.every((w): w is number => typeof w === "number" && Number.isFinite(w) && w > 0 && w < 1)
         ? [...widths]
         : null,
-    mapHiddenProjects: validateHiddenProjects(partial.mapHiddenProjects),
+    mapHiddenProjects: validateProjectFlags(partial.mapHiddenProjects),
+    mapOpenedProjects: validateProjectFlags(partial.mapOpenedProjects),
     archInspectorWidth: inRange(
       partial.archInspectorWidth,
       MIN_ARCH_INSPECTOR_WIDTH,
@@ -449,10 +462,12 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   saveAllSignal: 0,
   saveAllResult: null,
   discardSignal: 0,
+  codeTabsCloseSignal: 0,
   terminalMaximized: false,
   mapHiddenRoots: {},
   archScope: { kind: "all" },
   mapHiddenProjects: {},
+  mapOpenedProjects: {},
   codeFolderSelection: null,
   museTarget: null,
   museGeneration: null,
@@ -468,10 +483,10 @@ export const useRequirementsUi = create<RequirementsUiState>()(
       mapHiddenRoots: { ...state.mapHiddenRoots, [rootId]: !state.mapHiddenRoots[rootId] },
     })),
   setArchScope: (archScope) => set({ archScope }),
-  toggleMapProject: (key) =>
-    set((state) => ({
-      mapHiddenProjects: { ...state.mapHiddenProjects, [key]: !state.mapHiddenProjects[key] },
-    })),
+  setMapProjectHidden: (key, hidden) =>
+    set((state) => ({ mapHiddenProjects: { ...state.mapHiddenProjects, [key]: hidden } })),
+  recordMapProjectOpened: (key) =>
+    set((state) => ({ mapOpenedProjects: { ...state.mapOpenedProjects, [key]: true } })),
   showAllMapProjects: () => set({ mapHiddenProjects: {} }),
   setCodeFolderSelection: (codeFolderSelection) => set({ codeFolderSelection }),
   setMuseTarget: (museTarget) =>
@@ -518,6 +533,8 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   requestSaveAll: () => set((state) => ({ saveAllSignal: state.saveAllSignal + 1 })),
   resolveSaveAll: (saveAllResult) => set({ saveAllResult }),
   requestDiscard: () => set((state) => ({ discardSignal: state.discardSignal + 1 })),
+  requestCloseCodeTabs: () =>
+    set((state) => ({ codeTabsCloseSignal: state.codeTabsCloseSignal + 1 })),
   setTerminalMaximized: (terminalMaximized) => set({ terminalMaximized }),
   resetLayout: () =>
     set({
@@ -568,6 +585,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
         terminalHeight: state.terminalHeight,
         terminalPaneWidths: state.terminalPaneWidths,
         mapHiddenProjects: state.mapHiddenProjects,
+        mapOpenedProjects: state.mapOpenedProjects,
         archInspectorWidth: state.archInspectorWidth,
         layerOverrides: state.layerOverrides,
         archExternalFolders: state.archExternalFolders,

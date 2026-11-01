@@ -162,7 +162,11 @@ function renderView(options: {
   scope?: ArchScope;
   onScopeChange?: (scope: ArchScope) => void;
   hiddenProjects?: Record<string, boolean>;
+  openedProjects?: Record<string, boolean>;
   onShowAllProjects?: () => void;
+  onOpenProject?: (key: string) => void;
+  onAddFolder?: () => void;
+  rootsLoading?: boolean;
   groupBy?: "symbols" | "files";
   proposalFiles?: CodeProposalFileDto[] | null;
   proposalGeneration?: CodeGenerationDto | null;
@@ -221,10 +225,14 @@ function renderView(options: {
           setScope(next);
         }}
         hiddenProjects={options.hiddenProjects ?? hiddenProjects}
+        openedProjects={options.openedProjects}
         onShowAllProjects={() => {
           options.onShowAllProjects?.();
           setHiddenProjects({});
         }}
+        onOpenProject={options.onOpenProject}
+        onAddFolder={options.onAddFolder}
+        rootsLoading={options.rootsLoading}
         proposalFiles={options.proposalFiles ?? proposalFiles}
         proposalGeneration={options.proposalGeneration}
         reanalyzeRequest={options.reanalyzeRequest ?? reanalyzeRequest}
@@ -989,9 +997,100 @@ describe("nested project scopes", () => {
       hiddenProjects: { "acme::apps/fe": true, "acme::apps/be": true },
       onShowAllProjects,
     });
-    expect(await screen.findByText(/Everything is hidden from view/)).toBeTruthy();
+    expect(
+      await screen.findByText("All services are hidden. Click a service in Folders to map it."),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Show all" }));
     expect(onShowAllProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for a first click above 3 detected services", async () => {
+    const apps = ["fe", "be", "billing", "auth"];
+    const tree: Record<string, CodeListingDto> = {
+      "acme::": listing([{ name: "apps", rel: "apps", kind: "dir" }]),
+      "acme::apps": listing(
+        apps.map((name) => ({ name, rel: `apps/${name}`, kind: "dir" as const })),
+      ),
+    };
+    for (const [index, name] of apps.entries()) {
+      tree[`acme::apps/${name}`] = listing([
+        { name: "package.json", rel: `apps/${name}/package.json`, kind: "file" },
+        {
+          name: index % 2 === 0 ? "angular.json" : "nest-cli.json",
+          rel: `apps/${name}/${index % 2 === 0 ? "angular.json" : "nest-cli.json"}`,
+          kind: "file",
+        },
+        { name: "main.ts", rel: `apps/${name}/main.ts`, kind: "file" },
+      ]);
+    }
+    const analyzeTs = vi.fn((files: Parameters<ProjectMapDeps["analyzeTs"]>[0]) =>
+      Promise.resolve(analyzeTsFiles(files)),
+    );
+    const deps: ProjectMapDeps = {
+      listDir: async (rootId, rel) =>
+        tree[`${rootId}::${rel}`] ?? { entries: [], truncated: false },
+      readFile: async (_rootId, rel) => {
+        if (rel.endsWith("package.json")) {
+          return { text: `{"name":"${rel}"}`, fingerprint: "h", size: 10 };
+        }
+        return { text: FE_CTRL, fingerprint: "h", size: FE_CTRL.length };
+      },
+      analyzeTs,
+    };
+    const onOpenProject = vi.fn();
+    renderView({ roots: NESTED_ROOTS, deps, onOpenProject });
+    expect(
+      await screen.findByText("All services are hidden. Click a service in Folders to map it."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("figure")).toBeNull();
+    expect(analyzeTs).not.toHaveBeenCalled();
+    // Show all opens every detected service, even above the threshold.
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    expect(onOpenProject).toHaveBeenCalledTimes(4);
+    expect(onOpenProject).toHaveBeenCalledWith("acme::apps/fe");
+    expect(onOpenProject).toHaveBeenCalledWith("acme::apps/be");
+    expect(onOpenProject).toHaveBeenCalledWith("acme::apps/billing");
+    expect(onOpenProject).toHaveBeenCalledWith("acme::apps/auth");
+    cleanup();
+    // The first click analyzes only that service.
+    renderView({ roots: NESTED_ROOTS, deps, openedProjects: { "acme::apps/fe": true } });
+    expect(await screen.findByLabelText("Diagram of fe")).toBeTruthy();
+    expect(screen.queryByLabelText("Diagram of be")).toBeNull();
+    expect(analyzeTs).toHaveBeenCalledTimes(1);
+  });
+
+  it("reopening a service reuses its cached board", async () => {
+    const analyzeTs = vi.fn((files: Parameters<ProjectMapDeps["analyzeTs"]>[0]) =>
+      Promise.resolve(analyzeTsFiles(files)),
+    );
+    const view = renderView({ roots: NESTED_ROOTS, deps: nestedDeps({ analyzeTs }) });
+    expect(await screen.findByLabelText("Diagram of fe")).toBeTruthy();
+    expect(await screen.findByLabelText("Diagram of be")).toBeTruthy();
+    const analyzed = analyzeTs.mock.calls.length;
+    expect(analyzed).toBeGreaterThan(0);
+    view.setHiddenProjects({ "acme::apps/fe": true, "acme::apps/be": true });
+    await waitFor(() => expect(screen.queryByLabelText("Diagram of fe")).toBeNull());
+    expect(analyzeTs.mock.calls.length).toBe(analyzed);
+    view.setHiddenProjects({});
+    expect(await screen.findByLabelText("Diagram of fe")).toBeTruthy();
+    expect(await screen.findByLabelText("Diagram of be")).toBeTruthy();
+    expect(analyzeTs.mock.calls.length).toBe(analyzed);
+  });
+
+  it("offers Add folder when the project has no folders", async () => {
+    const onAddFolder = vi.fn();
+    renderView({ roots: [], onAddFolder });
+    expect(await screen.findByText(/No folders linked to this project yet/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add folder" }));
+    expect(onAddFolder).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the root list instead of flashing the empty state", async () => {
+    const onAddFolder = vi.fn();
+    renderView({ roots: [], rootsLoading: true, onAddFolder });
+    expect(await screen.findByText("Loading folders…")).toBeTruthy();
+    expect(screen.queryByText(/No folders linked to this project yet/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add folder" })).toBeNull();
   });
 
   it("analyzes an explicit folder including nested projects", async () => {
@@ -1103,7 +1202,7 @@ describe("nested project scopes", () => {
     expect(analyzeTs.mock.calls.length).toBe(calls);
   });
 
-  it("scopes to a project outside the associated roots", async () => {
+  it("never renders a scope outside the active project", async () => {
     const other = root({ id: "other", name: "other", projectId: null });
     const tree: Record<string, CodeListingDto> = {
       ...NESTED_TREE,
@@ -1113,6 +1212,9 @@ describe("nested project scopes", () => {
         { name: "svc.ts", rel: "svc/svc.ts", kind: "file" },
       ]),
     };
+    const analyzeTs = vi.fn((files: Parameters<ProjectMapDeps["analyzeTs"]>[0]) =>
+      Promise.resolve(analyzeTsFiles(files)),
+    );
     const deps = nestedDeps({
       listDir: async (rootId, rel) => tree[`${rootId}::${rel}`] ?? { entries: [], truncated: false },
       readFile: async (rootId, rel) => {
@@ -1124,6 +1226,7 @@ describe("nested project scopes", () => {
         }
         return nestedDeps().readFile(rootId, rel);
       },
+      analyzeTs,
     });
     render(
       <ProjectMapView
@@ -1140,8 +1243,39 @@ describe("nested project scopes", () => {
         onShowAllProjects={() => {}}
       />,
     );
-    expect(await screen.findByLabelText("Diagram of svc")).toBeTruthy();
+    expect(await screen.findByText("The scoped folder belongs to another project.")).toBeTruthy();
+    expect(screen.queryByLabelText("Diagram of svc")).toBeNull();
     expect(screen.queryByLabelText("Diagram of fe")).toBeNull();
+    expect(analyzeTs).not.toHaveBeenCalled();
+  });
+
+  it("shows only the empty state when a stale scope outlives the last folder", async () => {
+    // The reported screenshot: "No folders linked" together with
+    // analyzed files from another project. A foreign scope now
+    // renders nothing, so the empty state stands alone.
+    const other = root({ id: "other", name: "other", projectId: "proy-2" });
+    const analyzeTs = vi.fn((files: Parameters<ProjectMapDeps["analyzeTs"]>[0]) =>
+      Promise.resolve(analyzeTsFiles(files)),
+    );
+    const deps = nestedDeps({ analyzeTs });
+    render(
+      <ProjectMapView
+        projectId="p1"
+        roots={[other]}
+        hidden={{}}
+        onToggleRoot={() => {}}
+        tabs={[]}
+        deps={deps}
+        groupBy="files"
+        scope={{ kind: "folder", rootId: "other", rel: "svc" }}
+        onScopeChange={() => {}}
+        hiddenProjects={{}}
+        onShowAllProjects={() => {}}
+      />,
+    );
+    expect(await screen.findByText(/No folders linked to this project yet/)).toBeTruthy();
+    expect(screen.queryByRole("figure")).toBeNull();
+    expect(analyzeTs).not.toHaveBeenCalled();
   });
 
   it("reports detected-but-unanalyzed projects honestly", async () => {

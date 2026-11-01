@@ -1,11 +1,17 @@
 // Workspace close gate: dirty documents are saved or discarded with
-// confirmation; active terminals are reported (they keep running).
-// One dialog, explicit choice, cancel always available.
+// confirmation; active terminals are reported (they keep running);
+// pending Muse files are reported (memory-only conversations go
+// with the switch, while the proposals stay stored). One dialog,
+// explicit choice, cancel always available.
+import { closeGateCopy, type CloseGateMode } from "./closeGate";
+
 interface WorkspaceCloseDialogProps {
+  mode: CloseGateMode;
   dirtyLabels: string[];
   terminalCount: number;
   terminalCwds: string[];
   terminalsUnknown?: boolean;
+  museNotice?: string | null;
   saving: boolean;
   saveError: string | null;
   onSaveAndClose: () => void;
@@ -14,26 +20,29 @@ interface WorkspaceCloseDialogProps {
 }
 
 export function WorkspaceCloseDialog({
+  mode,
   dirtyLabels,
   terminalCount,
   terminalCwds,
   terminalsUnknown = false,
+  museNotice = null,
   saving,
   saveError,
   onSaveAndClose,
   onCloseWithoutSaving,
   onCancel,
 }: WorkspaceCloseDialogProps) {
+  const copy = closeGateCopy(mode, dirtyLabels.length > 0, saving);
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div
         className="modal"
         role="alertdialog"
         aria-modal="true"
-        aria-label="Close workspace"
+        aria-label={copy.title}
         onClick={(event) => event.stopPropagation()}
       >
-        <h3>Close workspace?</h3>
+        <h3>{copy.title}</h3>
         {dirtyLabels.length === 0 ? (
           <p>No unsaved changes.</p>
         ) : (
@@ -57,20 +66,25 @@ export function WorkspaceCloseDialog({
             The terminal list could not be checked; any sessions keep running.
           </p>
         )}
+        {museNotice !== null && (
+          <p className="hint" role="note">
+            {museNotice}
+          </p>
+        )}
         {saveError !== null && (
           <p className="error" role="alert">
             {saveError}
           </p>
         )}
         <div className="button-row">
-          {dirtyLabels.length > 0 && (
+          {copy.saveLabel !== null && (
             <button
               type="button"
               className="primary"
               disabled={saving}
               onClick={onSaveAndClose}
             >
-              {saving ? "Saving…" : "Save all and close"}
+              {copy.saveLabel}
             </button>
           )}
           <button
@@ -79,7 +93,7 @@ export function WorkspaceCloseDialog({
             disabled={saving}
             onClick={onCloseWithoutSaving}
           >
-            {dirtyLabels.length > 0 ? "Close without saving" : "Close workspace"}
+            {copy.closeLabel}
           </button>
           <button type="button" className="secondary" disabled={saving} onClick={onCancel} autoFocus>
             Cancel

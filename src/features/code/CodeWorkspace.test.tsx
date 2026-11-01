@@ -12,8 +12,8 @@ afterEach(() => {
 
 const backend = vi.hoisted(() => ({
   roots: [
-    { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: null },
-    { id: "root-2", path: "/tmp/be", name: "backend", missing: false, projectId: null },
+    { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: "proy-1" },
+    { id: "root-2", path: "/tmp/be", name: "backend", missing: false, projectId: "proy-1" },
   ] as Array<{ id: string; path: string; name: string; missing: boolean; projectId: string | null }>,
   dirs: {
     "root-1::": [
@@ -73,12 +73,14 @@ let fake: ReturnType<typeof createMonacoFake>;
 beforeEach(() => {
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   backend.roots = [
-    { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: null },
-    { id: "root-2", path: "/tmp/be", name: "backend", missing: false, projectId: null },
+    { id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: "proy-1" },
+    { id: "root-2", path: "/tmp/be", name: "backend", missing: false, projectId: "proy-1" },
   ];
   backend.calls = [];
   fake = createMonacoFake();
-  useRequirementsUi.getState().setCenterView("overview");
+  useRequirementsUi.getState().setCenterView("architecture");
+  // One active project: the folders below belong to it, so they show.
+  useRequirementsUi.getState().setSelection({ projectId: "proy-1", moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null });
 });
 
 describe("CodeWorkspace", () => {

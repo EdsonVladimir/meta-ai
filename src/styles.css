@@ -3725,13 +3725,6 @@ button.code-name.code-folder-selected {
   font-weight: 600;
 }
 
-/* Overview: one line per analyzed scope, grouped by root. */
-.overview-scopes {
-  list-style: none;
-  margin: var(--sp-xs) 0;
-  padding: 0;
-}
-
 .code-file {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -5426,7 +5419,7 @@ button.archboard-member:hover {
   text-decoration: underline;
 }
 
-/* ---- Workspace: bar, welcome, overview, recents ---- */
+/* ---- Workspace: bar, welcome, recents ---- */
 .workspace-bar {
   flex: none;
   display: flex;
@@ -5611,45 +5604,6 @@ button.archboard-member:hover {
   border: 1px solid var(--warn);
   border-radius: var(--r-sm);
   padding: 0 0.3rem;
-}
-
-.overview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-md);
-}
-
-.overview-roots {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-xs);
-}
-
-.overview-root {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: var(--sp-sm) var(--sp-md);
-}
-
-.overview-root p {
-  margin: var(--sp-xs) 0 0;
-}
-
-.overview-root-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.overview-root-head strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .gate-list {

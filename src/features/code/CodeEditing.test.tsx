@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 const backend = vi.hoisted(() => ({
-  roots: [{ id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: null }],
+  roots: [{ id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: "proy-1" }],
   dirs: {
     "root-1::": [{ name: "main.ts", rel: "main.ts", kind: "file", size: 2 }],
   } as Record<string, Array<{ name: string; rel: string; kind: string; size: number | null }>>,
@@ -76,18 +76,20 @@ vi.mock("./monacoLoader", () => ({
 
 import { CodeWorkspace, type CodeSaveApi } from "./CodeWorkspace";
 import { createMonacoFake } from "./monacoFake";
-import type { DocSaveState } from "../requirements/uiStore";
+import { useRequirementsUi, type DocSaveState } from "../requirements/uiStore";
 
 let fake: ReturnType<typeof createMonacoFake>;
 
 beforeEach(() => {
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-  backend.roots = [{ id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: null }];
+  backend.roots = [{ id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: "proy-1" }];
   backend.files = { "root-1::main.ts": { text: "one", fingerprint: "f0", size: 3 } };
   backend.writes = [];
   backend.failNext = null;
   backend.seq = 0;
   fake = createMonacoFake();
+  // One active project: the folder below belongs to it, so it shows.
+  useRequirementsUi.getState().setSelection({ projectId: "proy-1", moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null });
 });
 
 async function openFile() {

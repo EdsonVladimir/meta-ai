@@ -67,6 +67,7 @@ describe("WorkspaceCloseDialog", () => {
     const onCloseWithoutSaving = vi.fn();
     render(
       <WorkspaceCloseDialog
+        mode="close"
         dirtyLabels={["req: Login", "code: a.ts"]}
         terminalCount={2}
         terminalCwds={["/repo/a", "/repo/b"]}
@@ -89,6 +90,7 @@ describe("WorkspaceCloseDialog", () => {
     const onCloseWithoutSaving = vi.fn();
     render(
       <WorkspaceCloseDialog
+        mode="close"
         dirtyLabels={[]}
         terminalCount={0}
         terminalCwds={[]}

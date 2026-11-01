@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 const backend = vi.hoisted(() => ({
-  roots: [{ id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: null }],
+  roots: [{ id: "root-1", path: "/tmp/fe", name: "frontend", missing: false, projectId: "proy-1" }],
   dirs: {
     "root-1::": [
       { name: "src", rel: "src", kind: "dir", size: null },
@@ -53,6 +53,7 @@ vi.mock("./monacoLoader", () => ({
 import { CodeWorkspace } from "./CodeWorkspace";
 import { createMonacoFake } from "./monacoFake";
 import { CODE_EDITOR_PREFS_KEY } from "./editorPrefs";
+import { useRequirementsUi } from "../requirements/uiStore";
 
 let fake: ReturnType<typeof createMonacoFake>;
 
@@ -60,6 +61,8 @@ beforeEach(() => {
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   window.localStorage.clear();
   fake = createMonacoFake();
+  // One active project: the folder below belongs to it, so it shows.
+  useRequirementsUi.getState().setSelection({ projectId: "proy-1", moduleId: null, requirementId: null, designId: null, mockupId: null, screenId: null });
 });
 
 async function openMain() {

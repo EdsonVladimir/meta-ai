@@ -24,10 +24,12 @@ export function ArchitectureView() {
     handleAddActiveFolder,
     openFileByRef,
     notifyFileChanged,
+    handleAddRoot,
     prefs,
     loader,
     selectedProjectId,
     selectedModuleId,
+    rootsLoading,
   } = useCodeWorkspace();
   const projectId = useRequirementsUi((s) => s.selection.projectId);
   const hidden = useRequirementsUi((s) => s.mapHiddenRoots);
@@ -35,8 +37,10 @@ export function ArchitectureView() {
   const archScope = useRequirementsUi((s) => s.archScope);
   const setArchScope = useRequirementsUi((s) => s.setArchScope);
   const hiddenProjects = useRequirementsUi((s) => s.mapHiddenProjects);
+  const openedProjects = useRequirementsUi((s) => s.mapOpenedProjects);
   const showAllMapProjects = useRequirementsUi((s) => s.showAllMapProjects);
-  const toggleMapProject = useRequirementsUi((s) => s.toggleMapProject);
+  const setMapProjectHidden = useRequirementsUi((s) => s.setMapProjectHidden);
+  const recordMapProjectOpened = useRequirementsUi((s) => s.recordMapProjectOpened);
   // One zoom level for the architecture boards. It lives here so
   // switching scopes or panels never resets it.
   const [zoom, setZoom] = useState(1);
@@ -235,8 +239,12 @@ export function ArchitectureView() {
         scope={archScope}
         onScopeChange={setArchScope}
         hiddenProjects={hiddenProjects}
+        openedProjects={openedProjects}
         onShowAllProjects={showAllMapProjects}
-        onToggleProject={toggleMapProject}
+        onOpenProject={(key) => {
+          setMapProjectHidden(key, false);
+          recordMapProjectOpened(key);
+        }}
         proposalFiles={proposalFiles}
         onOpenProposal={() => {
           if (proposeOpen) {
@@ -265,6 +273,12 @@ export function ArchitectureView() {
         reanalyzeRequest={reanalyzeRequest}
         prefs={prefs}
         loader={loader}
+        onAddFolder={() => {
+          // The move confirmation lives in Folders: make sure it is seen.
+          setPanel("navigator", true);
+          void handleAddRoot();
+        }}
+        rootsLoading={rootsLoading}
       />
       {proposeOpen && canPropose && (
         <CodeProposalDialog

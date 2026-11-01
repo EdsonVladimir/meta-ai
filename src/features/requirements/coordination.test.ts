@@ -269,7 +269,6 @@ describe("resolveSaveTarget", () => {
     expect(resolveSaveTarget({ ...base, centerView: "design" })).toBeNull();
     expect(resolveSaveTarget({ ...base, centerView: "impact" })).toBeNull();
     expect(resolveSaveTarget({ ...base, centerView: "traceability" })).toBeNull();
-    expect(resolveSaveTarget({ ...base, centerView: "overview" })).toBeNull();
     expect(resolveSaveTarget({ ...base, centerView: "architecture" })).toBeNull();
     expect(resolveSaveTarget({ ...base, centerView: "welcome" })).toBeNull();
   });

@@ -72,29 +72,38 @@ fn path_set(paths: &[String]) -> Vec<String> {
     sorted
 }
 
-/// Applies a touch to the list: same id wins, otherwise same path
-/// set reuses the entry (keeping id and creation time); anything
-/// else is appended. Sorted by last_opened, newest first, pruned
-/// to the kept cap.
+/// Applies a touch to the list: same id wins, then same project,
+/// then same non-empty path set reuses the entry (keeping id and
+/// creation time); anything else is appended. A project keeps one
+/// entry, so its other entries are dropped: a stale one would
+/// restore folders the person removed. Sorted by last_opened,
+/// newest first, pruned to the kept cap. Two entries never match
+/// by path set when the set is empty, so folder-less projects
+/// keep separate entries.
 pub fn apply_touch(recents: &[StoredRecent], entry: StoredRecent) -> Vec<StoredRecent> {
+    let same_project =
+        |recent: &StoredRecent| entry.project_id.is_some() && recent.project_id == entry.project_id;
+    let same_paths = |recent: &StoredRecent| {
+        !entry.root_paths.is_empty() && path_set(&recent.root_paths) == path_set(&entry.root_paths)
+    };
+    let target = recents
+        .iter()
+        .position(|recent| recent.id == entry.id)
+        .or_else(|| recents.iter().position(same_project))
+        .or_else(|| recents.iter().position(same_paths));
     let mut next: Vec<StoredRecent> = Vec::with_capacity(recents.len() + 1);
-    let mut placed = false;
-    for recent in recents {
-        if !placed
-            && (recent.id == entry.id
-                || path_set(&recent.root_paths) == path_set(&entry.root_paths))
-        {
-            placed = true;
+    for (index, recent) in recents.iter().enumerate() {
+        if Some(index) == target {
             next.push(StoredRecent {
                 id: recent.id.clone(),
                 created_at: recent.created_at.clone(),
                 ..entry.clone()
             });
-        } else {
+        } else if !same_project(recent) {
             next.push(recent.clone());
         }
     }
-    if !placed {
+    if target.is_none() {
         next.push(entry);
     }
     next.sort_by(|a, b| {
@@ -174,9 +183,95 @@ mod tests {
     }
 
     #[test]
+    fn touch_keeps_folderless_projects_in_separate_entries() {
+        // Two projects without folders share the empty path set, so
+        // it must never match: each keeps its own entry. Reopening
+        // the same entry still reuses it by id.
+        let first = StoredRecent {
+            project_id: Some("proy-1".to_string()),
+            ..entry("ws-1", &[], "2026-10-28T00:00:00Z")
+        };
+        let second = StoredRecent {
+            project_id: Some("proy-2".to_string()),
+            ..entry("ws-2", &[], "2026-10-29T00:00:00Z")
+        };
+        let next = apply_touch(&[first.clone()], second);
+        assert_eq!(next.len(), 2);
+        assert_eq!(next[0].id, "ws-2");
+        assert_eq!(next[1], first);
+        let reopened = StoredRecent {
+            label: "Shop again".to_string(),
+            last_opened: "2026-10-30T00:00:00Z".to_string(),
+            ..entry("ws-1", &[], "2026-10-30T00:00:00Z")
+        };
+        let again = apply_touch(&next, reopened);
+        assert_eq!(again.len(), 2);
+        assert_eq!(again[0].id, "ws-1");
+        assert_eq!(again[0].label, "Shop again");
+    }
+
+    fn project_entry(id: &str, project: &str, paths: &[&str], opened: &str) -> StoredRecent {
+        StoredRecent {
+            project_id: Some(project.to_string()),
+            ..entry(id, paths, opened)
+        }
+    }
+
+    #[test]
+    fn touch_reuses_the_project_entry_when_its_folders_change() {
+        // A touch with a new id and other paths is still the same
+        // project: the old paths must go, or reopening the entry
+        // would restore a folder the person removed.
+        let list = vec![project_entry(
+            "ws-1",
+            "proy-1",
+            &["/a", "/b"],
+            "2026-10-28T00:00:00Z",
+        )];
+        let touched = project_entry("ws-9", "proy-1", &["/b"], "2026-10-29T00:00:00Z");
+        let next = apply_touch(&list, touched);
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].id, "ws-1");
+        assert_eq!(next[0].root_paths, vec!["/b".to_string()]);
+        assert_eq!(next[0].created_at, "2026-10-01T00:00:00Z");
+    }
+
+    #[test]
+    fn touch_folds_duplicate_entries_of_one_project() {
+        // Lists written before this rule can hold several entries for
+        // one project: the touched one survives, the stale ones go.
+        let list = vec![
+            project_entry("ws-2", "proy-1", &["/a", "/b"], "2026-10-29T00:00:00Z"),
+            project_entry("ws-1", "proy-1", &["/b"], "2026-10-28T00:00:00Z"),
+            project_entry("ws-3", "proy-2", &["/c"], "2026-10-27T00:00:00Z"),
+        ];
+        let touched = project_entry("ws-1", "proy-1", &["/b"], "2026-10-30T00:00:00Z");
+        let next = apply_touch(&list, touched);
+        let ids: Vec<&str> = next.iter().map(|recent| recent.id.as_str()).collect();
+        assert_eq!(ids, vec!["ws-1", "ws-3"]);
+    }
+
+    #[test]
     fn remove_is_idempotent() {
         let list = vec![entry("ws-1", &["/a"], "2026-10-28T00:00:00Z")];
         assert!(apply_remove(&list, "ws-9").len() == 1);
         assert!(apply_remove(&list, "ws-1").is_empty());
+    }
+
+    #[test]
+    fn remove_forgets_one_entry_and_keeps_the_rest_intact() {
+        // Forgetting a recent drops its row only: the surviving
+        // entries keep their project reference, label and paths
+        // byte-identical, and project data lives in other tables
+        // this function cannot reach.
+        let list = vec![
+            entry("ws-1", &["/a"], "2026-10-28T00:00:00Z"),
+            StoredRecent {
+                project_id: Some("proy-1".to_string()),
+                ..entry("ws-2", &["/b"], "2026-10-29T00:00:00Z")
+            },
+        ];
+        let next = apply_remove(&list, "ws-1");
+        assert_eq!(next, vec![list[1].clone()]);
     }
 }
