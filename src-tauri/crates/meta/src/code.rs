@@ -8,13 +8,13 @@
 //! proposal writes nothing: accepting is a later human action, per
 //! file, with fingerprint and safe writing (see `ruth-api`).
 //!
-//! Documented limits: up to 5 files per proposal (64 KiB each), 8
+//! Documented limits: up to 12 files per proposal (64 KiB each), 12
 //! context files (8,000 characters each), 1 requirement (4,000
 //! characters) or 8 screen sources (4,000 each) plus the screen
-//! (6,000), and 80,000 total input characters. An optional project
+//! (6,000), and 160,000 total input characters. An optional project
 //! context (map up to 6,000 characters, 8 docs up to 6,000 each and
 //! 24,000 in total, 30,000 overall) takes only the room the message
-//! leaves inside those 80,000: its docs go before any scope file.
+//! leaves inside those 160,000: its docs go before any scope file.
 //! Paths are `/`-relative, confined to the sent roots: nothing
 //! absolute, no `..` or backslashes.
 
@@ -31,14 +31,14 @@ use crate::protocol::{classify_transport, parse_error, parse_success_capped, Tok
 /// describing their original Spanish prompt.
 pub const CODE_TEMPLATE_VERSION: u32 = 3;
 pub const MOCKUP_CODE_TEMPLATE_VERSION: u32 = 4;
-pub const MAX_CODE_FILES: usize = 5;
+pub const MAX_CODE_FILES: usize = 12;
 pub const MAX_CODE_FILE_BYTES: usize = 65_536;
-pub const MAX_CODE_SCOPE_FILES: usize = 8;
+pub const MAX_CODE_SCOPE_FILES: usize = 12;
 pub const MAX_CODE_SCOPE_FILE_CHARS: usize = 8_000;
 pub const MAX_CODE_REQUIREMENT_CHARS: usize = 4_000;
 pub const MAX_CODE_SCREEN_CHARS: usize = 6_000;
 pub const MAX_CODE_SCREEN_SOURCES: usize = 8;
-pub const MAX_CODE_INPUT_CHARS: usize = 80_000;
+pub const MAX_CODE_INPUT_CHARS: usize = 160_000;
 pub const MAX_CODE_REL_CHARS: usize = 512;
 pub const MAX_CODE_EXPLANATION_CHARS: usize = 2_000;
 pub const MAX_CODE_ASSUMPTIONS: usize = 5;
@@ -60,9 +60,9 @@ pub const MAX_CONTEXT_DOCS_CHARS: usize = 24_000;
 pub const MAX_CONTEXT_MAP_CHARS: usize = 6_000;
 pub const MAX_CONTEXT_CHARS: usize = 30_000;
 
-pub const CODE_MAX_OUTPUT_TOKENS: u32 = 8192;
-pub const CODE_TIMEOUT_SECS: u64 = 120;
-pub const CODE_MAX_BODY_BYTES: usize = 524_288;
+pub const CODE_MAX_OUTPUT_TOKENS: u32 = 24_000;
+pub const CODE_TIMEOUT_SECS: u64 = 300;
+pub const CODE_MAX_BODY_BYTES: usize = 2_097_152;
 
 /// Scope file with its SAVED content (never drafts).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,7 +124,7 @@ pub struct CodeResult {
 
 const CODE_INSTRUCTION: &str = "Propose code changes for the sent requirement, using the scope files as the base. \
 Reply ONLY with the requested JSON object, no extra text. \
-Propose files with their COMPLETE CONTENT (no diffs or fragments): files (1 to 5; each with rootId from the sent roots, rel with the relative path using `/`, operation `create` or `modify`, content with the complete file). \
+Propose files with their COMPLETE CONTENT (no diffs or fragments): files (1 to 12; each with rootId from the sent roots, rel with the relative path using `/`, operation `create` or `modify`, content with the complete file). \
 Prefer modifying sent files; create new files only inside the sent roots and with sensible paths. \
 Keep the style and existing code except as justified by the requirement; do not invent dependencies, endpoints, credentials or approved decisions. \
 Explain the changes (explanation), declare explicit assumptions (assumptions) and leave open questions (questions): never present assumptions as decisions. \
@@ -132,7 +132,7 @@ Follow the layers the scope files already use and never skip one; if components 
 
 const CODE_SCREEN_INSTRUCTION: &str = "Propose a MINIMAL code edit for the sent mockup screen, using the scope files as the base. \
 Reply ONLY with the requested JSON object, no extra text. \
-Propose files with their COMPLETE CONTENT (no diffs or fragments): files (1 to 5; each with rootId from the sent roots, rel with the relative path using `/`, operation `create` or `modify`, content with the complete file). \
+Propose files with their COMPLETE CONTENT (no diffs or fragments): files (1 to 12; each with rootId from the sent roots, rel with the relative path using `/`, operation `create` or `modify`, content with the complete file). \
 Prefer modifying sent files; respect the framework, bindings, style and existing hand-written code: change only what the screen justifies. \
 The data origin rules: a visual field implies no column; persisted, computed or external concerns beyond the interface are NOT invented (no backend, DTOs, SQL, columns, endpoints or security by assumption): flag them in questions. \
 Explain the changes (explanation), declare explicit assumptions (assumptions) and leave open questions (questions): never present assumptions as decisions. \
@@ -999,8 +999,8 @@ mod tests {
         assert!(input.contains("[req-1 @ v1]"));
         assert!(input.find("root-1/a.ts").expect("a") < input.find("root-2/b.ts").expect("b"));
         assert!(input.chars().count() <= MAX_CODE_INPUT_CHARS);
-        // Nine files: one overflows and the requirement is kept.
-        let many: Vec<CodeScopeFile> = (0..9)
+        // One file too many: it overflows and the requirement is kept.
+        let many: Vec<CodeScopeFile> = (0..=MAX_CODE_SCOPE_FILES)
             .map(|n| CodeScopeFile {
                 root_id: "root-1".to_string(),
                 rel: format!("f{n}.ts"),
@@ -1010,8 +1010,9 @@ mod tests {
             .collect();
         let input = build_code_input(&requirement, &many, &no_context());
         assert!(input.contains("[req-1 @ v1]"));
-        assert!(input.contains("(8)"));
-        assert!(!input.contains("f8.ts"));
+        assert!(input.contains(&format!("({MAX_CODE_SCOPE_FILES})")));
+        // Sorted as text, f9.ts is the last one.
+        assert!(!input.contains("f9.ts"));
     }
 
     #[test]
@@ -1119,7 +1120,7 @@ mod tests {
         // No files.
         assert!(parse_code_output(&proposal(serde_json::json!([])), &roots()).is_err());
         // Too many files.
-        let many: Vec<serde_json::Value> = (0..6)
+        let many: Vec<serde_json::Value> = (0..=MAX_CODE_FILES)
             .map(|n| file("root-1", &format!("f{n}.ts"), "create", "x"))
             .collect();
         assert!(parse_code_output(&proposal(serde_json::json!(many)), &roots()).is_err());
@@ -1513,7 +1514,7 @@ aa"#
         );
         assert_eq!(
             build_code_input(&requirement(), &scope, &none),
-            r#"Propose code changes for the sent requirement, using the scope files as the base. Reply ONLY with the requested JSON object, no extra text. Propose files with their COMPLETE CONTENT (no diffs or fragments): files (1 to 5; each with rootId from the sent roots, rel with the relative path using `/`, operation `create` or `modify`, content with the complete file). Prefer modifying sent files; create new files only inside the sent roots and with sensible paths. Keep the style and existing code except as justified by the requirement; do not invent dependencies, endpoints, credentials or approved decisions. Explain the changes (explanation), declare explicit assumptions (assumptions) and leave open questions (questions): never present assumptions as decisions. Follow the layers the scope files already use and never skip one; if components reach services through a store, new components do too.
+            r#"Propose code changes for the sent requirement, using the scope files as the base. Reply ONLY with the requested JSON object, no extra text. Propose files with their COMPLETE CONTENT (no diffs or fragments): files (1 to 12; each with rootId from the sent roots, rel with the relative path using `/`, operation `create` or `modify`, content with the complete file). Prefer modifying sent files; create new files only inside the sent roots and with sensible paths. Keep the style and existing code except as justified by the requirement; do not invent dependencies, endpoints, credentials or approved decisions. Explain the changes (explanation), declare explicit assumptions (assumptions) and leave open questions (questions): never present assumptions as decisions. Follow the layers the scope files already use and never skip one; if components reach services through a store, new components do too.
 
 Requirement — saved version:
 [req-1 @ v1]
@@ -1533,7 +1534,7 @@ aa"#
         };
         assert_eq!(
             build_code_input_from_screen(&screen, &scope, &none),
-            r#"Propose a MINIMAL code edit for the sent mockup screen, using the scope files as the base. Reply ONLY with the requested JSON object, no extra text. Propose files with their COMPLETE CONTENT (no diffs or fragments): files (1 to 5; each with rootId from the sent roots, rel with the relative path using `/`, operation `create` or `modify`, content with the complete file). Prefer modifying sent files; respect the framework, bindings, style and existing hand-written code: change only what the screen justifies. The data origin rules: a visual field implies no column; persisted, computed or external concerns beyond the interface are NOT invented (no backend, DTOs, SQL, columns, endpoints or security by assumption): flag them in questions. Explain the changes (explanation), declare explicit assumptions (assumptions) and leave open questions (questions): never present assumptions as decisions. Follow the layers the scope files already use and never skip one; if components reach services through a store, new components do too.
+            r#"Propose a MINIMAL code edit for the sent mockup screen, using the scope files as the base. Reply ONLY with the requested JSON object, no extra text. Propose files with their COMPLETE CONTENT (no diffs or fragments): files (1 to 12; each with rootId from the sent roots, rel with the relative path using `/`, operation `create` or `modify`, content with the complete file). Prefer modifying sent files; respect the framework, bindings, style and existing hand-written code: change only what the screen justifies. The data origin rules: a visual field implies no column; persisted, computed or external concerns beyond the interface are NOT invented (no backend, DTOs, SQL, columns, endpoints or security by assumption): flag them in questions. Explain the changes (explanation), declare explicit assumptions (assumptions) and leave open questions (questions): never present assumptions as decisions. Follow the layers the scope files already use and never skip one; if components reach services through a store, new components do too.
 
 Screen — saved version:
 [mock-1/s1 @ v2] Title
@@ -1576,13 +1577,14 @@ aa"#
 
     #[test]
     fn context_gives_way_to_the_scope_files() {
-        // The person sees 8 files in the panel: docs leave first, so
-        // that promise holds and a file to modify is never dropped.
+        // The panel promises its files: docs leave first, so that holds
+        // and a file to modify is never dropped.
         let context = big_context();
         let scope = full_scope();
-        let input = build_code_input(&requirement(), &scope, &context);
-        assert!(input.chars().count() <= MAX_CODE_INPUT_CHARS);
-        assert!(input.contains("saved content (8)"), "scope kept");
+        let tight = MAX_CODE_INPUT_CHARS - 110_000;
+        let input = build_code_input_reserving(&requirement(), &scope, &context, tight);
+        assert!(input.chars().count() + tight <= MAX_CODE_INPUT_CHARS);
+        assert!(input.contains("saved content (12)"), "scope kept");
         assert!(input.contains("[req-1 @ v1]"));
         assert!(input.contains("MAPMARKER"), "map kept");
         assert!(input.contains("left out"), "the cut is stated");
@@ -1599,7 +1601,7 @@ aa"#
             .collect();
         let input = build_ask_input("Now?", &history, &scope, &context);
         assert!(input.chars().count() <= MAX_CODE_INPUT_CHARS);
-        assert!(input.contains("saved content (8)"), "ask scope kept");
+        assert!(input.contains("saved content (12)"), "ask scope kept");
         assert!(input.contains("MAPMARKER"), "ask map kept");
     }
 

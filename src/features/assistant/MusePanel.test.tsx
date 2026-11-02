@@ -264,13 +264,13 @@ describe("MusePanel", () => {
 
   it("reads up to the limit and locks the rest", async () => {
     render(
-      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api(10)} />,
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api(14)} />,
     );
     fireEvent.click(await screen.findByRole("button", { name: "Change files" }));
     const extra = screen.getByLabelText("core/f9.ts") as HTMLInputElement;
     expect(extra.checked).toBe(false);
     expect(extra.disabled).toBe(true);
-    expect(screen.getByRole("status").textContent).toContain("8 of 10");
+    expect(screen.getByRole("status").textContent).toContain("12 of 14");
   });
 
   it("sends nothing from a blocked folder", async () => {
@@ -502,22 +502,22 @@ describe("MusePanel", () => {
   });
 
   it("adds a file with @ and sends it", async () => {
-    const fake = api(12);
+    const fake = api(14);
     render(
       <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
     );
     await screen.findByRole("status");
     const box = screen.getByLabelText("Message to Muse") as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: "explain @f11", selectionStart: 12 } });
-    expect(await screen.findByRole("option", { name: "core/f11.ts" })).toBeTruthy();
+    fireEvent.change(box, { target: { value: "explain @f13", selectionStart: 12 } });
+    expect(await screen.findByRole("option", { name: "core/f13.ts" })).toBeTruthy();
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(box.value).toBe("explain @f11.ts ");
+    expect(box.value).toBe("explain @f13.ts ");
     expect(screen.queryByRole("listbox")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     await screen.findByText("It validates.");
     const sent = (fake.ask as ReturnType<typeof vi.fn>).mock.calls[0][1] as Array<{ rel: string }>;
-    expect(sent.map((file) => file.rel)).toContain("core/f11.ts");
-    expect(sent).toHaveLength(8);
+    expect(sent.map((file) => file.rel)).toContain("core/f13.ts");
+    expect(sent).toHaveLength(12);
   });
 
   it("brings an adjusted proposal to the X-ray", async () => {
@@ -594,12 +594,12 @@ describe("MusePanel", () => {
 
   it("says in plain view what leaves the machine", async () => {
     render(
-      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api(10)} />,
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api(14)} />,
     );
     await screen.findByRole("status");
     const notice = (await screen.findByText(/Ask sends/)).textContent;
-    expect(notice).toContain("Ask sends 8 files, the names of the other 2.");
-    expect(notice).toContain("Propose change sends 8 files and your request.");
+    expect(notice).toContain("Ask sends 12 files, the names of the other 2.");
+    expect(notice).toContain("Propose change sends 12 files and your request.");
     write("Why?");
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     await screen.findByText("It validates.");

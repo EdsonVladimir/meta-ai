@@ -45,6 +45,6 @@ layers as reservas.
 ## If something fails
 
 - Muse is slow or fails: use Retry proposal. It reuses the saved requirement.
-- The proposal has more than 5 files of work: ask for the frontend first.
+- The proposal has more than 12 files of work: ask for the frontend first.
 - The proposal skips the store: show the warning and use Adjust proposal.
   It is a good moment for the video.

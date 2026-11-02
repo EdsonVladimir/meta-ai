@@ -7,7 +7,7 @@ import { COLLECT_SKIPPED_DIR_NAMES } from "../code/archmap/projectMaps";
 import type { MuseTarget } from "../requirements/uiStore";
 
 /** Same bound as the Rust side (`MAX_CODE_SCOPE_FILES`). */
-export const MUSE_MAX_FILES = 8;
+export const MUSE_MAX_FILES = 12;
 /** Files listed to choose from; a folder may hold many more. */
 export const MUSE_MAX_CANDIDATES = 60;
 const MAX_DIRS_WALKED = 200;

@@ -455,8 +455,12 @@ still holds. Commits are on `code-xray`.
   an adjustment did not switch to Architecture, and Show on X-ray left
   an open file in front. Both now show the board, and it names the
   version, because a change inside a method draws no new row.
+- **A proposal holds 12 files and reads 12.** With 5, one full-stack
+  module never fit: Muse split it, dropped files between versions and
+  kept asking. Input, output, timeout and body limits rose with it.
+  Going beyond 12 needs a plan in stages, not a larger number.
 - **A version that drops files says so.** Each version replaces the
-  last, holds 5 files at most, and earlier ones go stale, so accepting
+  last, holds a limited number of files, and earlier ones go stale, so accepting
   a short version silently lost the rest: in a real run 9 files
   vanished and the 2 accepted ones did not compile. The card now lists
   what it leaves out, and the prompt tells Muse its reply replaces the

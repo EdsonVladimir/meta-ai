@@ -268,7 +268,7 @@ interface ProjectMapViewProps {
 }
 
 /** Scope a proposal can read (`MAX_CODE_SCOPE_FILES` in `ruth-meta`). */
-const MAX_PROPOSAL_SCOPE = 8;
+const MAX_PROPOSAL_SCOPE = 12;
 
 function baseName(rel: string): string {
   const slash = rel.lastIndexOf("/");
