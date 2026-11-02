@@ -64,11 +64,24 @@ function sharedFolders(a: string, b: string): number {
   return shared;
 }
 
+/** True when every file sits under one top folder that is not the file's. */
+function isSiblingService(project: FlowProject, rootId: string, rel: string): boolean {
+  const tops = new Set<string>();
+  for (const entry of project.result.files) {
+    if (entry.rootId !== rootId) continue;
+    const slash = entry.rel.indexOf("/");
+    if (slash === -1) return false;
+    tops.add(entry.rel.slice(0, slash));
+  }
+  return tops.size === 1 && !rel.startsWith(`${[...tops][0]}/`);
+}
+
 /**
  * Project of a proposed file. Nested projects share a root, so the
  * root alone cannot decide: the project holding the file wins, then
- * the one with the closest analyzed folder. -1 when no project has
- * that root.
+ * the one with the closest analyzed folder. A sibling service never
+ * takes it, or its cards would name the wrong service. -1 when no
+ * project fits.
  */
 function projectIndexOf(projects: FlowProject[], file: CodeProposalFileDto): number {
   const holder = projects.findIndex((project) => holdsFile(project, file));
@@ -76,6 +89,7 @@ function projectIndexOf(projects: FlowProject[], file: CodeProposalFileDto): num
   let best = -1;
   let bestShared = -1;
   projects.forEach((project, index) => {
+    if (isSiblingService(project, file.rootId, file.rel)) return;
     for (const entry of project.result.files) {
       if (entry.rootId !== file.rootId) continue;
       const shared = sharedFolders(entry.rel, file.rel);

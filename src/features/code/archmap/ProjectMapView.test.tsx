@@ -16,6 +16,11 @@ import {
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import { useRequirementsUi, type ArchScope } from "../../requirements/uiStore";
 import { clearDiscoveryCache } from "../detectProjects";
+import {
+  clearMapSummaries,
+  detectedForRoots,
+  mapSectionsForRoots,
+} from "../../assistant/mapSummary";
 import type {
   CodeGenerationDto,
   CodeListingDto,
@@ -278,6 +283,43 @@ describe("ProjectMapView", () => {
     expect(screen.getByLabelText("Diagram of frontend")).toBeTruthy();
     expect(screen.queryByLabelText("Diagram of unrelated")).toBeNull();
     expect(screen.queryByLabelText("Diagram of deleted")).toBeNull();
+  });
+
+  it("publishes one map summary per analyzed section when ready", async () => {
+    clearMapSummaries();
+    clearDiscoveryCache();
+    const shop = root({ id: "shop", name: "shop", projectId: "p1" });
+    const deps = makeDeps({
+      listDir: async (rootId, rel) => {
+        if (rootId === "shop" && rel === "") {
+          return listing([
+            { name: "package.json", rel: "package.json", kind: "file" },
+            { name: "app.ts", rel: "app.ts", kind: "file" },
+          ]);
+        }
+        return { entries: [], truncated: false };
+      },
+      readFile: async (rootId, rel) => {
+        if (rootId === "shop" && rel === "package.json") {
+          return { text: '{"name":"shop"}', fingerprint: "h", size: 16 };
+        }
+        if (rootId === "shop" && rel === "app.ts") {
+          return { text: APP, fingerprint: "h", size: APP.length };
+        }
+        throw { kind: "code_not_found", message: "missing" };
+      },
+    });
+    renderView({ roots: [shop], deps });
+    await waitFor(() => expect(mapSectionsForRoots(["shop"])).toHaveLength(1));
+    const [summary] = mapSectionsForRoots(["shop"]);
+    expect(summary.title).toBe("shop");
+    expect(summary.kind).toBe("project");
+    expect(summary.filesAnalyzed).toBe(1);
+    expect(summary.layers.reduce((n, layer) => n + layer.symbols, 0)).toBeGreaterThan(0);
+    expect(summary.routes).toEqual([]);
+    expect(detectedForRoots(["shop"]).map((service) => service.name)).toEqual(["shop"]);
+    clearMapSummaries();
+    clearDiscoveryCache();
   });
 
   it("hides a root and restores it from Details without re-analyzing", async () => {

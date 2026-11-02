@@ -1,6 +1,6 @@
 // Proposal overlay: staged contents diffed against the base projects
 // without touching them, then stamped onto the flow graph.
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import type { StructureInput } from "../structure/structureTypes";
 import { buildFlowGraph } from "./flowModel";
@@ -152,3 +152,35 @@ it("analyzes proposals larger than one batch", () => {
   expect(overlay.changes.size).toBe(25);
 });
 
+describe("proposed files outside the shown services", () => {
+  it("never lands a file on a sibling service", () => {
+    const frontend = project("frontend", {
+      "frontend/src/app.ts": `export class App {}`,
+    });
+    const overlay = buildProposalOverlay(
+      [frontend],
+      [file("backend/src/users.ts", `export class Users {}`, "create")],
+    );
+    expect(overlay.changes.size).toBe(0);
+    expect(overlay.notes).toEqual(["backend/src/users.ts: no analyzed project holds this file"]);
+  });
+
+  it("keeps a new file in the service whose folder it shares", () => {
+    const backend = project("backend", { "backend/src/app.ts": `export class App {}` });
+    const frontend = project("frontend", { "frontend/src/app.ts": `export class Ui {}` });
+    const overlay = buildProposalOverlay(
+      [frontend, backend],
+      [file("backend/src/users.ts", `export class Users {}`, "create")],
+    );
+    expect(overlay.projects[1].result.symbols.some((symbol) => symbol.name === "Users")).toBe(true);
+    expect(overlay.projects[0].result.symbols.some((symbol) => symbol.name === "Users")).toBe(false);
+  });
+
+  it("still places a new file in a project without one top folder", () => {
+    const overlay = buildProposalOverlay(
+      [BASE],
+      [file("b.ts", `export class B {}`, "create")],
+    );
+    expect(overlay.projects[0].result.symbols.some((symbol) => symbol.name === "B")).toBe(true);
+  });
+});

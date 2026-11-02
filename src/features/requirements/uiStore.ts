@@ -54,6 +54,19 @@ export interface CodeFolderSelection {
   rel: string;
 }
 
+/** One doc file chosen for the Muse project context. */
+export interface MuseContextDoc {
+  rootId: string;
+  rel: string;
+}
+
+/** The Muse project context choice of one project (persisted). */
+export interface MuseContextChoice {
+  enabled: boolean;
+  dismissed: boolean;
+  docs: MuseContextDoc[];
+}
+
 export type PanelName = "navigator" | "review" | "terminal" | "assistant";
 
 /** Right-column tab (review or assistant). */
@@ -204,6 +217,8 @@ interface RequirementsUiState {
   museGeneration: CodeGenerationDto | null;
   /** File accepted from a Muse thread proposal (session-only). */
   museAccepted: MuseAcceptedFile | null;
+  /** Muse project context choice per project id (persisted). */
+  museContext: Record<string, MuseContextChoice>;
   /** Board inspector width (null = CSS default); collapse is session-only. */
   archInspectorWidth: number | null;
   archInspectorCollapsed: boolean;
@@ -254,6 +269,7 @@ interface RequirementsUiState {
   setMuseTarget: (target: MuseTarget | null) => void;
   setMuseGeneration: (generation: CodeGenerationDto | null) => void;
   setMuseAccepted: (accepted: MuseAcceptedFile | null) => void;
+  setMuseContextChoice: (projectId: string, choice: MuseContextChoice) => void;
   setArchInspectorWidth: (width: number | null) => void;
   setArchInspectorCollapsed: (collapsed: boolean) => void;
   /** Sets (or clears, with null) the manual layer of one symbol. */
@@ -372,6 +388,35 @@ function validateExternalFolders(persisted: unknown): ExternalFolder[] {
   return out;
 }
 
+/** Stored doc choices per project (the suggestion list caps at 40). */
+export const MAX_PERSISTED_MUSE_CONTEXT_DOCS = 40;
+/** Projects with a stored Muse context choice. */
+export const MAX_PERSISTED_MUSE_CONTEXT = 200;
+
+function validateMuseContext(persisted: unknown): Record<string, MuseContextChoice> {
+  if (typeof persisted !== "object" || persisted === null || Array.isArray(persisted)) return {};
+  const out: Record<string, MuseContextChoice> = {};
+  for (const [key, value] of Object.entries(persisted)) {
+    if (key.length === 0 || key.length > 512) continue;
+    if (typeof value !== "object" || value === null) continue;
+    const { enabled, dismissed, docs } = value as Record<string, unknown>;
+    if (typeof enabled !== "boolean" || typeof dismissed !== "boolean") continue;
+    if (!Array.isArray(docs)) continue;
+    const kept: MuseContextDoc[] = [];
+    for (const doc of docs as unknown[]) {
+      if (typeof doc !== "object" || doc === null) continue;
+      const { rootId, rel } = doc as Record<string, unknown>;
+      if (typeof rootId !== "string" || rootId.length === 0 || rootId.length > 512) continue;
+      if (typeof rel !== "string" || rel.length === 0 || rel.length > 512) continue;
+      kept.push({ rootId, rel });
+      if (kept.length >= MAX_PERSISTED_MUSE_CONTEXT_DOCS) break;
+    }
+    out[key] = { enabled, dismissed, docs: kept };
+    if (Object.keys(out).length >= MAX_PERSISTED_MUSE_CONTEXT) break;
+  }
+  return out;
+}
+
 export function validateLayoutPartial(persisted: unknown): {
   navigatorWidth: number | null;
   projectsPaneFrac: number | null;
@@ -383,6 +428,7 @@ export function validateLayoutPartial(persisted: unknown): {
   archInspectorWidth: number | null;
   layerOverrides: LayerOverrides;
   archExternalFolders: ExternalFolder[];
+  museContext: Record<string, MuseContextChoice>;
 } {
   const fallback = {
     navigatorWidth: null,
@@ -395,6 +441,7 @@ export function validateLayoutPartial(persisted: unknown): {
     archInspectorWidth: null,
     layerOverrides: {},
     archExternalFolders: [],
+    museContext: {},
   };
   if (typeof persisted !== "object" || persisted === null) return fallback;
   const partial = persisted as Record<string, unknown>;
@@ -425,6 +472,7 @@ export function validateLayoutPartial(persisted: unknown): {
         : null,
     mapHiddenProjects: validateProjectFlags(partial.mapHiddenProjects),
     mapOpenedProjects: validateProjectFlags(partial.mapOpenedProjects),
+    museContext: validateMuseContext(partial.museContext),
     archInspectorWidth: inRange(
       partial.archInspectorWidth,
       MIN_ARCH_INSPECTOR_WIDTH,
@@ -472,6 +520,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   museTarget: null,
   museGeneration: null,
   museAccepted: null,
+  museContext: {},
   archInspectorWidth: null,
   archInspectorCollapsed: true,
   layerOverrides: {},
@@ -501,6 +550,8 @@ export const useRequirementsUi = create<RequirementsUiState>()(
     ),
   setMuseGeneration: (museGeneration) => set({ museGeneration }),
   setMuseAccepted: (museAccepted) => set({ museAccepted }),
+  setMuseContextChoice: (projectId, choice) =>
+    set((state) => ({ museContext: { ...state.museContext, [projectId]: choice } })),
   setArchInspectorWidth: (archInspectorWidth) => set({ archInspectorWidth }),
   setArchInspectorCollapsed: (archInspectorCollapsed) => set({ archInspectorCollapsed }),
   setLayerOverride: (id, value) =>
@@ -589,6 +640,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
         archInspectorWidth: state.archInspectorWidth,
         layerOverrides: state.layerOverrides,
         archExternalFolders: state.archExternalFolders,
+        museContext: state.museContext,
       }),
       merge: (persisted, current) => ({
         ...current,

@@ -118,6 +118,11 @@ import {
   rootsOfProject,
   type ListDirFn,
 } from "./projectMaps";
+import {
+  publishDetectedServices,
+  publishMapSection,
+  summarizeSection,
+} from "../../assistant/mapSummary";
 
 export interface ProjectMapDeps {
   listDir: ListDirFn;
@@ -611,6 +616,15 @@ export function ProjectMapView({
     (root) => !root.missing && discovered[root.id] === undefined,
   );
 
+  // Session summaries for the Muse project context: the detected
+  // services (analyzed or not) and, below, one summary per section
+  // that reaches ready. Readers filter by the active roots.
+  useEffect(() => {
+    publishDetectedServices(
+      detectedAll.map((project) => ({ key: project.key, rootId: project.rootId, name: project.name })),
+    );
+  }, [detectedAll]);
+
   const scopeIssue = useMemo((): string | null => {
     if (scope.kind === "all") return null;
     const root = projectRoots.find((candidate) => candidate.id === scope.rootId) ?? null;
@@ -883,6 +897,43 @@ export function ProjectMapView({
     // stale work on scope switches and cancels.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, visibleSig, retrySig, scopeSig, resumeTick]);
+
+  // Publishes one summary per section that reaches ready (fresh and
+  // cached alike: eye toggles and scope switches republish without
+  // re-analyzing). Routes come from the merged result; without one,
+  // only a truly empty section claims none.
+  useEffect(() => {
+    for (const section of sections) {
+      const state = states[section.key];
+      if (state === undefined || state.status !== "ready" || state.map === null) continue;
+      const merged = mergedRef.current[section.key]?.result ?? null;
+      publishMapSection(
+        summarizeSection({
+          key: section.key,
+          rootId: section.root.id,
+          rootName: section.root.name,
+          title: section.title,
+          rel: section.rel,
+          kind: section.kind,
+          map: state.map,
+          routes:
+            merged === null
+              ? state.rels.length === 0 && state.collected === 0
+                ? []
+                : null
+              : (merged.routes ?? []),
+          filesAnalyzed: state.rels.length,
+          partial:
+            state.collectTruncated ||
+            state.symbolsTruncated ||
+            state.relationsTruncated ||
+            state.rels.length < state.collected,
+        }),
+      );
+    }
+    // `mergedRef` moves with `states` (every batch patches both).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sections, states]);
 
   // Re-analysis after an Accept (inspector or dialog): the owning
   // sections retry, so the batch loop re-reads from disk.

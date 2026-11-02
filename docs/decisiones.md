@@ -351,6 +351,16 @@ still holds. Commits are on `code-xray`.
   active project's roots only; anything else reports that the
   folder belongs to another project, or that it left the
   workspace.
+- **A proposed file never takes a sibling service's name.** With
+  only `frontend` on the board, backend files were drawn as
+  `frontend` cards. Now they stay off that service and the note says
+  so, and Show on X-ray leaves a focus that would hide them. Clicking
+  a service still focuses it: that is the on-demand design, and the
+  chip below the board shows it.
+- **Show on X-ray always draws, and Change files always lists what
+  exists.** Leaving the flow used to silence the button until a new
+  proposal, and the file list was read once per thread, so accepted
+  files could not be chosen.
 
 **From the first-time developer audit**
 
@@ -419,6 +429,46 @@ still holds. Commits are on `code-xray`.
 - **The board scrolls with the wheel; Ctrl+wheel zooms.** Moving through
   a large board mattered more than zoom (`4180e46`). The board fills the
   center, with the status bar on the bottom edge (`076defe`).
+
+**Muse project context**
+
+- **Each thread carries a short picture of the project, confirmed
+  once.** Muse answered from at most 8 files per message and did not
+  know what the project was. The context (architecture map plus chosen
+  docs) now travels inside every Ask, Propose change, Adjust proposal
+  and Retry of the thread, after the person confirms it once per
+  project. Design in
+  `docs/superpowers/specs/2026-11-01-muse-project-context-design.md`.
+- **The map comes from the local analysis; docs are chosen files.**
+  ProjectMapView publishes one summary per analyzed section into a
+  session module, cleared when the workspace closes; the renderer
+  names services, layers with counts, routes and main classes, and
+  never guesses. Docs are saved `.md` files read from disk by Rust,
+  never drafts. Suggested order per root: AGENTS.md, CLAUDE.md,
+  README.md, then the docs tree, then a README.md in each detected
+  service; the first 8 are checked by default, up to 40 listed.
+- **Opt-in per project, reviewed before anything is sent.** A thread
+  opening in a project with no stored choice shows one offer; Not now
+  dismisses it. A line above the input reads the state (`Project
+  context: map · 4 docs · Edit`, or `off · Set up`), and the dialog
+  shows the map, the checklist with sizes, the totals against the
+  limits, and the warning that chosen files go to Meta as they are.
+- **No new call to Meta, and the backend still enforces the rules.**
+  Opening, analyzing and confirming send nothing. Rust rejects docs
+  over the caps, non-`.md` paths, and anything from an unknown or
+  blocked root before any network; the prompt marks the context as
+  background that the message files overrule. Empty context keeps
+  prompts byte-identical. The panel drops missing and blocked docs
+  with a notice and sends the first 8 checked.
+- **The message comes first, then the context.** The context was
+  budgeted first, as the design said, and that was wrong: with large
+  files it silently dropped scope files the panel had promised, and an
+  adjustment could lose the proposal it was adjusting. Now the context
+  takes only the room left, docs leave from the end, and the prompt
+  says how many. A file to modify matters more than background.
+- **Known limit: a generation does not record which context it
+  used.** Reproducing the exact prompt of an old proposal is
+  impossible; recorded for a later slice.
 
 **Packaging**
 

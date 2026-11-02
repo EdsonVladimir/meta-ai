@@ -4,8 +4,8 @@
 //! re-export is lost, this test does not even compile.
 
 use ruth_meta::code::{
-    append_instruction, append_previous_proposal, PreviousCodeFile, MAX_CODE_INPUT_CHARS,
-    MAX_INSTRUCTION_CHARS,
+    append_instruction, append_previous_proposal, render_project_context, PreviousCodeFile,
+    ProjectContext, MAX_CODE_INPUT_CHARS, MAX_INSTRUCTION_CHARS,
 };
 
 #[test]
@@ -80,4 +80,11 @@ fn instruction_is_capped() {
     let long = "x".repeat(MAX_INSTRUCTION_CHARS + 50);
     let out = append_instruction(String::new(), Some(&long));
     assert_eq!(out.matches('x').count(), MAX_INSTRUCTION_CHARS);
+}
+
+#[test]
+fn empty_project_context_renders_nothing() {
+    let context = ProjectContext::default();
+    assert!(context.is_empty());
+    assert_eq!(render_project_context(&context), "");
 }

@@ -63,12 +63,14 @@ and path, so the output is stable. Over a cap, text is cut and the output says
 so.
 
 The prompt builders do not change their limits. `MAX_CODE_INPUT_CHARS` stays at
-80,000. Budget the context first: when the input is too long, the existing loops
-drop history and scope files. The context is at most 30,000 characters, so it is
-never the part that is dropped. Pass it into `build_ask_input`,
-`build_code_input` and `build_code_input_from_screen`, or add
-`append_project_context`, whichever keeps it inside that budget. Empty context
-must produce byte-identical prompts to today, covered by a test.
+80,000. The message comes first: the context takes only the room the requirement
+or question, the scope files, and an adjustment leave. Over that room, docs leave
+from the end and the prompt says how many; then the block goes. History goes
+before the context. Empty context must produce byte-identical prompts to today,
+covered by a test.
+
+Corrected after audit: this section first budgeted the context ahead of the
+scope files, which silently dropped files the panel had promised.
 
 ### `ruth-api` (`crates/api/src/codegen.rs`)
 

@@ -123,12 +123,19 @@ export interface AskTurnInput {
   answer: string;
 }
 
+/** Background project context: map texts plus saved doc paths. */
+export interface CodeProjectContextInput {
+  map: Array<{ rootId: string; text: string }>;
+  docs: Array<{ rootId: string; rel: string }>;
+}
+
 export function askCode(
   question: string,
   files: Array<{ rootId: string; rel: string }>,
   history: AskTurnInput[] = [],
+  projectContext?: CodeProjectContextInput,
 ): Promise<{ answer: string; model: string }> {
-  return call("code_ask", { input: { question, files, history } });
+  return call("code_ask", { input: { question, files, history, projectContext } });
 }
 
 export function addModuleLink(
@@ -230,6 +237,8 @@ export interface CodeGenRequest {
   instruction?: string;
   /** Proposal the instruction adjusts; its files go to the model. */
   previousGenerationId?: string;
+  /** Background project context (absent = none, as before). */
+  projectContext?: CodeProjectContextInput;
 }
 
 export function genCodeContext(input: CodeGenRequest): Promise<CodeGenContextDto> {

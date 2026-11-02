@@ -130,6 +130,18 @@ environment).
   Opened ones persist; scope "all" shows open eyes only;
   all-closed boards point at Folders; scopes never render
   outside the active project.
+- Muse project context: confirmed once per project, then
+  attached to every Ask, Propose change, Adjust proposal and
+  Retry. Session map summaries (services, layers, routes,
+  classes) plus chosen saved `.md` docs (suggested order:
+  AGENTS.md, CLAUDE.md, README.md, docs tree, service READMEs;
+  first 8 checked, up to 40 listed); opt-in persisted choice
+  with a one-time offer, a state line and a review dialog.
+  Rust enforces caps, `.md`-only and Never send to Muse
+  before any network; empty context keeps prompts
+  byte-identical. The context takes only the room the message
+  leaves: docs go before any scope file. Known limit: a
+  generation does not record which context it used.
 
 ## Folder and key-file map
 
@@ -336,6 +348,18 @@ Acceptance criteria:
 
 ## Executed tests (latest session)
 
+- Muse-project-context session: per-thread context (session map
+  summaries + chosen saved `.md` docs) confirmed once per project
+  and attached to Ask/Propose/Adjust/Retry; opt-in persisted
+  choice with offer, state line and review dialog; Rust caps,
+  `.md`-only and blocked-root backstop before any network, empty
+  context byte-identical. New `mapSummary`/`contextDocs` pure
+  modules, dialog and panel tests, meta/api/command tests.
+  Gates: `npx tsc --noEmit` clean, `npm test` 1146/1146 in 121
+  files, `npm run build` OK, `cargo fmt --check` clean, `cargo
+  test --workspace` 474 passed / 0 failed. No Meta calls. No
+  schema, core-rule or Accept/fingerprint change. Interactive
+  desktop run still pending.
 - Audit-fixes session: pick-first open/create, All-projects list,
   gate protects pending Muse files, recents skip foreign/loose
   folders and keep them, same-project reopen no-op, replication

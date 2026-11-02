@@ -18,7 +18,8 @@
 use tauri::State;
 
 use ruth_api::{
-    now_utc_iso8601, AcceptCheck, ApiError, CodeGenFreshness, RecordCodeGenInput, ScopeFileInput,
+    now_utc_iso8601, AcceptCheck, ApiError, CodeGenFreshness, ContextMapInput, ProjectContextInput,
+    RecordCodeGenInput, ScopeFileInput,
 };
 
 use crate::state::AppState;
@@ -31,6 +32,46 @@ use super::{lock, mark_inflight, ready, InflightGuard};
 pub struct CodeScopeFileInput {
     pub root_id: String,
     pub rel: String,
+}
+
+/// Map summary for one analyzed root, as the frontend renders it.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeContextMapInput {
+    pub root_id: String,
+    pub text: String,
+}
+
+/// Background project context: map summaries plus saved Markdown
+/// docs. Optional on every call; missing on old clients.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeProjectContextInput {
+    #[serde(default)]
+    pub map: Vec<CodeContextMapInput>,
+    #[serde(default)]
+    pub docs: Vec<CodeScopeFileInput>,
+}
+
+fn to_api_context(input: &CodeProjectContextInput) -> ProjectContextInput {
+    ProjectContextInput {
+        map: input
+            .map
+            .iter()
+            .map(|section| ContextMapInput {
+                root_id: section.root_id.clone(),
+                text: section.text.clone(),
+            })
+            .collect(),
+        docs: input
+            .docs
+            .iter()
+            .map(|doc| ScopeFileInput {
+                root_id: doc.root_id.clone(),
+                rel: doc.rel.clone(),
+            })
+            .collect(),
+    }
 }
 
 /// Source of the proposal: ONE requirement or ONE mockup screen.
@@ -63,6 +104,9 @@ pub struct CodeGenContextInput {
     /// Proposal the instruction adjusts; its files go to the model.
     #[serde(default)]
     pub previous_generation_id: Option<String>,
+    /// Background project context; missing on old clients.
+    #[serde(default)]
+    pub project_context: Option<CodeProjectContextInput>,
 }
 
 #[derive(serde::Serialize)]
@@ -440,11 +484,15 @@ pub async fn code_generate(
     input: CodeGenContextInput,
 ) -> Result<CodeGenerationDto, ApiError> {
     // Short lock: saved-context snapshot and generation mark.
-    let (context, previous) = {
+    let (context, previous, project_context) = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
         let roots = workspace_of(ready.code_roots);
         let context = snapshot_for(ready.store, &roots, &input)?;
+        let project_context = match input.project_context.as_ref() {
+            Some(project) => ruth_api::read_project_context(&roots, &to_api_context(project))?,
+            None => ruth_meta::code::ProjectContext::default(),
+        };
         let previous: Vec<ruth_meta::code::PreviousCodeFile> = input
             .previous_generation_id
             .as_deref()
@@ -463,7 +511,7 @@ pub async fn code_generate(
             })
             .unwrap_or_default();
         mark_inflight(&state.inflight, &input.module_id)?;
-        (context, previous)
+        (context, previous, project_context)
     };
     let _guard = InflightGuard::hold(&state.inflight, input.module_id.clone());
 
@@ -479,11 +527,22 @@ pub async fn code_generate(
             content: file.content.clone(),
         })
         .collect();
+    let reserved = ruth_meta::code::adjustment_chars(&previous, input.instruction.as_deref());
     let prompt = match ruth_api::context_screen(&context) {
-        Some(screen) => ruth_meta::code::build_code_input_from_screen(&screen, &scope),
+        Some(screen) => ruth_meta::code::build_code_input_from_screen_reserving(
+            &screen,
+            &scope,
+            &project_context,
+            reserved,
+        ),
         None => {
             let requirement = ruth_api::context_requirement(&context);
-            ruth_meta::code::build_code_input(&requirement, &scope)
+            ruth_meta::code::build_code_input_reserving(
+                &requirement,
+                &scope,
+                &project_context,
+                reserved,
+            )
         }
     };
     let prompt = ruth_meta::code::append_previous_proposal(prompt, &previous);
@@ -533,6 +592,9 @@ pub struct CodeAskInput {
     /// Previous answered questions, oldest first; missing on old clients.
     #[serde(default)]
     pub history: Vec<CodeAskTurnInput>,
+    /// Background project context; missing on old clients.
+    #[serde(default)]
+    pub project_context: Option<CodeProjectContextInput>,
 }
 
 #[derive(serde::Serialize)]
@@ -560,10 +622,16 @@ pub async fn code_ask(
             rel: file.rel.clone(),
         })
         .collect();
-    let files = {
+    let (files, project_context) = {
         let mut guard = lock(&state.inner)?;
         let ready = ready(&mut guard)?;
-        ruth_api::read_ask_scope(&workspace_of(ready.code_roots), &scope)?
+        let workspace = workspace_of(ready.code_roots);
+        let files = ruth_api::read_ask_scope(&workspace, &scope)?;
+        let project_context = match input.project_context.as_ref() {
+            Some(context) => ruth_api::read_project_context(&workspace, &to_api_context(context))?,
+            None => ruth_meta::code::ProjectContext::default(),
+        };
+        (files, project_context)
     };
     let scope: Vec<ruth_meta::code::CodeScopeFile> = files
         .into_iter()
@@ -583,7 +651,8 @@ pub async fn code_ask(
             answer: turn.answer.clone(),
         })
         .collect();
-    let prompt = ruth_meta::code::build_ask_input(&input.question, &history, &scope);
+    let prompt =
+        ruth_meta::code::build_ask_input(&input.question, &history, &scope, &project_context);
     let result = ruth_meta::code::ask_code(&config, &prompt)
         .await
         .map_err(ApiError::from_meta)?;
@@ -775,5 +844,30 @@ mod tests {
         let bare: CodeAskInput =
             serde_json::from_str(r#"{"question":"Why?","files":[]}"#).expect("bare");
         assert!(bare.history.is_empty());
+    }
+
+    #[test]
+    fn reads_project_context_as_the_frontend_sends_it() {
+        let input: CodeAskInput = serde_json::from_str(
+            r#"{"question":"Why?","files":[],"projectContext":{"map":[{"rootId":"r","text":"one service"}],"docs":[{"rootId":"r","rel":"notes.md"}]}}"#,
+        )
+        .expect("ask");
+        let context = input.project_context.expect("context");
+        assert_eq!(context.map.len(), 1);
+        assert_eq!(context.map[0].root_id, "r");
+        assert_eq!(context.map[0].text, "one service");
+        assert_eq!(context.docs.len(), 1);
+        assert_eq!(context.docs[0].rel, "notes.md");
+        let api = to_api_context(&context);
+        assert_eq!(api.map[0].root_id, "r");
+        assert_eq!(api.docs[0].rel, "notes.md");
+        let bare: CodeAskInput =
+            serde_json::from_str(r#"{"question":"Why?","files":[]}"#).expect("bare");
+        assert!(bare.project_context.is_none());
+        let generate: CodeGenContextInput = serde_json::from_str(
+            r#"{"projectId":"p","moduleId":"m","source":{"kind":"requirement","artifactId":"a"},"scope":[]}"#,
+        )
+        .expect("generate");
+        assert!(generate.project_context.is_none());
     }
 }

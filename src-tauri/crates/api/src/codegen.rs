@@ -180,6 +180,101 @@ pub fn read_ask_scope(
     read_scope_files(roots, scope)
 }
 
+/// Map summary sent by the frontend for one analyzed root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextMapInput {
+    pub root_id: String,
+    pub text: String,
+}
+
+/// Background project context requested by the frontend: map
+/// summaries plus saved Markdown docs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectContextInput {
+    pub map: Vec<ContextMapInput>,
+    pub docs: Vec<ScopeFileInput>,
+}
+
+/// The root must exist and allow Muse: the same backstop as the scope.
+fn authorized_root<'a>(
+    roots: &'a CodeWorkspace,
+    root_id: &str,
+) -> Result<&'a ruth_code::CodeRoot, ApiError> {
+    let Some(root) = roots.get(root_id) else {
+        return Err(coded(
+            "code_root_not_found",
+            format!("Folder \"{root_id}\" outside the workspace"),
+        ));
+    };
+    if root.ai_blocked {
+        return Err(coded(
+            "code_ai_blocked",
+            format!("\"{}\" is marked to never be sent to Muse.", root.name),
+        ));
+    }
+    Ok(root)
+}
+
+/// Reads the project context: map sections name authorized roots and
+/// docs are saved Markdown files read from disk. Same backstop as the
+/// scope — unknown or blocked roots never reach a prompt — before any
+/// network. The doc count is capped here; render caps live in
+/// `ruth-meta`.
+pub fn read_project_context(
+    roots: &CodeWorkspace,
+    input: &ProjectContextInput,
+) -> Result<ruth_meta::code::ProjectContext, ApiError> {
+    use ruth_meta::code::{CodeScopeFile, ContextMapSection, ProjectContext, MAX_CONTEXT_DOCS};
+    if input.docs.len() > MAX_CONTEXT_DOCS {
+        return Err(coded(
+            "context_too_many_docs",
+            format!("At most {MAX_CONTEXT_DOCS} docs travel with the project context."),
+        ));
+    }
+    let mut seen = HashSet::new();
+    for doc in &input.docs {
+        if !seen.insert((doc.root_id.clone(), doc.rel.clone())) {
+            return Err(coded(
+                "duplicate_context_doc",
+                format!(
+                    "doc repeated in the project context: {}/{}",
+                    doc.root_id, doc.rel
+                ),
+            ));
+        }
+    }
+    let mut docs = Vec::with_capacity(input.docs.len());
+    for doc in &input.docs {
+        if !doc.rel.to_lowercase().ends_with(".md") {
+            return Err(coded(
+                "context_doc_not_markdown",
+                format!(
+                    "only Markdown docs travel with the project context: {}/{}",
+                    doc.root_id, doc.rel
+                ),
+            ));
+        }
+        let root = authorized_root(roots, &doc.root_id)?;
+        let read = ruth_code::read_file(&PathBuf::from(&root.path), &doc.rel).map_err(code_err)?;
+        docs.push(CodeScopeFile {
+            root_id: doc.root_id.clone(),
+            rel: doc.rel.clone(),
+            bytes: read.size,
+            content: read.text,
+        });
+    }
+    docs.sort_by(|a, b| (&a.root_id, &a.rel).cmp(&(&b.root_id, &b.rel)));
+    let mut map = Vec::with_capacity(input.map.len());
+    for section in &input.map {
+        authorized_root(roots, &section.root_id)?;
+        map.push(ContextMapSection {
+            root_id: section.root_id.clone(),
+            text: section.text.clone(),
+        });
+    }
+    Ok(ProjectContext { map, docs })
+}
+
 /// Reads the scope from disk with fingerprints: no duplicates,
 /// authorized roots and saved content. Stable order (root, path).
 fn read_scope_files(

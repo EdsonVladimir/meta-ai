@@ -3,13 +3,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { CodeGenerationDto, CodeProposalFileDto, CodeRootDto } from "../code/types";
+import { clearDiscoveryCache } from "../code/detectProjects";
 import type { RequirementDetail } from "../requirements/types";
 import { useRequirementsUi } from "../requirements/uiStore";
 import { MusePanel, type MusePanelApi } from "./MusePanel";
+import { clearMapSummaries, publishMapSection } from "./mapSummary";
 
 afterEach(() => {
   cleanup();
-  useRequirementsUi.setState({ museGeneration: null, museAccepted: null });
+  clearMapSummaries();
+  clearDiscoveryCache();
+  useRequirementsUi.setState({ museGeneration: null, museAccepted: null, museContext: {} });
 });
 
 const root: CodeRootDto = {
@@ -149,6 +153,7 @@ describe("MusePanel", () => {
         { rootId: "r", rel: "core/f1.ts" },
       ],
       [],
+      undefined,
     );
     expect(fake.createProject).not.toHaveBeenCalled();
     expect(fake.createRequirement).not.toHaveBeenCalled();
@@ -169,6 +174,7 @@ describe("MusePanel", () => {
       "Why?\n\nAlso in this folder, not included: core/f1.ts",
       [{ rootId: "r", rel: "core/f0.ts" }],
       [],
+      undefined,
     );
     // The thread and the history keep the person's words only.
     expect(screen.getByText("Why?")).toBeTruthy();
@@ -304,10 +310,10 @@ describe("MusePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     await screen.findByText("Answer to Second?.");
     expect(fake.ask).toHaveBeenCalledTimes(2);
-    expect(fake.ask).toHaveBeenNthCalledWith(1, "First?", files, []);
+    expect(fake.ask).toHaveBeenNthCalledWith(1, "First?", files, [], undefined);
     expect(fake.ask).toHaveBeenNthCalledWith(2, "Second?", files, [
       { question: "First?", answer: "Answer to First?." },
-    ]);
+    ], undefined);
   });
 
   it("retries a failed question from the error row", async () => {
@@ -333,6 +339,7 @@ describe("MusePanel", () => {
         { rootId: "r", rel: "core/f1.ts" },
       ],
       [],
+      undefined,
     );
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
@@ -359,6 +366,7 @@ describe("MusePanel", () => {
         { rootId: "r", rel: "core/f1.ts" },
       ],
       [],
+      undefined,
     );
     rerender(
       <MusePanel
@@ -463,6 +471,48 @@ describe("MusePanel", () => {
     expect(useRequirementsUi.getState().museGeneration?.id).toBe("cgen-1");
     expect(onPropose).toHaveBeenCalledTimes(2);
     expect(onPropose.mock.calls[1][0]).toMatchObject({ id: "cgen-1" });
+  });
+
+  it("shows the same proposal on the X-ray again after leaving its flow", async () => {
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api()} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    const before = useRequirementsUi.getState().museGeneration?.files;
+    fireEvent.click(screen.getByRole("button", { name: "Show on X-ray" }));
+    const after = useRequirementsUi.getState().museGeneration?.files;
+    expect(after).toEqual(before);
+    expect(after).not.toBe(before);
+  });
+
+  it("leaves a service focus that would hide the proposal", async () => {
+    useRequirementsUi.getState().setArchScope({ kind: "project", rootId: "r", rel: "other" });
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={api()} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    fireEvent.click(screen.getByRole("button", { name: "Show on X-ray" }));
+    expect(useRequirementsUi.getState().archScope).toEqual({ kind: "all" });
+  });
+
+  it("lists files accepted in this thread when changing files", async () => {
+    const fake = api();
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    fake.listDir = vi.fn(async () => ({
+      entries: [{ name: "users.ts", rel: "core/users.ts", kind: "file" as const, size: 1 }],
+      truncated: false,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Change files" }));
+    expect(await screen.findByText("core/users.ts")).toBeTruthy();
   });
 
   async function proposeOnce(fake: MusePanelApi, message = "Add a total") {
@@ -830,5 +880,231 @@ describe("MusePanel", () => {
     expect(fake.saveVersion).toHaveBeenCalledTimes(1);
     expect(fake.getRequirement).toHaveBeenCalledTimes(1);
     expect(fake.generate).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("MusePanel project context", () => {
+  const projectRoot: CodeRootDto = { ...root, projectId: "p1" };
+
+  function publishShopMap(): void {
+    publishMapSection({
+      key: "r::",
+      rootId: "r",
+      rootName: "shop",
+      title: "shop",
+      rel: "",
+      kind: "implicit",
+      filesAnalyzed: 2,
+      partial: false,
+      layers: [{ layer: "services", symbols: 2 }],
+      routes: [],
+      classes: [{ name: "SalesService", members: 3 }],
+    });
+  }
+
+  function enable(docs: Array<{ rootId: string; rel: string }> = [{ rootId: "r", rel: "notes.md" }]): void {
+    useRequirementsUi
+      .getState()
+      .setMuseContextChoice("p1", { enabled: true, dismissed: false, docs });
+  }
+
+  function apiWithDocs(): MusePanelApi {
+    const fake = api();
+    fake.listDir = vi.fn(async (_rootId: string, rel: string) => {
+      if (rel === "") {
+        return {
+          entries: [{ name: "notes.md", rel: "notes.md", kind: "file" as const, size: 50 }],
+          truncated: false,
+        };
+      }
+      return {
+        entries: [
+          { name: "f0.ts", rel: "core/f0.ts", kind: "file" as const, size: 1 },
+          { name: "f1.ts", rel: "core/f1.ts", kind: "file" as const, size: 1 },
+        ],
+        truncated: false,
+      };
+    });
+    return fake;
+  }
+
+  function renderThread(fake: MusePanelApi, roots: CodeRootDto[] = [projectRoot]) {
+    return render(
+      <MusePanel target={target} roots={roots} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+  }
+
+  it("offers the context once when a thread opens", async () => {
+    const fake = apiWithDocs();
+    renderThread(fake);
+    const offer = "Give Muse the project context? Nothing is sent until you send a message.";
+    expect(await screen.findByText(offer)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(await screen.findByRole("dialog", { name: "Project context" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close project context" }));
+    expect(screen.queryByRole("dialog", { name: "Project context" })).toBeNull();
+    expect(screen.getByText(offer)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    expect(screen.queryByText(offer)).toBeNull();
+    expect(useRequirementsUi.getState().museContext["p1"]).toEqual({
+      enabled: false,
+      dismissed: true,
+      docs: [],
+    });
+    // A later thread does not ask again.
+    cleanup();
+    renderThread(apiWithDocs());
+    await screen.findByText(/files here/);
+    expect(screen.queryByText(offer)).toBeNull();
+  });
+
+  it("shows the context line with map and doc counts", async () => {
+    enable([
+      { rootId: "r", rel: "a.md" },
+      { rootId: "r", rel: "b.md" },
+      { rootId: "r", rel: "c.md" },
+      { rootId: "r", rel: "d.md" },
+    ]);
+    publishShopMap();
+    renderThread(apiWithDocs());
+    await screen.findByText(/files here/);
+    expect(screen.getByText(/Project context: map · 4 docs/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+    cleanup();
+    clearMapSummaries();
+    enable([{ rootId: "r", rel: "notes.md" }]);
+    renderThread(apiWithDocs());
+    await screen.findByText(/files here/);
+    expect(screen.getByText(/Project context: map empty · 1 doc/)).toBeTruthy();
+    cleanup();
+    useRequirementsUi
+      .getState()
+      .setMuseContextChoice("p1", { enabled: false, dismissed: true, docs: [] });
+    renderThread(apiWithDocs());
+    await screen.findByText(/files here/);
+    expect(screen.getByText(/Project context: off/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+  });
+
+  it("attaches map and docs to Ask when on", async () => {
+    enable();
+    publishShopMap();
+    const fake = apiWithDocs();
+    renderThread(fake);
+    await screen.findByText(/files here/);
+    expect(screen.getByText(/Ask sends/).textContent).toContain("project context (map, 1 doc)");
+    write("Why?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    const sent = vi.mocked(fake.ask).mock.calls[0][3];
+    expect(sent?.map).toHaveLength(1);
+    expect(sent?.map[0].rootId).toBe("r");
+    expect(sent?.map[0].text).toContain("Analyzed services (1): shop");
+    expect(sent?.docs).toEqual([{ rootId: "r", rel: "notes.md" }]);
+  });
+
+  it("sends docs only when no service was analyzed", async () => {
+    enable();
+    const fake = apiWithDocs();
+    renderThread(fake);
+    await screen.findByText(/files here/);
+    expect(screen.getByText(/Project context: map empty · 1 doc/)).toBeTruthy();
+    write("Why?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    const sent = vi.mocked(fake.ask).mock.calls[0][3];
+    expect(sent?.map).toEqual([]);
+    expect(sent?.docs).toEqual([{ rootId: "r", rel: "notes.md" }]);
+    expect(screen.getByText(/Ask sends/).textContent).toContain("project context (1 doc)");
+  });
+
+  it("sends no context when off", async () => {
+    useRequirementsUi
+      .getState()
+      .setMuseContextChoice("p1", { enabled: false, dismissed: true, docs: [{ rootId: "r", rel: "notes.md" }] });
+    publishShopMap();
+    const fake = apiWithDocs();
+    renderThread(fake);
+    await screen.findByText(/files here/);
+    expect(screen.getByText(/Ask sends/).textContent).not.toContain("project context");
+    write("Why?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    expect(vi.mocked(fake.ask).mock.calls[0][3]).toBeUndefined();
+  });
+
+  it("drops missing and blocked docs with a notice, and the message still goes", async () => {
+    const blocked = { ...root, id: "b", name: "blocked", projectId: "p1", aiBlocked: true };
+    const gone = { ...root, id: "m", name: "gone", projectId: "p1", missing: true };
+    useRequirementsUi.getState().setMuseContextChoice("p1", {
+      enabled: true,
+      dismissed: false,
+      docs: [
+        { rootId: "r", rel: "notes.md" },
+        { rootId: "r", rel: "gone.md" },
+        { rootId: "b", rel: "b.md" },
+        { rootId: "m", rel: "m.md" },
+      ],
+    });
+    const fake = apiWithDocs();
+    renderThread(fake, [projectRoot, blocked, gone]);
+    await screen.findByText(/files here/);
+    write("Why?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    const sent = vi.mocked(fake.ask).mock.calls[0][3];
+    expect(sent?.docs).toEqual([{ rootId: "r", rel: "notes.md" }]);
+    expect(screen.getByText(/Dropped from the project context/).textContent).toContain(
+      "gone.md (missing), b.md (folder blocked), m.md (folder missing).",
+    );
+  });
+
+  it("carries the context on Retry", async () => {
+    enable();
+    publishShopMap();
+    const fake = apiWithDocs();
+    vi.mocked(fake.ask).mockRejectedValueOnce({ kind: "meta_down", message: "Meta is down." });
+    renderThread(fake);
+    await screen.findByText(/files here/);
+    write("Why?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByRole("button", { name: "Retry" });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("It validates.");
+    expect(fake.ask).toHaveBeenCalledTimes(2);
+    const sent = vi.mocked(fake.ask).mock.calls[1][3];
+    expect(sent?.map).toHaveLength(1);
+    expect(sent?.docs).toEqual([{ rootId: "r", rel: "notes.md" }]);
+  });
+
+  it("carries the context on Propose change and Adjust proposal", async () => {
+    enable();
+    publishShopMap();
+    const fake = apiWithDocs();
+    withVersions(fake, "req-1-v1", "Add a total");
+    vi.mocked(fake.generate)
+      .mockResolvedValueOnce(generationDto())
+      .mockResolvedValue(
+        generationDto({ id: "cgen-2", explanation: "Adjusted.", questions: [] }),
+      );
+    renderThread(fake);
+    await screen.findByText(/files here/);
+    expect(screen.getByText(/Propose change sends/).textContent).toContain(
+      "project context (map, 1 doc)",
+    );
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    const proposed = vi.mocked(fake.generate).mock.calls[0][0].projectContext;
+    expect(proposed?.map).toHaveLength(1);
+    expect(proposed?.docs).toEqual([{ rootId: "r", rel: "notes.md" }]);
+    write("Use doubles.");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    await screen.findByText("Adjusted.");
+    const adjusted = vi.mocked(fake.generate).mock.calls[1][0];
+    expect(adjusted.instruction).toBe("Use doubles.");
+    expect(adjusted.projectContext?.map).toHaveLength(1);
+    expect(adjusted.projectContext?.docs).toEqual([{ rootId: "r", rel: "notes.md" }]);
+    expect(screen.getByText(/Adjust proposal sends/).textContent).toContain("project context (map, 1 doc)");
   });
 });

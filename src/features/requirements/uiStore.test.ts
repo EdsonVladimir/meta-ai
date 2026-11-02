@@ -24,6 +24,7 @@ beforeEach(() => {
     archScope: { kind: "all" },
     mapHiddenProjects: {},
     mapOpenedProjects: {},
+    museContext: {},
     codeFolderSelection: null,
     centerDoc: null,
     discardSignal: 0,
@@ -255,6 +256,7 @@ describe("persisted panel sizes", () => {
       archInspectorWidth: 320,
       layerOverrides: { s1: { layer: "state", name: "Billing" } },
       archExternalFolders: [{ rootId: "r1", rel: "vendor" }],
+      museContext: {},
     });
   });
 
@@ -314,6 +316,7 @@ describe("persisted panel sizes", () => {
       archInspectorWidth: 320,
       layerOverrides: { s1: { layer: "state", name: "Billing" } },
       archExternalFolders: [],
+      museContext: {},
     });
     const fallback = {
       navigatorWidth: null,
@@ -326,6 +329,7 @@ describe("persisted panel sizes", () => {
       archInspectorWidth: null,
       layerOverrides: {},
       archExternalFolders: [],
+      museContext: {},
     };
     expect(validateLayoutPartial(null)).toEqual(fallback);
     expect(validateLayoutPartial("basura")).toEqual(fallback);
@@ -344,5 +348,45 @@ describe("persisted panel sizes", () => {
     expect(
       validateLayoutPartial({ navigatorWidth: 300, rightWidth: null }),
     ).toEqual({ ...fallback, navigatorWidth: 300 });
+  });
+
+  it("keeps valid Muse context choices and drops corrupt ones", () => {
+    expect(
+      validateLayoutPartial({
+        museContext: {
+          p1: {
+            enabled: true,
+            dismissed: false,
+            docs: [{ rootId: "r", rel: "notes.md" }],
+          },
+          broken: { enabled: "yes", dismissed: false, docs: [] },
+          nodocs: { enabled: false, dismissed: true, docs: "x" },
+          "": { enabled: false, dismissed: false, docs: [] },
+        },
+      }).museContext,
+    ).toEqual({
+      p1: { enabled: true, dismissed: false, docs: [{ rootId: "r", rel: "notes.md" }] },
+    });
+    expect(
+      validateLayoutPartial({
+        museContext: {
+          p1: {
+            enabled: false,
+            dismissed: false,
+            docs: [{ rootId: "r", rel: "ok.md" }, { rootId: "", rel: "bad.md" }, 7],
+          },
+        },
+      }).museContext,
+    ).toEqual({
+      p1: { enabled: false, dismissed: false, docs: [{ rootId: "r", rel: "ok.md" }] },
+    });
+  });
+
+  it("stores the Muse context choice per project", () => {
+    const ui = useRequirementsUi.getState();
+    ui.setMuseContextChoice("p1", { enabled: true, dismissed: false, docs: [] });
+    expect(useRequirementsUi.getState().museContext).toEqual({
+      p1: { enabled: true, dismissed: false, docs: [] },
+    });
   });
 });

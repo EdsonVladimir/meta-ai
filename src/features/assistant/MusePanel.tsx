@@ -18,9 +18,11 @@ import {
   setRootProject,
   type AskTurnInput,
   type CodeGenRequest,
+  type CodeProjectContextInput,
 } from "../code/client";
 import type {
   CodeAcceptDto,
+  CodeEntryDto,
   CodeFileDto,
   CodeGenerationDto,
   CodeRootDto,
@@ -40,8 +42,18 @@ import {
 } from "../requirements/client";
 import type { RequirementDetail } from "../requirements/types";
 import { currentVersion } from "../requirements/types";
-import { useRequirementsUi, type MuseTarget } from "../requirements/uiStore";
+import {
+  useRequirementsUi,
+  type MuseContextChoice,
+  type MuseTarget,
+} from "../requirements/uiStore";
 import { MarkdownLite } from "./markdownLite";
+import { CONTEXT_DOCS_SEND_MAX, MuseContextDialog } from "./MuseContextDialog";
+import {
+  detectedForRoots,
+  mapSectionsForRoots,
+  renderRootSummary,
+} from "./mapSummary";
 import {
   adjustmentScope,
   collectMuseFiles,
@@ -259,6 +271,8 @@ export function MusePanel({
   /** True while a proposal exists: the composer adjusts instead of proposing. */
   const [adjustMode, setAdjustMode] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [contextDialog, setContextDialog] = useState(false);
+  const [contextNotice, setContextNotice] = useState<string | null>(null);
   const apiRef = useRef(api);
   apiRef.current = api;
   const idRef = useRef(0);
@@ -276,6 +290,8 @@ export function MusePanel({
     setFailed(null);
     setFailedProposal(null);
     setAdjustMode(false);
+    setContextDialog(false);
+    setContextNotice(null);
     collectMuseFiles(target, apiRef.current.listDir)
       .then((found) => {
         if (stale) return;
@@ -307,6 +323,39 @@ export function MusePanel({
     chosen === null ? pickMuseFiles(all, text) : all.filter((file) => chosen.has(file.rel));
   const picked = new Set(files.map((file) => file.rel));
   const rootNames = Object.fromEntries(roots.map((entry) => [entry.id, entry.name]));
+  // Project context: confirmed once per project, attached to every
+  // send while enabled. Loose folders keep today's behavior.
+  const projectId = root?.projectId ?? null;
+  const dialogRoots =
+    projectId === null ? [] : roots.filter((entry) => entry.projectId === projectId);
+  const contextRoots = dialogRoots.filter((entry) => !entry.missing && !entry.aiBlocked);
+  const choice = useRequirementsUi((s) =>
+    projectId === null ? undefined : s.museContext[projectId],
+  );
+  const contextEnabled = choice?.enabled === true;
+  const contextSections =
+    projectId === null ? [] : mapSectionsForRoots(contextRoots.map((entry) => entry.id));
+  const contextMapReady = contextSections.length > 0;
+  const contextDocCount = choice?.docs.length ?? 0;
+  const contextDocPart =
+    contextDocCount === 0
+      ? null
+      : contextDocCount <= CONTEXT_DOCS_SEND_MAX
+        ? `${contextDocCount} ${contextDocCount === 1 ? "doc" : "docs"}`
+        : `${CONTEXT_DOCS_SEND_MAX} of ${contextDocCount} docs`;
+  const contextPart =
+    !contextEnabled || (!contextMapReady && contextDocPart === null)
+      ? null
+      : `project context (${[contextMapReady ? "map" : null, contextDocPart]
+          .filter((part): part is string => part !== null)
+          .join(", ")})`;
+  const contextLineText = !contextEnabled
+    ? "Project context: off · "
+    : `Project context: ${contextMapReady ? "map" : "map empty"} · ${
+        contextDocCount === 0
+          ? "no docs"
+          : `${contextDocCount} ${contextDocCount === 1 ? "doc" : "docs"}`
+      } · `;
   // What leaves the machine, in plain view: it must not need a hover.
   const leftOut = all.length - files.length;
   const fileText = (count: number): string => (count === 1 ? "1 file" : `${count} files`);
@@ -314,6 +363,7 @@ export function MusePanel({
     `Ask sends ${fileText(files.length)}`,
     ...(leftOut > 0 ? [`the names of the other ${leftOut}`] : []),
     ...(messages.length > 0 ? ["this conversation"] : []),
+    ...(contextPart !== null ? [contextPart] : []),
   ].join(", ").concat(".");
   const newest = newestProposal(messages);
   const showAdjust = adjustMode && newest !== null;
@@ -325,9 +375,10 @@ export function MusePanel({
   const shownProposals = messages.flatMap((entry) =>
     entry.role === "proposal" ? [latest(entry.generation)] : [],
   );
+  const contextSuffix = contextPart === null ? "" : `, ${contextPart}`;
   const changeOutgoing = showAdjust
-    ? `Adjust proposal sends ${fileText(adjustmentScope(shownProposals).length)}, the current proposal and your request.`
-    : `Propose change sends ${fileText(files.length)} and your request.`;
+    ? `Adjust proposal sends ${fileText(adjustmentScope(shownProposals).length)}, the current proposal and your request${contextSuffix}.`
+    : `Propose change sends ${fileText(files.length)} and your request${contextSuffix}.`;
   const pendingFiles =
     newest === null
       ? 0
@@ -380,16 +431,110 @@ export function MusePanel({
   function proposalAccepted(rootId: string, rel: string): void {
     const ui = useRequirementsUi.getState();
     ui.setMuseAccepted({ rootId, rel, nonce: (ui.museAccepted?.nonce ?? 0) + 1 });
+    refreshCandidates();
   }
 
   function showOnXray(generation: CodeGenerationDto): void {
-    useRequirementsUi.getState().setMuseGeneration(generation);
+    const ui = useRequirementsUi.getState();
+    // A focus on another service would leave these files off the board.
+    const scope = ui.archScope;
+    if (
+      scope.kind !== "all" &&
+      generation.files.some(
+        (file) =>
+          file.rootId !== scope.rootId ||
+          (scope.rel !== "" && !file.rel.startsWith(`${scope.rel}/`)),
+      )
+    ) {
+      ui.setArchScope({ kind: "all" });
+    }
+    // A new list asks the board to draw again, even after leaving the flow.
+    ui.setMuseGeneration({ ...generation, files: [...generation.files] });
     onPropose(generation);
+  }
+
+  /** Files written since the thread opened must be selectable. */
+  function refreshCandidates(): void {
+    collectMuseFiles(target, apiRef.current.listDir)
+      .then((found) => {
+        setCandidates(found.files);
+        setTruncated(found.truncated);
+      })
+      .catch((raw) => setNotice(reason(raw)));
   }
 
   /** What the card shows: the X-ray copy when it carries this generation. */
   function latest(generation: CodeGenerationDto): CodeGenerationDto {
     return museGeneration?.id === generation.id ? museGeneration : generation;
+  }
+
+  /**
+   * Builds the context for one send: current map texts plus the
+   * chosen docs that still exist on unblocked folders. Dropped files
+   * come back as notices; the message still goes.
+   */
+  async function currentContext(): Promise<{
+    context: CodeProjectContextInput | undefined;
+    notices: string[];
+  }> {
+    const notices: string[] = [];
+    if (projectId === null || choice?.enabled !== true) return { context: undefined, notices };
+    const ids = contextRoots.map((entry) => entry.id);
+    const sections = mapSectionsForRoots(ids);
+    const detected = detectedForRoots(ids);
+    const analyzed = new Set(sections.map((section) => section.key));
+    const map: Array<{ rootId: string; text: string }> = [];
+    for (const entry of contextRoots) {
+      const own = sections.filter((section) => section.rootId === entry.id);
+      if (own.length === 0) continue;
+      const unanalyzed = detected
+        .filter((service) => service.rootId === entry.id && !analyzed.has(service.key))
+        .map((service) => service.name);
+      const text = renderRootSummary({ id: entry.id, name: entry.name }, own, unanalyzed);
+      if (text !== "") map.push({ rootId: entry.id, text });
+    }
+    const dropped: Array<{ label: string; reason: string }> = [];
+    const kept: Array<{ rootId: string; rel: string }> = [];
+    const listings = new Map<string, CodeEntryDto[] | null>();
+    for (const doc of choice.docs) {
+      const entry = roots.find((candidate) => candidate.id === doc.rootId) ?? null;
+      if (entry === null || entry.missing) {
+        dropped.push({ label: doc.rel, reason: "folder missing" });
+        continue;
+      }
+      if (entry.aiBlocked) {
+        dropped.push({ label: doc.rel, reason: "folder blocked" });
+        continue;
+      }
+      const slash = doc.rel.lastIndexOf("/");
+      const parent = slash === -1 ? "" : doc.rel.slice(0, slash);
+      const key = `${doc.rootId}::${parent}`;
+      if (!listings.has(key)) {
+        try {
+          listings.set(key, (await apiRef.current.listDir(doc.rootId, parent)).entries);
+        } catch {
+          listings.set(key, null);
+        }
+      }
+      const found = listings.get(key) ?? null;
+      if (found === null) {
+        dropped.push({ label: doc.rel, reason: "unreadable" });
+        continue;
+      }
+      if (!found.some((item) => item.kind === "file" && item.rel === doc.rel)) {
+        dropped.push({ label: doc.rel, reason: "missing" });
+        continue;
+      }
+      kept.push({ rootId: doc.rootId, rel: doc.rel });
+    }
+    if (dropped.length > 0) {
+      notices.push(
+        `Dropped from the project context: ${dropped.map((item) => `${item.label} (${item.reason})`).join(", ")}.`,
+      );
+    }
+    const docs = kept.slice(0, CONTEXT_DOCS_SEND_MAX);
+    if (map.length === 0 && docs.length === 0) return { context: undefined, notices };
+    return { context: { map, docs }, notices };
   }
 
   async function runAsk(
@@ -403,13 +548,17 @@ export function MusePanel({
     setBusy("ask");
     setFailed(null);
     setNotice(null);
+    setContextNotice(null);
     const others = all.filter((file) => !askFiles.includes(file)).map((file) => file.rel);
     const sent =
       others.length === 0
         ? question
         : `${question}\n\nAlso in this folder, not included: ${others.join(", ")}`;
     try {
-      const reply = await api.ask(sent, askFiles, history);
+      const built = await currentContext();
+      if (thread !== threadRef.current) return;
+      if (built.notices.length > 0) setContextNotice(built.notices.join(" "));
+      const reply = await api.ask(sent, askFiles, history, built.context);
       if (thread === threadRef.current) appendMessage("muse", reply.answer);
     } catch (raw) {
       if (thread === threadRef.current) {
@@ -445,6 +594,7 @@ export function MusePanel({
     setBusy("propose");
     setFailedProposal(null);
     setNotice(null);
+    setContextNotice(null);
     let saved = input.resume;
     try {
       if (saved === null) {
@@ -463,11 +613,15 @@ export function MusePanel({
           previousGenerationId: null,
         };
       }
+      const built = await currentContext();
+      if (thread !== threadRef.current) return;
+      if (built.notices.length > 0) setContextNotice(built.notices.join(" "));
       const generation = await api.generate({
         projectId: saved.projectId,
         moduleId: saved.moduleId,
         source: { kind: "requirement", artifactId: saved.requirementId },
         scope: saved.scope,
+        projectContext: built.context,
       });
       if (thread !== threadRef.current) return;
       appendProposal(generation);
@@ -512,6 +666,7 @@ export function MusePanel({
     setBusy("propose");
     setFailedProposal(null);
     setNotice(null);
+    setContextNotice(null);
     let saved = input.resume;
     try {
       if (saved === null) {
@@ -546,6 +701,9 @@ export function MusePanel({
           previousGenerationId: input.generation.id,
         };
       }
+      const built = await currentContext();
+      if (thread !== threadRef.current) return;
+      if (built.notices.length > 0) setContextNotice(built.notices.join(" "));
       const generation = await api.generate({
         projectId: saved.projectId,
         moduleId: saved.moduleId,
@@ -553,6 +711,7 @@ export function MusePanel({
         scope: saved.scope,
         instruction: input.text,
         previousGenerationId: saved.previousGenerationId ?? undefined,
+        projectContext: built.context,
       });
       if (thread !== threadRef.current) return;
       appendProposal(generation);
@@ -613,7 +772,20 @@ export function MusePanel({
     setFailedProposal(null);
     setAdjustMode(false);
     setNotice(null);
+    setContextNotice(null);
     useRequirementsUi.getState().setMuseGeneration(null);
+  }
+
+  function dismissOffer(): void {
+    if (projectId === null) return;
+    useRequirementsUi
+      .getState()
+      .setMuseContextChoice(projectId, { enabled: false, dismissed: true, docs: [] });
+  }
+
+  function saveContextChoice(next: MuseContextChoice): void {
+    if (projectId === null) return;
+    useRequirementsUi.getState().setMuseContextChoice(projectId, next);
   }
 
   /** The question a Muse message answers: its nearest user message above. */
@@ -685,6 +857,21 @@ export function MusePanel({
         </p>
       ) : (
         <>
+          {projectId !== null && choice === undefined && (
+            <div className="muse-offer">
+              <p className="hint">
+                Give Muse the project context? Nothing is sent until you send a message.
+              </p>
+              <div className="button-row">
+                <button type="button" className="secondary small" onClick={() => setContextDialog(true)}>
+                  Review
+                </button>
+                <button type="button" className="secondary small" onClick={dismissOffer}>
+                  Not now
+                </button>
+              </div>
+            </div>
+          )}
           <div className="muse-thread" role="log" aria-label="Conversation with Muse">
             {messages.map((message, index) =>
               message.role === "user" ? (
@@ -845,6 +1032,25 @@ export function MusePanel({
             <div ref={endRef} />
           </div>
           <div className="muse-composer">
+            {projectId !== null && (
+              <div className="muse-context-line">
+                <span className="hint" role="status">
+                  {contextLineText}
+                </span>
+                <button
+                  type="button"
+                  className="secondary small"
+                  onClick={() => setContextDialog(true)}
+                >
+                  {contextEnabled ? "Edit" : "Set up"}
+                </button>
+              </div>
+            )}
+            {contextNotice !== null && (
+              <p className="hint" role="status">
+                {contextNotice}
+              </p>
+            )}
             {notice !== null && (
               <p className="error" role="alert">
                 {notice}
@@ -863,7 +1069,10 @@ export function MusePanel({
                   type="button"
                   className="secondary small"
                   aria-expanded={showFiles}
-                  onClick={() => setShowFiles((prev) => !prev)}
+                  onClick={() => {
+                    if (!showFiles) refreshCandidates();
+                    setShowFiles((prev) => !prev);
+                  }}
                 >
                   {showFiles ? "Hide files" : "Change files"}
                 </button>
@@ -932,6 +1141,15 @@ export function MusePanel({
             </div>
           </div>
         </>
+      )}
+      {contextDialog && projectId !== null && (
+        <MuseContextDialog
+          roots={dialogRoots}
+          choice={choice ?? null}
+          api={api}
+          onSave={saveContextChoice}
+          onClose={() => setContextDialog(false)}
+        />
       )}
     </section>
   );

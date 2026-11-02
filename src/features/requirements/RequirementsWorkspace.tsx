@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isTauriEnvironment } from "../../lib/env";
 import { createProjectFromFolder } from "./projectFromFolder";
 import { MusePanel } from "../assistant/MusePanel";
+import { clearMapSummaries } from "../assistant/mapSummary";
 import { NavSplitHandle } from "../explorer/NavSplitHandle";
 import { addCodeRoot, setRootProject } from "../code/client";
 import {
@@ -1214,6 +1215,7 @@ export function RequirementsWorkspace() {
     // from Propose with Muse; nothing stored changes.
     ui.requestCloseCodeTabs();
     setMuseThreads([]);
+    clearMapSummaries();
     setMusePending({});
     ui.setMuseTarget(null);
     ui.setMuseGeneration(null);

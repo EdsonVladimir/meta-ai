@@ -4,8 +4,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use ruth_api::{
-    build_stored_codegen, read_ask_scope, snapshot_code_context, AcceptCheck, IdGen,
-    RecordCodeGenInput, ScopeFileInput,
+    build_stored_codegen, read_ask_scope, read_project_context, snapshot_code_context, AcceptCheck,
+    ContextMapInput, IdGen, ProjectContextInput, RecordCodeGenInput, ScopeFileInput,
 };
 use ruth_code::{CodeRoot, CodeWorkspace};
 use ruth_core::application::Store;
@@ -697,5 +697,138 @@ fn lists_only_proposable_mockups_with_their_screens() {
     assert_eq!(listed[0].screens.len(), 1);
     assert_eq!(listed[0].screens[0].id, "registro");
     assert_eq!(listed[0].screens[0].title, "Registro de usuario");
+    let _ = std::fs::remove_dir_all(&baby.dir);
+}
+
+fn context_doc(root: &str, rel: &str) -> ScopeFileInput {
+    ScopeFileInput {
+        root_id: root.to_string(),
+        rel: rel.to_string(),
+    }
+}
+
+fn context_map(root: &str, text: &str) -> ContextMapInput {
+    ContextMapInput {
+        root_id: root.to_string(),
+        text: text.to_string(),
+    }
+}
+
+fn context_input(map: Vec<ContextMapInput>, docs: Vec<ScopeFileInput>) -> ProjectContextInput {
+    ProjectContextInput { map, docs }
+}
+
+#[test]
+fn context_reads_saved_markdown_and_map() {
+    let baby = baby();
+    std::fs::write(baby.dir.join("notes.md"), "# Notes\n").expect("fixture");
+    std::fs::create_dir_all(baby.dir.join("docs")).expect("fixture");
+    std::fs::write(baby.dir.join("docs").join("guide.md"), "# Guide\n").expect("fixture");
+    let context = read_project_context(
+        &baby.roots,
+        &context_input(
+            vec![context_map("root-1", "one service, two layers")],
+            vec![
+                context_doc("root-1", "notes.md"),
+                context_doc("root-1", "docs/guide.md"),
+            ],
+        ),
+    )
+    .expect("context");
+    assert_eq!(context.map.len(), 1);
+    assert_eq!(context.map[0].root_id, "root-1");
+    assert_eq!(context.map[0].text, "one service, two layers");
+    assert_eq!(context.docs.len(), 2);
+    assert_eq!(context.docs[0].rel, "docs/guide.md");
+    assert_eq!(context.docs[0].content, "# Guide\n");
+    assert_eq!(context.docs[1].rel, "notes.md");
+    assert_eq!(context.docs[1].content, "# Notes\n");
+    let _ = std::fs::remove_dir_all(&baby.dir);
+}
+
+#[test]
+fn context_accepts_uppercase_md_and_empty_input() {
+    let baby = baby();
+    std::fs::write(baby.dir.join("Upper.MD"), "# Upper\n").expect("fixture");
+    let context = read_project_context(
+        &baby.roots,
+        &context_input(vec![], vec![context_doc("root-1", "Upper.MD")]),
+    )
+    .expect("context");
+    assert_eq!(context.docs.len(), 1);
+    let empty = read_project_context(&baby.roots, &context_input(vec![], vec![])).expect("empty");
+    assert!(empty.is_empty());
+    let _ = std::fs::remove_dir_all(&baby.dir);
+}
+
+#[test]
+fn context_rejects_too_many_repeated_and_non_markdown_docs() {
+    let baby = baby();
+    let many: Vec<ScopeFileInput> = (0..9)
+        .map(|n| context_doc("root-1", &format!("f{n}.md")))
+        .collect();
+    let err = read_project_context(&baby.roots, &context_input(vec![], many)).expect_err("many");
+    assert_eq!(err.kind, "context_too_many_docs");
+    let repeated = vec![
+        context_doc("root-1", "notes.md"),
+        context_doc("root-1", "notes.md"),
+    ];
+    let err =
+        read_project_context(&baby.roots, &context_input(vec![], repeated)).expect_err("repeat");
+    assert_eq!(err.kind, "duplicate_context_doc");
+    let err = read_project_context(
+        &baby.roots,
+        &context_input(vec![], vec![context_doc("root-1", "src/a.ts")]),
+    )
+    .expect_err("non-md");
+    assert_eq!(err.kind, "context_doc_not_markdown");
+    let _ = std::fs::remove_dir_all(&baby.dir);
+}
+
+#[test]
+fn context_rejects_unknown_roots() {
+    let baby = baby();
+    let err = read_project_context(
+        &baby.roots,
+        &context_input(vec![], vec![context_doc("root-9", "notes.md")]),
+    )
+    .expect_err("doc root");
+    assert_eq!(err.kind, "code_root_not_found");
+    let err = read_project_context(
+        &baby.roots,
+        &context_input(vec![context_map("root-9", "text")], vec![]),
+    )
+    .expect_err("map root");
+    assert_eq!(err.kind, "code_root_not_found");
+    let _ = std::fs::remove_dir_all(&baby.dir);
+}
+
+#[test]
+fn context_never_sends_blocked_roots() {
+    let mut baby = baby();
+    std::fs::write(baby.dir.join("notes.md"), "# Notes\n").expect("fixture");
+    let ok = read_project_context(
+        &baby.roots,
+        &context_input(
+            vec![context_map("root-1", "text")],
+            vec![context_doc("root-1", "notes.md")],
+        ),
+    );
+    assert!(ok.is_ok());
+    let mut roots = baby.roots.roots().to_vec();
+    roots[0].ai_blocked = true;
+    baby.roots = CodeWorkspace::from_roots(roots);
+    let err = read_project_context(
+        &baby.roots,
+        &context_input(vec![], vec![context_doc("root-1", "notes.md")]),
+    )
+    .expect_err("doc blocked");
+    assert_eq!(err.kind, "code_ai_blocked");
+    let err = read_project_context(
+        &baby.roots,
+        &context_input(vec![context_map("root-1", "text")], vec![]),
+    )
+    .expect_err("map blocked");
+    assert_eq!(err.kind, "code_ai_blocked");
     let _ = std::fs::remove_dir_all(&baby.dir);
 }

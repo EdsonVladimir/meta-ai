@@ -3,6 +3,7 @@
 // evidence; for a bare node, the symbol and its chain members.
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { readCodeFile } from "../client";
 import { CodeConflictDiff } from "../CodeConflictDiff";
 import { DEFAULT_CODE_EDITOR_PREFS, type CodeEditorPrefs } from "../editorPrefs";
@@ -205,7 +206,8 @@ function ProposalDiffModal({
       cancelled = true;
     };
   }, [proposal.file]);
-  return (
+  // On the body: the inspector's stacking context sits under the board.
+  return createPortal(
     <div className="modal-backdrop" onClick={onClose}>
       <div
         className="modal wide"
@@ -238,7 +240,8 @@ function ProposalDiffModal({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
