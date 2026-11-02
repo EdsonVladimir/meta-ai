@@ -320,12 +320,17 @@ function refindStart(
   return { start: { ...start, symbolId: found.id }, name: found.name };
 }
 
-/** The change closest to the user: UI before services, services before contracts. */
-function firstChangeStart(
+/**
+ * The change closest to the user: UI before services, services before
+ * contracts. Within that layer, the one with the longest chain: a page
+ * reaches its store and service, and a form it hosts reaches nothing.
+ */
+export function firstChangeStart(
   projects: FlowProject[],
   overlay: ProposalOverlay,
 ): { start: FlowStart; name: string } | null {
-  let best: { start: FlowStart; name: string; order: number } | null = null;
+  let candidates: Array<{ start: FlowStart; name: string }> = [];
+  let lowest = Number.POSITIVE_INFINITY;
   for (const project of projects) {
     for (const symbol of project.result.symbols) {
       if (symbol.kind !== "class" && symbol.kind !== "component") continue;
@@ -337,13 +342,22 @@ function firstChangeStart(
         decorators: symbol.decorators ?? [],
       });
       const order = ARCH_LAYER_BY_ID[layer].order;
-      if (best === null || order < best.order) {
-        best = {
-          start: { projectKey: project.key, symbolId: symbol.id, member: null },
-          name: symbol.name,
-          order,
-        };
-      }
+      if (order > lowest) continue;
+      if (order < lowest) candidates = [];
+      lowest = order;
+      candidates.push({
+        start: { projectKey: project.key, symbolId: symbol.id, member: null },
+        name: symbol.name,
+      });
+    }
+  }
+  let best: { start: FlowStart; name: string } | null = null;
+  let longest = -1;
+  for (const candidate of candidates) {
+    const size = candidates.length === 1 ? 0 : buildFlowGraph(projects, candidate.start).nodes.length;
+    if (size > longest) {
+      longest = size;
+      best = candidate;
     }
   }
   return best;

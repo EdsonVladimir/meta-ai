@@ -5,6 +5,7 @@ import { analyzeTsFiles } from "../structure/tsAnalyze";
 import type { StructureInput } from "../structure/structureTypes";
 import { buildFlowGraph } from "./flowModel";
 import type { FlowProject, FlowStart } from "./flowModel";
+import { firstChangeStart } from "./ProjectMapView";
 import { applyChangesToGraph, buildProposalOverlay } from "./proposalOverlay";
 
 // Sample root id, shared with the proposal files below.
@@ -182,5 +183,40 @@ describe("proposed files outside the shown services", () => {
       [file("b.ts", `export class B {}`, "create")],
     );
     expect(overlay.projects[0].result.symbols.some((symbol) => symbol.name === "B")).toBe(true);
+  });
+});
+
+describe("where the proposal flow starts", () => {
+  it("prefers the page that reaches the store over the form it hosts", () => {
+    const base = project("fe", { "src/keep.ts": `export class Keep {}` });
+    const overlay = buildProposalOverlay(
+      [base],
+      [
+        file(
+          "src/a-form.component.ts",
+          `import { Component } from "@angular/core";
+@Component({ selector: "app-a-form", template: "<form></form>" })
+export class AFormComponent {}`,
+          "create",
+        ),
+        file(
+          "src/items.store.ts",
+          `export class ItemsStore { load() {} }`,
+          "create",
+        ),
+        file(
+          "src/items-page.component.ts",
+          `import { Component, inject } from "@angular/core";
+import { ItemsStore } from "./items.store";
+@Component({ selector: "app-items", template: "<p></p>" })
+export class ItemsPageComponent {
+  private readonly store = inject(ItemsStore);
+  open(): void { this.store.load(); }
+}`,
+          "create",
+        ),
+      ],
+    );
+    expect(firstChangeStart(overlay.projects, overlay)?.name).toBe("ItemsPageComponent");
   });
 });
