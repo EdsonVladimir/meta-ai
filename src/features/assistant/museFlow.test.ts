@@ -24,6 +24,24 @@ const folder = (name: string, dir = "") => ({
 });
 
 describe("collectMuseFiles", () => {
+  it("leaves out generated reports and files too large to read", async () => {
+    const entries: Record<string, Array<{ name: string; rel: string; kind: string; size: number | null }>> = {
+      "": [
+        { name: "playwright-report", rel: "playwright-report", kind: "dir", size: null },
+        { name: "big.ts", rel: "big.ts", kind: "file", size: 262_145 },
+        { name: "ok.ts", rel: "ok.ts", kind: "file", size: 262_144 },
+      ],
+      "playwright-report": [
+        { name: "index.html", rel: "playwright-report/index.html", kind: "file", size: 10 },
+      ],
+    };
+    const out = await collectMuseFiles(
+      { rootId: "r", rel: "", kind: "folder" },
+      async (_root, rel) => ({ entries: entries[rel] ?? [] }),
+    );
+    expect(out.files.map((file) => file.rel)).toEqual(["ok.ts"]);
+  });
+
   it("offers one file as it is", async () => {
     const listDir = vi.fn();
     const out = await collectMuseFiles({ rootId: "r", rel: "a/b.md", kind: "file" }, listDir);

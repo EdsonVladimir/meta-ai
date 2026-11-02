@@ -3,6 +3,7 @@
 // and a module to trace a requirement; Ruth creates them from the folder
 // instead of asking for them. Each step that fails says so and deletes
 // nothing, as `projectFromFolder` does.
+import { COLLECT_SKIPPED_DIR_NAMES } from "../code/archmap/projectMaps";
 import type { MuseTarget } from "../requirements/uiStore";
 
 /** Same bound as the Rust side (`MAX_CODE_SCOPE_FILES`). */
@@ -12,6 +13,14 @@ export const MUSE_MAX_CANDIDATES = 60;
 const MAX_DIRS_WALKED = 200;
 const SOURCE = /\.(ts|tsx|js|jsx|mts|rs|java|kt|py|go|cs|php|rb|html|css|scss|sql)$/i;
 const NOT_SOURCE = /(\.spec\.|\.test\.|\.d\.ts$|\.min\.)/i;
+/** Same bound as the Rust reader: a larger file would fail the whole message. */
+const MAX_READABLE_BYTES = 262_144;
+/** Generated output, never what explains a project. */
+const SKIPPED_DIRS = new Set([
+  ...COLLECT_SKIPPED_DIR_NAMES.map((name) => name.toLowerCase()),
+  "playwright-report",
+  "test-results",
+]);
 
 export interface MuseFile {
   rootId: string;
@@ -32,6 +41,7 @@ interface Entry {
   name: string;
   rel: string;
   kind: string;
+  size?: number | null;
 }
 
 /** Source files under a target, shallow first: the closest files explain it. */
@@ -52,8 +62,14 @@ export async function collectMuseFiles(
     const sorted = [...entries].sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of sorted) {
       if (entry.name.startsWith(".")) continue;
-      if (entry.kind === "dir") queue.push(entry.rel);
-      else if (entry.kind === "file" && SOURCE.test(entry.name) && !NOT_SOURCE.test(entry.name)) {
+      if (entry.kind === "dir") {
+        if (!SKIPPED_DIRS.has(entry.name.toLowerCase())) queue.push(entry.rel);
+      } else if (
+        entry.kind === "file" &&
+        SOURCE.test(entry.name) &&
+        !NOT_SOURCE.test(entry.name) &&
+        (entry.size ?? 0) <= MAX_READABLE_BYTES
+      ) {
         files.push({ rootId: target.rootId, rel: entry.rel });
       }
     }

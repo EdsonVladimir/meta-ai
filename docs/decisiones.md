@@ -455,6 +455,9 @@ still holds. Commits are on `code-xray`.
   an adjustment did not switch to Architecture, and Show on X-ray left
   an open file in front. Both now show the board, and it names the
   version, because a change inside a method draws no new row.
+- **Generated reports and oversized files never reach Muse's list.**
+  A Playwright report over the 256 KiB read limit failed the whole
+  message, so its folder and any file over that limit stay out.
 - **Preview applies inline `styles`.** It only read style files, so a
   proposal with inline CSS looked unstyled.
 
