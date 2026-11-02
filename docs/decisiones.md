@@ -438,6 +438,12 @@ still holds. Commits are on `code-xray`.
   strip takes only its own height, and the Architecture tab leaves a
   file. That tab did nothing once Architecture became the landing view.
 
+**Reading a large map**
+
+- **Classes cards start closed.** With members open, a service filled
+  screens of rows and hid its shape. Each card opens on demand, and
+  Show flow keeps showing the members of its chain.
+
 **Reading and choosing what Muse sees**
 
 - **Adjust proposal respects the chosen files.** It read only the

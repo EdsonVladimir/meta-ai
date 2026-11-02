@@ -709,6 +709,10 @@ describe("proposal on the X-ray", () => {
     expect(screen.queryByTitle(/^Method: list/)).toBeNull();
     ctrl = CTRL_WITH_LIST;
     setReanalyzeRequest({ files: [{ rootId: "be", rel: "src/sales.controller.ts" }], nonce: 1 });
+    await screen.findByRole("button", { name: "Show 3 members" });
+    for (const open of screen.getAllByRole("button", { name: /^Show \d+ members?/ })) {
+      fireEvent.click(open);
+    }
     expect(await screen.findByTitle(/^Method: list/)).toBeTruthy();
   });
 });
@@ -1422,6 +1426,10 @@ describe("nested project scopes", () => {
 
   it("enters Flow mode from one member through the inspector", async () => {
     renderView({ groupBy: "symbols" });
+    await screen.findByRole("button", { name: "Show flow of SalesController" });
+    for (const open of screen.getAllByRole("button", { name: /^Show \d+ members?/ })) {
+      fireEvent.click(open);
+    }
     fireEvent.click(await screen.findByRole("button", { name: /^Method: all/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Show flow of all" }));
     expect(await screen.findByText(/Flow: SalesService\.all\(\)/)).toBeTruthy();

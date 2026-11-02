@@ -217,6 +217,9 @@ describe("symbol board acceptance", () => {
     const card = big.closest(".archboard-card");
     expect(card).not.toBeNull();
     const view = within(card as HTMLElement);
+    // Cards start closed, so a large map stays readable.
+    expect(view.queryByTitle(memberTitle("public m00sync(): void"))).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "Show 24 members" }));
     // One row per member, with its role named in the tooltip.
     expect(view.getByTitle("Constructor: constructor(private readonly repo: unknown)")).toBeTruthy();
     expect(view.getByTitle(memberTitle("private readonly repo : unknown"))).toBeTruthy();

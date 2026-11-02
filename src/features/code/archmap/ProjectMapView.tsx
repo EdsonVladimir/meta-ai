@@ -529,8 +529,8 @@ export function ProjectMapView({
   }, [flowStart, proposalFiles]);
   /** Expansion is keyed by globally unique ids, so it survives project switches. */
   const [expansion, setExpansion] = useState<BoardExpansion>(emptyExpansion);
-  /** Symbol cards with their member list collapsed (open by default). */
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /** Symbol cards showing their members: closed until asked, so a large map stays readable. */
+  const [membersOpen, setMembersOpen] = useState<Set<string>>(new Set());
   const [retryNonce, setRetryNonce] = useState<Record<string, number>>({});
   const [fileCaps, setFileCaps] = useState<Record<string, number>>({});
   /** Bumped to resume cancelled analyses; `resumeRef` says which sections. */
@@ -1851,8 +1851,8 @@ export function ProjectMapView({
                   groupBy={activeGroupBy}
                   composition={compositionBySection.get(section.key) ?? null}
                   pageMatches={pageMatches}
-                  collapsed={collapsed}
-                  onToggleCollapsed={(id) => setCollapsed((prev) => toggleSetValue(prev, id))}
+                  membersOpen={membersOpen}
+                  onToggleCollapsed={(id) => setMembersOpen((prev) => toggleSetValue(prev, id))}
                   onRetry={() => retrySection(section.key)}
                   onCancel={() => cancelSection(section.key)}
                   onViewSource={handleViewSource}
@@ -2480,7 +2480,7 @@ interface ProjectMapSectionProps {
   composition: Composition | null;
   /** Dims Pages cards outside the search or the module filter. */
   pageMatches: (node: CompositionNode) => boolean;
-  collapsed: Set<string>;
+  membersOpen: Set<string>;
   onToggleCollapsed: (id: string) => void;
   onRetry: () => void;
   onCancel: () => void;
@@ -2549,7 +2549,7 @@ function ProjectMapSection({
   groupBy,
   composition,
   pageMatches,
-  collapsed,
+  membersOpen,
   onToggleCollapsed,
   onRetry,
   onCancel,
@@ -2568,6 +2568,15 @@ function ProjectMapSection({
   const fileLayout = useMemo(
     () => layoutBoard(filteredFiles.columns, expansion),
     [filteredFiles.columns, expansion],
+  );
+  const collapsed = useMemo(
+    () =>
+      new Set(
+        filteredSymbols.columns.flatMap((column) =>
+          column.nodes.map((node) => node.id).filter((id) => !membersOpen.has(id)),
+        ),
+      ),
+    [filteredSymbols.columns, membersOpen],
   );
   const symbolLayout = useMemo(
     () => layoutSymbolBoard(filteredSymbols.columns, collapsed, referenceIds),
