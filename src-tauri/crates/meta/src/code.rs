@@ -634,7 +634,7 @@ pub fn append_previous_proposal(input: String, files: &[PreviousCodeFile]) -> St
         .collect();
     while !rendered.is_empty() {
         let output = format!(
-            "{input}\n\n## Previous proposal to adjust\nKeep everything the person does not ask to change.\n{}",
+            "{input}\n\n## Previous proposal to adjust\nKeep everything the person does not ask to change. Your reply replaces this whole proposal: return every file that must still be written. If they do not fit in the file limit, keep the ones it needs most and say in questions which files are left.\n{}",
             rendered.join("\n\n")
         );
         if output.chars().count() <= MAX_CODE_INPUT_CHARS {

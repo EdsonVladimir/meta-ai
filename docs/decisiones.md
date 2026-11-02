@@ -455,6 +455,12 @@ still holds. Commits are on `code-xray`.
   an adjustment did not switch to Architecture, and Show on X-ray left
   an open file in front. Both now show the board, and it names the
   version, because a change inside a method draws no new row.
+- **A version that drops files says so.** Each version replaces the
+  last, holds 5 files at most, and earlier ones go stale, so accepting
+  a short version silently lost the rest: in a real run 9 files
+  vanished and the 2 accepted ones did not compile. The card now lists
+  what it leaves out, and the prompt tells Muse its reply replaces the
+  proposal.
 - **Generated reports and oversized files never reach Muse's list.**
   A Playwright report over the 256 KiB read limit failed the whole
   message, so its folder and any file over that limit stay out.

@@ -59,6 +59,7 @@ import {
   adjustmentScope,
   collectMuseFiles,
   composeAnswers,
+  filesLeftOut,
   linkMuseTarget,
   MUSE_MAX_FILES,
   pickMuseFiles,
@@ -381,6 +382,7 @@ export function MusePanel({
     entry.role === "proposal" ? [latest(entry.generation)] : [],
   );
   const contextSuffix = contextPart === null ? "" : `, ${contextPart}`;
+  const droppedFiles = filesLeftOut(shownProposals);
   const chosenFiles = chosen === null ? [] : files;
   const changeOutgoing = showAdjust
     ? `Adjust proposal sends ${fileText(adjustmentScope(shownProposals, chosenFiles).length)}, the current proposal and your request${contextSuffix}.`
@@ -993,6 +995,21 @@ export function MusePanel({
                       />
                     )}
                   </div>
+                  {droppedFiles.length > 0 && (
+                    <div className="error" role="alert">
+                      <p>
+                        {`This version leaves out ${droppedFiles.length === 1 ? "1 file" : `${droppedFiles.length} files`} from the earlier ones. Accepting it will not write ${droppedFiles.length === 1 ? "it" : "them"}, and earlier versions can no longer be accepted:`}
+                      </p>
+                      <ul>
+                        {droppedFiles.map((rel) => (
+                          <li key={rel}>
+                            <code>{rel}</code>
+                          </li>
+                        ))}
+                      </ul>
+                      <p>Adjust to bring them back, or use New proposal for the rest.</p>
+                    </div>
+                  )}
                   <ProposalFiles
                     key={latest(message.generation).id}
                     generation={latest(message.generation)}

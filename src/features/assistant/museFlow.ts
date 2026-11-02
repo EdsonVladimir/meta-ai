@@ -143,6 +143,37 @@ export function adjustmentScope(
   return out.slice(0, MUSE_MAX_FILES);
 }
 
+/**
+ * Files an earlier version of the same request still had pending and
+ * the newest one left out. A version replaces the last one, and the
+ * older ones can no longer be accepted, so accepting it loses them.
+ */
+export function filesLeftOut(
+  proposals: Array<{
+    requirementArtifactId: string;
+    files: Array<MuseFile & { state: string }>;
+  }>,
+): string[] {
+  const newest = proposals[proposals.length - 1];
+  if (newest === undefined) return [];
+  const written = new Set(
+    proposals.flatMap((proposal) =>
+      proposal.files.filter((file) => file.state === "accepted").map((file) => file.rel),
+    ),
+  );
+  const kept = new Set(newest.files.map((file) => file.rel));
+  const out = new Set<string>();
+  for (const proposal of proposals.slice(0, -1)) {
+    if (proposal.requirementArtifactId !== newest.requirementArtifactId) continue;
+    for (const file of proposal.files) {
+      if (file.state === "pending" && !kept.has(file.rel) && !written.has(file.rel)) {
+        out.add(file.rel);
+      }
+    }
+  }
+  return [...out];
+}
+
 export interface MuseLinkDeps {
   listModules: (projectId: string) => Promise<Array<{ id: string; name: string; archived: boolean }>>;
   createProject: () => Promise<{ id: string; name: string }>;

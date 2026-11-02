@@ -4,6 +4,7 @@ import {
   collectMuseFiles,
   composeAnswers,
   adjustmentScope,
+  filesLeftOut,
   linkMuseTarget,
   moduleNameOf,
   MUSE_MAX_CANDIDATES,
@@ -203,5 +204,32 @@ describe("composeAnswers", () => {
       "Q: First?\nA: Yes.\n\nQ: Second?\nA: No.",
     );
     expect(composeAnswers(["First?"], {})).toBe("");
+  });
+});
+
+describe("filesLeftOut", () => {
+  const version = (id: string, ...files: Array<[string, string]>) => ({
+    requirementArtifactId: id,
+    files: files.map(([rel, state]) => ({ rootId: "r", rel, state })),
+  });
+
+  it("names pending files the newest version dropped, across versions", () => {
+    expect(
+      filesLeftOut([
+        version("req-1", ["a.ts", "pending"], ["b.ts", "pending"]),
+        version("req-1", ["c.ts", "pending"], ["b.ts", "pending"]),
+        version("req-1", ["d.ts", "pending"]),
+      ]),
+    ).toEqual(["a.ts", "b.ts", "c.ts"]);
+  });
+
+  it("ignores written files and other requests", () => {
+    expect(
+      filesLeftOut([
+        version("req-1", ["a.ts", "accepted"]),
+        version("req-2", ["z.ts", "pending"]),
+        version("req-1", ["b.ts", "pending"]),
+      ]),
+    ).toEqual([]);
   });
 });
