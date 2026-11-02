@@ -23,7 +23,13 @@ export const FLOW_MAX_NODES = 60;
 export const TEMPLATE_MEMBER = "(template)";
 
 export interface FlowProject { key: string; label: string; result: StructureResult }
-export interface FlowStart { projectKey: string; symbolId: string; member: string | null }
+export interface FlowStart {
+  projectKey: string;
+  symbolId: string;
+  member: string | null;
+  /** The id comes from the proposal overlay, not from the analyzed code. */
+  inOverlay?: boolean;
+}
 export type FlowChange = "added" | "modified" | "removed";
 
 export interface FlowNode {
@@ -104,6 +110,16 @@ function pipelineNames(result: StructureResult, scope: "http-client" | "global-g
 }
 
 /** The caller's file imports this name from a package: a library type, not a gap. */
+/** Own field created with Angular's signal helpers, read from its code. */
+function isOwnReactiveField(symbol: StructureSymbol, name: string): boolean {
+  return symbol.members.some(
+    (member) =>
+      member.name === name &&
+      member.kind === "field" &&
+      /=\s*(input|output|model|signal|computed|linkedSignal)\b/.test(member.detail),
+  );
+}
+
 function isPackageImport(result: StructureResult, symbol: StructureSymbol, name: string): boolean {
   const file = result.files.find(
     (entry) => entry.rootId === symbol.rootId && entry.rel === symbol.rel,
@@ -424,6 +440,8 @@ export function buildFlowGraph(projects: FlowProject[], start: FlowStart): FlowG
     }
     const injection = flow.injections.find((entry) => entry.field === call.receiver);
     if (injection === undefined) {
+      // A signal, input or output of this class is no missing step.
+      if (isOwnReactiveField(node.symbol, call.receiver)) return;
       graph.pending.push({
         kind: "unresolved",
         label: call.receiver,

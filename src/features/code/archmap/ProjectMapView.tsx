@@ -307,6 +307,12 @@ function refindStart(
   overlayProjects: FlowProject[],
   start: FlowStart,
 ): { start: FlowStart; name: string | null } {
+  if (start.inOverlay === true) {
+    const own = overlayProjects
+      .find((project) => project.key === start.projectKey)
+      ?.result.symbols.find((symbol) => symbol.id === start.symbolId);
+    return { start, name: own?.name ?? null };
+  }
   const baseSymbol = baseProjects
     .find((project) => project.key === start.projectKey)
     ?.result.symbols.find((symbol) => symbol.id === start.symbolId);
@@ -1372,7 +1378,8 @@ export function ProjectMapView({
         ? null
         : buildProposalOverlay(baseProjects, proposalFiles);
     const projects = overlay === null ? baseProjects : overlay.projects;
-    let start: FlowStart | null = flowStart;
+    // An overlay id means nothing once the proposal leaves the board.
+    let start: FlowStart | null = flowStart?.inOverlay === true && overlay === null ? null : flowStart;
     let name: string | null = null;
     /** The chain drawn before, found again by project, file and name. */
     const redrawn = (): { start: FlowStart; name: string } | null => {
@@ -1908,6 +1915,21 @@ export function ProjectMapView({
                     selected: flowSelected,
                     removed: flowMode.removed,
                     otherChanges: flowMode.otherChanges,
+                    onShowOther: (name) => {
+                      for (const project of flowMode.overlay?.projects ?? []) {
+                        const symbol = project.result.symbols.find((entry) => entry.name === name);
+                        if (symbol !== undefined) {
+                          setFlowStart({
+                            projectKey: project.key,
+                            symbolId: symbol.id,
+                            member: null,
+                            inOverlay: true,
+                          });
+                          setFlowSelected(null);
+                          return;
+                        }
+                      }
+                    },
                     proposal: flowProposal ?? null,
                     decisionError,
                     generation: proposalGeneration,
@@ -2272,6 +2294,8 @@ function BoardInspector({
     selected: { nodeId: string; member: string | null } | null;
     removed: Array<{ rootId: string; rel: string; name: string }>;
     otherChanges: string[];
+    /** Opens the chain of another changed class of the proposal. */
+    onShowOther: (name: string) => void;
     proposal: FlowInspectorProps["proposal"];
     decisionError: string | null;
     generation: CodeGenerationDto | null;
@@ -2372,7 +2396,14 @@ function BoardInspector({
                 <ul className="archmap-list">
                   {flow.otherChanges.map((name, index) => (
                     <li key={`${name}:${index}`}>
-                      <code>{name}</code>
+                      <button
+                        type="button"
+                        className="secondary small"
+                        title={`Show the chain of ${name}`}
+                        onClick={() => flow.onShowOther(name)}
+                      >
+                        <code>{name}</code>
+                      </button>
                     </li>
                   ))}
                 </ul>

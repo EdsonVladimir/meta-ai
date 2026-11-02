@@ -607,6 +607,8 @@ describe("proposal on the X-ray", () => {
     ]);
     const list = await screen.findByLabelText("Also in this proposal");
     expect(within(list).getByText("OtherService")).toBeTruthy();
+    fireEvent.click(within(list).getByRole("button", { name: "OtherService" }));
+    expect(await screen.findByText(/Flow: OtherService/)).toBeTruthy();
   });
 
   it("offers the way back to the proposal only while one is open", async () => {

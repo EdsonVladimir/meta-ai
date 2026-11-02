@@ -457,7 +457,9 @@ still holds. Commits are on `code-xray`.
   version, because a change inside a method draws no new row.
 - **A proposal's flow starts at its longest chain.** It started at the
   first UI component, so a form hid the store and service of the page
-  hosting it.
+  hosting it. Everything else in the proposal opens its own chain from
+  the Inspector, and a component's own inputs, outputs and signals no
+  longer show as unresolved steps.
 - **A proposal holds 12 files and reads 12.** With 5, one full-stack
   module never fit: Muse split it, dropped files between versions and
   kept asking. Input, output, timeout and body limits rose with it.
