@@ -2851,6 +2851,8 @@ export function RequirementsWorkspace() {
       false,
     );
     ui.setCenterView("architecture");
+    // The board must be what shows, even over an open file.
+    ui.setCenterDoc(null);
   }
 
   function showRightTab(tab: RightTab) {

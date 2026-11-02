@@ -520,6 +520,23 @@ describe("MusePanel", () => {
     expect(sent).toHaveLength(8);
   });
 
+  it("brings an adjusted proposal to the X-ray", async () => {
+    const onPropose = vi.fn();
+    const fake = api();
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={onPropose} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    fake.generate = vi.fn(async () => generationDto({ id: "cgen-2" }));
+    write("Rename it");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    await waitFor(() => expect(onPropose).toHaveBeenCalledTimes(2));
+    expect(useRequirementsUi.getState().museGeneration?.id).toBe("cgen-2");
+  });
+
   it("lists files accepted in this thread when changing files", async () => {
     const fake = api();
     render(

@@ -722,7 +722,7 @@ export function MusePanel({
       });
       if (thread !== threadRef.current) return;
       appendProposal(generation);
-      useRequirementsUi.getState().setMuseGeneration(generation);
+      showOnXray(generation);
     } catch (raw) {
       if (thread !== threadRef.current) return;
       setFailedProposal({

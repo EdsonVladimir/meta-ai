@@ -445,6 +445,10 @@ still holds. Commits are on `code-xray`.
   In a real run Muse never saw the store, asked about it three times
   and proposed calls to methods that do not exist. Chosen files now
   go first.
+- **Every proposal version goes to the board.** Sending answers or
+  an adjustment did not switch to Architecture, and Show on X-ray left
+  an open file in front. Both now show the board, and it names the
+  version, because a change inside a method draws no new row.
 - **Preview applies inline `styles`.** It only read style files, so a
   proposal with inline CSS looked unstyled.
 

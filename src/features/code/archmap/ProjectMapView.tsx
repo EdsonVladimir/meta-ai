@@ -1769,6 +1769,11 @@ export function ProjectMapView({
                       Close proposal
                     </button>
                   )}
+                  {proposalFiles !== null && proposalGeneration !== null && (
+                    <span className="hint" role="status">
+                      {`Showing ${proposalGeneration.id}`}
+                    </span>
+                  )}
                   {totals.pending > 0 && (
                     <span className="hint" role="status">
                       {`Partial chain: ${countLabel(totals.pending, "file", "files")} not analyzed`}
