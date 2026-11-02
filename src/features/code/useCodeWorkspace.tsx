@@ -474,6 +474,8 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
     });
     setTabs(next.tabs);
     setActive(next.active);
+    // A click on a file means reading it, on top of any view.
+    useRequirementsUi.getState().setCenterDoc(key);
     if (!existing) void loadTabContent(root.id, entry.rel);
   }
 

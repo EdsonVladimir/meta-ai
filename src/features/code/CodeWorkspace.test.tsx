@@ -119,6 +119,16 @@ describe("CodeWorkspace", () => {
     expect(within(tabs).getByText(/backend/)).toBeDefined();
   });
 
+  it("shows a file clicked in the tree on top of the current view", async () => {
+    useRequirementsUi.getState().setCenterDoc(null);
+    render(<CodeWorkspace loader={fake.loader} />);
+    expect(await screen.findByText("frontend")).toBeDefined();
+    const tree = screen.getByRole("list", { name: "Workspace folders" });
+    fireEvent.click(within(tree).getByRole("button", { name: "Expand frontend" }));
+    fireEvent.click(await within(tree).findByText("main.ts"));
+    expect(useRequirementsUi.getState().centerDoc).toBe("root-1::main.ts");
+  });
+
   it("requests a terminal in the file folder", async () => {
     render(<CodeWorkspace loader={fake.loader} />);
     expect(await screen.findByText("frontend")).toBeDefined();

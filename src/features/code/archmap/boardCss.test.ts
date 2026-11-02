@@ -77,3 +77,7 @@ describe("board CSS constants", () => {
   });
 });
 
+it("keeps the open-file strip from taking the board's height", () => {
+  const rule = CSS.slice(CSS.indexOf(".code-main.bare {"));
+  expect(rule.slice(0, rule.indexOf("}"))).toContain("flex: none");
+});

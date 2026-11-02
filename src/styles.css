@@ -3596,6 +3596,7 @@ button.danger:focus-visible {
 
 /* In the center slot: no duplicated chrome (the center is already a panel). */
 .code-main.bare {
+  flex: none;
   border: none;
   background: transparent;
   border-radius: 0;

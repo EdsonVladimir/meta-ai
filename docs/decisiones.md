@@ -430,6 +430,14 @@ still holds. Commits are on `code-xray`.
   a large board mattered more than zoom (`4180e46`). The board fills the
   center, with the status bar on the bottom edge (`076defe`).
 
+**Opening files over the views**
+
+- **A file clicked in Folders opens at once.** It only added a tab,
+  and the strip then took half the height of Architecture, so the map
+  shrank under an empty band with no code. Opening shows the file, the
+  strip takes only its own height, and the Architecture tab leaves a
+  file. That tab did nothing once Architecture became the landing view.
+
 **Reading and choosing what Muse sees**
 
 - **A proposal's diff opens in a dialog.** Inside the Assistant it was

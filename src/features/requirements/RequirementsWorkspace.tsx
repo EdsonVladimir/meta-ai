@@ -861,7 +861,12 @@ export function RequirementsWorkspace() {
     // Architecture needs a project; design views need a
     // module too. Switching views never touches drafts or terminals.
     // Welcome has no tab: close flows are the only way back to it.
-    if (view === centerView || view === "welcome") return;
+    if (view === "welcome") return;
+    if (view === centerView) {
+      // Architecture is the landing view: its tab also leaves a file.
+      useRequirementsUi.getState().setCenterDoc(null);
+      return;
+    }
     if (projectId === null) return;
     if (view !== "architecture" && moduleId === null) return;
     const ui = useRequirementsUi.getState();
