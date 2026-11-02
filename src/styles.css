@@ -4447,8 +4447,23 @@ button.code-crumb:focus-visible {
 }
 
 .code-proposal-diff-modal .code-proposal-diff {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
+}
+
+.code-proposal-diff-modal .code-diff-wrap {
+  flex: 1;
+}
+
+.code-proposal-diff-modal .code-diff {
+  flex: 1;
+  height: auto;
+}
+
+.code-proposal-diff-modal .code-compare {
+  overflow: auto;
 }
 
 .code-proposal-previous,
