@@ -440,6 +440,14 @@ still holds. Commits are on `code-xray`.
 
 **Reading and choosing what Muse sees**
 
+- **Adjust proposal respects the chosen files.** It read only the
+  first proposal's scope, so `@` and Change files did nothing there.
+  In a real run Muse never saw the store, asked about it three times
+  and proposed calls to methods that do not exist. Chosen files now
+  go first.
+- **Preview applies inline `styles`.** It only read style files, so a
+  proposal with inline CSS looked unstyled.
+
 - **A proposal's diff opens in a dialog.** Inside the Assistant it was
   too narrow to read. Accept and Discard stay in the dialog, so a file
   can be decided where it is read.

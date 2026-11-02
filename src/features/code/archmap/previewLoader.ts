@@ -54,7 +54,7 @@ export async function loadPreview(input: {
   };
 
   const stylesOf = async (source: Source): Promise<string> => {
-    const parts: string[] = [];
+    const parts: string[] = [...(source.component?.styleTexts ?? [])];
     for (const rel of source.component?.styleRels ?? []) {
       if (!rel.toLowerCase().endsWith(".css")) {
         notes.add("SCSS and other style languages are not compiled here.");

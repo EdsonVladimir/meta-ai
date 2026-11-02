@@ -106,6 +106,14 @@ describe("pickMuseFiles", () => {
 });
 
 describe("adjustmentScope", () => {
+  it("reads the files the person chose first", () => {
+    const out = adjustmentScope(
+      [{ scope: scope(["old.ts"]), files: [file("done.ts", "accepted")] }],
+      scope(["store.ts"]),
+    );
+    expect(out.map((entry) => entry.rel)).toEqual(["store.ts", "done.ts", "old.ts"]);
+  });
+
   const file = (rel: string, state = "pending") => ({ rootId: "r", rel, state });
   const scope = (rels: string[]) => rels.map((rel) => ({ rootId: "r", rel }));
 

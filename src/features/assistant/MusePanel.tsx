@@ -381,8 +381,9 @@ export function MusePanel({
     entry.role === "proposal" ? [latest(entry.generation)] : [],
   );
   const contextSuffix = contextPart === null ? "" : `, ${contextPart}`;
+  const chosenFiles = chosen === null ? [] : files;
   const changeOutgoing = showAdjust
-    ? `Adjust proposal sends ${fileText(adjustmentScope(shownProposals).length)}, the current proposal and your request${contextSuffix}.`
+    ? `Adjust proposal sends ${fileText(adjustmentScope(shownProposals, chosenFiles).length)}, the current proposal and your request${contextSuffix}.`
     : `Propose change sends ${fileText(files.length)} and your request${contextSuffix}.`;
   const pendingFiles =
     newest === null
@@ -702,6 +703,7 @@ export function MusePanel({
             messages.flatMap((entry) =>
               entry.role === "proposal" ? [latest(entry.generation)] : [],
             ),
+            chosenFiles,
           ),
           previousGenerationId: input.generation.id,
         };

@@ -15,6 +15,14 @@ const read = (files: Record<string, string>) =>
   });
 
 describe("loadPreview", () => {
+  it("applies inline styles", async () => {
+    const symbols = analyze(
+      "@Component({ selector: 'a', template: '<h1>Hi</h1>', styles: [`h1 { color: teal; }`] }) export class A {}",
+    );
+    const out = await loadPreview({ symbol: symbols[0], symbols, readFile: read({}), proposalFiles: null });
+    expect(out.document).toContain("color: teal");
+  });
+
   it("draws an inline template without touching the disk", async () => {
     const symbols = analyze("@Component({ selector: 'a', template: '<h1>Hi</h1>' }) export class A {}");
     const readFile = read({});

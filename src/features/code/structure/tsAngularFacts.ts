@@ -72,6 +72,13 @@ export function collectComponentFacts(
       templateRel: templateUrl === null ? null : resolveAssetRel(rel, templateUrl),
       styleRels: styles.map((entry) => resolveAssetRel(rel, entry)),
     };
+    const inlineStyles = props.get("styles");
+    const styleTexts = (
+      inlineStyles !== undefined && ts.isArrayLiteralExpression(inlineStyles)
+        ? inlineStyles.elements.map(literalText)
+        : [literalText(inlineStyles)]
+    ).filter((entry): entry is string => entry !== null);
+    if (styleTexts.length > 0) facts.styleTexts = styleTexts;
     const inline = props.get("template");
     const text = literalText(inline);
     if (inline !== undefined && text !== null) {

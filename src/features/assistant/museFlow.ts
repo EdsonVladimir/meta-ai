@@ -101,15 +101,16 @@ export function pickMuseFiles(candidates: MuseFile[], message: string): MuseFile
 }
 
 /**
- * What an adjustment reads: files already accepted first, because they
- * are on disk now and Muse must see them to change them, then the
- * scope of the proposal being adjusted.
+ * What an adjustment reads: the files the person chose first, then
+ * files already accepted, because they are on disk now and Muse must
+ * see them to change them, then the scope of the proposal adjusted.
  */
 export function adjustmentScope(
   proposals: Array<{
     scope: MuseFile[];
     files: Array<MuseFile & { state: string }>;
   }>,
+  chosen: MuseFile[] = [],
 ): MuseFile[] {
   const accepted = proposals.flatMap((proposal) =>
     proposal.files.filter((file) => file.state === "accepted"),
@@ -117,7 +118,7 @@ export function adjustmentScope(
   const newest = proposals[proposals.length - 1]?.scope ?? [];
   const seen = new Set<string>();
   const out: MuseFile[] = [];
-  for (const { rootId, rel } of [...accepted, ...newest]) {
+  for (const { rootId, rel } of [...chosen, ...accepted, ...newest]) {
     const key = `${rootId}\n${rel}`;
     if (seen.has(key)) continue;
     seen.add(key);
