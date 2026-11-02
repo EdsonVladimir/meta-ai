@@ -4438,6 +4438,18 @@ button.code-crumb:focus-visible {
   min-height: 12rem;
 }
 
+.code-proposal-diff-modal {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 3rem);
+  overflow: hidden;
+}
+
+.code-proposal-diff-modal .code-proposal-diff {
+  flex: 1;
+  min-height: 0;
+}
+
 .code-proposal-previous,
 .code-proposal-reanalyze {
   margin-top: var(--sp-md);
@@ -6635,3 +6647,26 @@ button.archboard-member:hover {
   margin: 0 0 0.3rem;
 }
 
+.muse-mentions {
+  list-style: none;
+  margin: 0 0 var(--sp-sm);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  max-height: 11rem;
+  overflow: auto;
+}
+
+.muse-mentions button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+}
+
+.muse-mentions button[aria-selected="true"] {
+  background: var(--line);
+}

@@ -21,6 +21,8 @@
 //   the analyzed rels of the same root (extension/index probing, `.js` ->
 //   `.ts`). Packages, aliases, assets and out-of-scope files stay
 //   unresolved with their raw specifier as evidence.
+// - `const X = signalStore(...)` (NgRx) -> one class-like symbol; members
+//   only from literal withState, withComputed and withMethods objects.
 // - Decorator names on classes (e.g. `@Controller("x")` -> "Controller").
 // - `new X()` inside symbol bodies -> `instantiates` relations, resolved
 //   by the same strict uniqueness rule. Top-level `new` outside any symbol
@@ -751,6 +753,62 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
     collectNews(source, node, id, refs, ordinal);
   }
 
+  /** Members `signalStore` spells out; anything less literal stays out. */
+  function signalStoreMembers(call: ts.CallExpression): StructureMember[] {
+    const members: StructureMember[] = [];
+    const objectOf = (arg: ts.Expression | undefined): ts.ObjectLiteralExpression | null => {
+      if (arg === undefined) return null;
+      const body = ts.isArrowFunction(arg) ? arg.body : arg;
+      const inner = ts.isParenthesizedExpression(body) ? body.expression : body;
+      return ts.isObjectLiteralExpression(inner) ? inner : null;
+    };
+    for (const feature of call.arguments) {
+      if (!ts.isCallExpression(feature) || !ts.isIdentifier(feature.expression)) continue;
+      const kind = feature.expression.text;
+      if (kind !== "withState" && kind !== "withComputed" && kind !== "withMethods") continue;
+      const object = objectOf(feature.arguments[0]);
+      if (kind === "withState" && (object === null || !ts.isObjectLiteralExpression(feature.arguments[0]))) {
+        continue;
+      }
+      for (const prop of object?.properties ?? []) {
+        if (members.length >= STRUCTURE_LIMITS.maxMembers) return members;
+        if (prop.name === undefined || !ts.isIdentifier(prop.name)) continue;
+        const name = prop.name.text;
+        const method =
+          kind === "withMethods" &&
+          (ts.isMethodDeclaration(prop) ||
+            (ts.isPropertyAssignment(prop) &&
+              (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))));
+        members.push({
+          name: shortText(name, 60),
+          kind: method ? "method" : "field",
+          detail: shortText(method ? `${name}()` : prop.getText(source), 80),
+          range: toRange(source, prop),
+          bodyHash: memberBodyHash(source, prop),
+        });
+      }
+    }
+    return members;
+  }
+
+  function emitSignalStore(name: string, decl: ts.VariableDeclaration, call: ts.CallExpression): void {
+    const id = symbolId(input.rootId, input.rel, ordinal.next++);
+    symbols.push({
+      id,
+      language: "ts",
+      kind: "class",
+      name: shortText(name, 60),
+      rootId: input.rootId,
+      rel: input.rel,
+      range: toRange(source, decl),
+      members: signalStoreMembers(call),
+      membersTruncated: false,
+      heuristic: "signalStore() call (NgRx SignalStore)",
+      bodyHash: memberBodyHash(source, decl),
+    });
+    collectNews(source, decl, id, refs, ordinal);
+  }
+
   function visit(node: ts.Node): void {
     if (ts.isClassDeclaration(node)) {
       emitClass(node);
@@ -774,6 +832,16 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
     }
     if (ts.isVariableStatement(node)) {
       for (const decl of node.declarationList.declarations) {
+        if (
+          ts.isIdentifier(decl.name) &&
+          decl.initializer !== undefined &&
+          ts.isCallExpression(decl.initializer) &&
+          ts.isIdentifier(decl.initializer.expression) &&
+          decl.initializer.expression.text === "signalStore"
+        ) {
+          emitSignalStore(decl.name.text, decl, decl.initializer);
+          continue;
+        }
         if (
           ts.isIdentifier(decl.name) &&
           decl.initializer !== undefined &&

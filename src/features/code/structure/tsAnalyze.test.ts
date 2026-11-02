@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildFlowGraph } from "../archmap/flowModel";
 import { analyzeTsFiles } from "./tsAnalyze";
 import type { StructureInput } from "./structureTypes";
 
@@ -501,5 +502,65 @@ describe("HttpClient endpoints", () => {
 app.get('/a', handler);
 export class S { private map = new Map(); run() { this.map.get('/b'); } }`);
     expect(result.endpoints.map((e) => e.url)).toEqual(["/a", "/b"]);
+  });
+});
+
+describe("NgRx signalStore", () => {
+  const store = `import { computed, inject } from "@angular/core";
+import { signalStore, withComputed, withMethods, withState } from "@ngrx/signals";
+const initial = { hidden: true };
+export const AuditoriaStore = signalStore(
+  { providedIn: "root" },
+  withState({ loading: false, page: 1 }),
+  withComputed((state) => ({ empty: computed(() => state.page() === 0) })),
+  withMethods((store) => ({
+    load() {},
+    reset: () => {},
+  })),
+);
+export const OpaqueStore = signalStore(withState(initial), withMethods(buildMethods));
+export const plain = computed(() => 1);
+`;
+
+  it("gets a card with the members it spells out", () => {
+    const result = analyzeTsFiles([input("r", "auditoria.store.ts", store)]);
+    const symbol = result.symbols.find((entry) => entry.name === "AuditoriaStore");
+    expect(symbol?.kind).toBe("class");
+    expect(symbol?.members.map((member) => `${member.kind}:${member.name}`)).toEqual([
+      "field:loading",
+      "field:page",
+      "field:empty",
+      "method:load",
+      "method:reset",
+    ]);
+  });
+
+  it("never guesses members it cannot read", () => {
+    const result = analyzeTsFiles([input("r", "auditoria.store.ts", store)]);
+    expect(result.symbols.find((entry) => entry.name === "OpaqueStore")?.members).toEqual([]);
+    expect(result.symbols.some((entry) => entry.name === "plain")).toBe(false);
+  });
+
+  it("joins the flow through inject", () => {
+    const result = analyzeTsFiles([
+      input("r", "auditoria.store.ts", store),
+      input(
+        "r",
+        "page.ts",
+        `import { inject } from "@angular/core";
+import { AuditoriaStore } from "./auditoria.store";
+export class Page {
+  private readonly store = inject(AuditoriaStore);
+  open(): void { this.store.load(); }
+}`,
+      ),
+    ]);
+    const page = result.symbols.find((entry) => entry.name === "Page");
+    const graph = buildFlowGraph([{ key: "fe", label: "fe", result }], {
+      projectKey: "fe",
+      symbolId: page?.id ?? "",
+      member: null,
+    });
+    expect(graph.nodes.some((node) => node.symbol.name === "AuditoriaStore")).toBe(true);
   });
 });

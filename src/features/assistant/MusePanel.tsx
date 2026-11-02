@@ -47,6 +47,7 @@ import {
   type MuseContextChoice,
   type MuseTarget,
 } from "../requirements/uiStore";
+import { addMentioned, applyMention, matchMentions, mentionAt, type Mention } from "./fileMention";
 import { MarkdownLite } from "./markdownLite";
 import { CONTEXT_DOCS_SEND_MAX, MuseContextDialog } from "./MuseContextDialog";
 import {
@@ -272,6 +273,10 @@ export function MusePanel({
   const [adjustMode, setAdjustMode] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [contextDialog, setContextDialog] = useState(false);
+  /** Open `@` token; `index` is the highlighted file. */
+  const [mention, setMention] = useState<(Mention & { index: number }) | null>(null);
+  const [mentionNotice, setMentionNotice] = useState<string | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [contextNotice, setContextNotice] = useState<string | null>(null);
   const apiRef = useRef(api);
   apiRef.current = api;
@@ -758,7 +763,71 @@ export function MusePanel({
     }
   }
 
+  const mentionResults =
+    mention === null
+      ? []
+      : matchMentions(
+          all.map((file) => file.rel),
+          mention.query,
+        );
+
+  function onComposerChange(value: string, cursor: number): void {
+    setText(value);
+    setMentionNotice(null);
+    const found = mentionAt(value, cursor);
+    // The list is read when the menu opens: new files must appear.
+    if (found !== null && mention === null) refreshCandidates();
+    setMention(found === null ? null : { ...found, index: 0 });
+  }
+
+  function pickMention(rel: string): void {
+    if (mention === null) return;
+    const textarea = composerRef.current;
+    const cursor = textarea?.selectionStart ?? text.length;
+    const next = addMentioned(
+      files.map((file) => file.rel),
+      rel,
+      chosen === null,
+      MUSE_MAX_FILES,
+    );
+    if (next === null) {
+      setMentionNotice(
+        `Muse reads ${MUSE_MAX_FILES} files at most. Remove one in Change files to add ${rel}.`,
+      );
+      setMention(null);
+      return;
+    }
+    setChosen(new Set(next));
+    const applied = applyMention(text, mention, cursor, rel);
+    setText(applied.text);
+    setMention(null);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(applied.cursor, applied.cursor);
+    });
+  }
+
   function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (mention !== null && mentionResults.length > 0) {
+      const count = mentionResults.length;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : count - 1;
+        setMention({ ...mention, index: (mention.index + step) % count });
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        pickMention(mentionResults[Math.min(mention.index, count - 1)]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setMention(null);
+        return;
+      }
+    }
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       if (canSend) void sendQuestion(text);
@@ -1102,11 +1171,37 @@ export function MusePanel({
                 {changeOutgoing}
               </p>
             )}
+            {mentionNotice !== null && (
+              <p className="hint" role="status">
+                {mentionNotice}
+              </p>
+            )}
+            {mention !== null && mentionResults.length > 0 && (
+              <ul className="muse-mentions" role="listbox" aria-label="Files to add">
+                {mentionResults.map((rel, index) => (
+                  <li key={rel}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === mention.index}
+                      title={rel}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => pickMention(rel)}
+                    >
+                      {rel}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <textarea
+              ref={composerRef}
               aria-label="Message to Muse"
               value={text}
-              placeholder="Ask about this code, or describe what should change."
-              onChange={(event) => setText(event.target.value)}
+              placeholder="Ask about this code, or describe what should change. Type @ to add a file."
+              onChange={(event) =>
+                onComposerChange(event.target.value, event.target.selectionStart)
+              }
               onKeyDown={onComposerKeyDown}
             />
             <div className="button-row">

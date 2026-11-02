@@ -430,6 +430,22 @@ still holds. Commits are on `code-xray`.
   a large board mattered more than zoom (`4180e46`). The board fills the
   center, with the status bar on the bottom edge (`076defe`).
 
+**Reading and choosing what Muse sees**
+
+- **A proposal's diff opens in a dialog.** Inside the Assistant it was
+  too narrow to read. Accept and Discard stay in the dialog, so a file
+  can be decided where it is read.
+- **`@` adds a file to the message.** Typing it is faster than Change
+  files, and the list reads the disk when it opens. It searches the
+  thread's files, capped like Change files. An automatic pick makes
+  room; a choice the person made is never changed, so a full one
+  says so instead.
+- **An NgRx `signalStore` gets a card.** `const X = signalStore(...)`
+  is how those projects write stores, and Classes left the State layer
+  empty. Members come only from literal `withState`, `withComputed`
+  and `withMethods` objects. Anything else stays out: Ruth does not
+  guess, and only this one call shape is recognized.
+
 **Muse project context**
 
 - **Each thread carries a short picture of the project, confirmed

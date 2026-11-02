@@ -130,6 +130,9 @@ environment).
   Opened ones persist; scope "all" shows open eyes only;
   all-closed boards point at Folders; scopes never render
   outside the active project.
+- Proposal diffs open in a dialog with Accept and Discard; `@`
+  adds a thread file to a Muse message; NgRx `signalStore`
+  consts get State cards with their literal members.
 - Muse project context: confirmed once per project, then
   attached to every Ask, Propose change, Adjust proposal and
   Retry. Session map summaries (services, layers, routes,
@@ -348,6 +351,12 @@ Acceptance criteria:
 
 ## Executed tests (latest session)
 
+- Diff dialog, `@` file menu and signalStore session: `npx tsc
+  --noEmit` clean, `npm test` 1157/1158 (the failure is
+  `sampleProject`, which expects the clean sample while
+  `examples/reservas` held the uncommitted users trial), `npm run
+  build` OK, `cargo fmt --check` clean, `cargo test --workspace`
+  474 passed / 0 failed. No Meta calls. Interactive run pending.
 - Muse-project-context session: per-thread context (session map
   summaries + chosen saved `.md` docs) confirmed once per project
   and attached to Ask/Propose/Adjust/Retry; opt-in persisted

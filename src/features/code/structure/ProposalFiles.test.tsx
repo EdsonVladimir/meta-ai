@@ -89,6 +89,24 @@ describe("Accept all", () => {
 });
 
 describe("View diff", () => {
+  it("opens in a dialog that Escape closes", async () => {
+    const generation = generationDto([{ ...fileDto(0), operation: "create" }]);
+    render(
+      <ProposalFiles
+        generation={generation}
+        rootNames={{}}
+        api={{ acceptFile: vi.fn(), discardFile: vi.fn(), readFile: vi.fn() } as unknown as ProposalFilesApi}
+        prefs={DEFAULT_CODE_EDITOR_PREFS}
+        onChange={() => {}}
+        onAccepted={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "View diff" }));
+    expect(await screen.findByRole("dialog", { name: /Changes in/ })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("never shows a failed read as an empty file", async () => {
     const generation = generationDto([{ ...fileDto(0), operation: "modify" }]);
     const readFile = vi.fn(async () => {

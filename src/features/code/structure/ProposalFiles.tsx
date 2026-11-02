@@ -4,6 +4,7 @@
 // behavior. It never generates and never writes without an explicit
 // click.
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CodeConflictDiff } from "../CodeConflictDiff";
 import { normalizeCodeError } from "../client";
 import type {
@@ -64,11 +65,7 @@ export function ProposalFiles({
     };
   }, []);
 
-  async function toggleDiff(file: CodeProposalFileDto): Promise<void> {
-    if (expanded === file.pos) {
-      setExpanded(null);
-      return;
-    }
+  async function openDiff(file: CodeProposalFileDto): Promise<void> {
     setExpanded(file.pos);
     if (file.operation === "create" || currentTexts[file.pos] !== undefined) return;
     try {
@@ -156,6 +153,51 @@ export function ProposalFiles({
   }
 
   const pending = generation.files.filter((file) => file.state === "pending");
+  const open = generation.files.find((file) => file.pos === expanded) ?? null;
+
+  // Esc closes the diff only, never a dialog underneath it.
+  useEffect(() => {
+    if (expanded === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setExpanded(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [expanded]);
+
+  function decisions(file: CodeProposalFileDto) {
+    return (
+      <>
+        <button
+          type="button"
+          className="primary small"
+          disabled={file.state !== "pending" || generation.stale || busyPos !== null}
+          title={
+            generation.stale
+              ? "Blocked: the proposal is stale"
+              : file.state !== "pending"
+                ? `Already ${file.state === "accepted" ? "accepted" : "discarded"}`
+                : file.operation === "create"
+                  ? "Create the file on disk"
+                  : "Replace the file on disk"
+          }
+          onClick={() => void accept(file)}
+        >
+          {busyPos === file.pos ? "Accepting…" : "Accept"}
+        </button>
+        <button
+          type="button"
+          className="secondary small"
+          disabled={file.state !== "pending" || busyPos !== null}
+          onClick={() => void discard(file)}
+        >
+          Discard
+        </button>
+      </>
+    );
+  }
 
   return (
     <>
@@ -204,58 +246,66 @@ export function ProposalFiles({
                 <button
                   type="button"
                   className="secondary small"
-                  onClick={() => void toggleDiff(file)}
+                  onClick={() => void openDiff(file)}
                 >
-                  {expanded === file.pos ? "Hide diff" : "View diff"}
+                  View diff
                 </button>
-                <button
-                  type="button"
-                  className="primary small"
-                  disabled={file.state !== "pending" || generation.stale || busyPos !== null}
-                  title={
-                    generation.stale
-                      ? "Blocked: the proposal is stale"
-                      : file.state !== "pending"
-                        ? `Already ${file.state === "accepted" ? "accepted" : "discarded"}`
-                        : file.operation === "create"
-                          ? "Create the file on disk"
-                          : "Replace the file on disk"
-                  }
-                  onClick={() => void accept(file)}
-                >
-                  {busyPos === file.pos ? "Accepting…" : "Accept"}
-                </button>
-                <button
-                  type="button"
-                  className="secondary small"
-                  disabled={file.state !== "pending" || busyPos !== null}
-                  onClick={() => void discard(file)}
-                >
-                  Discard
-                </button>
-              </div>
-            )}
-            {expanded === file.pos && !readOnly && (
-              <div className="code-proposal-diff">
-                {unreadable.has(file.pos) ? (
-                  <p className="error">The current file could not be read, so no comparison is shown.</p>
-                ) : file.operation === "modify" && currentTexts[file.pos] === undefined ? (
-                  <p className="hint">Reading the current file…</p>
-                ) : (
-                  <CodeConflictDiff
-                    key={`${generation.id}:${file.pos}`}
-                    diskText={currentTexts[file.pos] ?? ""}
-                    draftText={file.content}
-                    language={languageForFile(file.rel)}
-                    prefs={prefs}
-                    loader={loader}
-                  />
-                )}
+                {decisions(file)}
               </div>
             )}
           </li>
         ))}
       </ul>
+      {open !== null &&
+        !readOnly &&
+        createPortal(
+          <div className="modal-backdrop" onClick={() => setExpanded(null)}>
+            <div
+              className="modal wide code-proposal-diff-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Changes in ${open.rel}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="modal-head">
+                <h3>
+                  <code>
+                    {open.operation === "create" ? "+" : "~"} {rootNames[open.rootId] ?? open.rootId}/
+                    {open.rel}
+                  </code>
+                </h3>
+                <button
+                  type="button"
+                  className="secondary small"
+                  onClick={() => setExpanded(null)}
+                >
+                  Close
+                </button>
+              </div>
+              <p className="hint">
+                {open.operation === "create" ? "create" : "modify"} · {open.state}
+              </p>
+              <div className="code-proposal-diff">
+                {unreadable.has(open.pos) ? (
+                  <p className="error">The current file could not be read, so no comparison is shown.</p>
+                ) : open.operation === "modify" && currentTexts[open.pos] === undefined ? (
+                  <p className="hint">Reading the current file…</p>
+                ) : (
+                  <CodeConflictDiff
+                    key={`${generation.id}:${open.pos}`}
+                    diskText={currentTexts[open.pos] ?? ""}
+                    draftText={open.content}
+                    language={languageForFile(open.rel)}
+                    prefs={prefs}
+                    loader={loader}
+                  />
+                )}
+              </div>
+              <div className="button-row">{decisions(open)}</div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

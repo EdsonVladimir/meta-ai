@@ -192,3 +192,12 @@ describe("specific names beat the generic @Injectable", () => {
     expect(verdict("Plain")).toBe("services");
   });
 });
+
+describe("signalStore symbols", () => {
+  it("land in State by name or by file", () => {
+    const store = { kind: "class", name: "AuditoriaStore", decorators: [] };
+    expect(classifySymbol("a.ts", store).layer).toBe("state");
+    const named = { kind: "class", name: "Auditoria", decorators: [] };
+    expect(classifySymbol("auditoria.store.ts", named).layer).toBe("state");
+  });
+});

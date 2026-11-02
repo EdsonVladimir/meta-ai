@@ -501,6 +501,25 @@ describe("MusePanel", () => {
     expect(useRequirementsUi.getState().archScope).toEqual({ kind: "all" });
   });
 
+  it("adds a file with @ and sends it", async () => {
+    const fake = api(12);
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    const box = screen.getByLabelText("Message to Muse") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "explain @f11", selectionStart: 12 } });
+    expect(await screen.findByRole("option", { name: "core/f11.ts" })).toBeTruthy();
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(box.value).toBe("explain @f11.ts ");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    const sent = (fake.ask as ReturnType<typeof vi.fn>).mock.calls[0][1] as Array<{ rel: string }>;
+    expect(sent.map((file) => file.rel)).toContain("core/f11.ts");
+    expect(sent).toHaveLength(8);
+  });
+
   it("lists files accepted in this thread when changing files", async () => {
     const fake = api();
     render(
