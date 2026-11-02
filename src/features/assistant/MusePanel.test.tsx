@@ -523,6 +523,10 @@ describe("MusePanel", () => {
   it("brings an adjusted proposal to the X-ray", async () => {
     const onPropose = vi.fn();
     const fake = api();
+    withVersions(fake, "req-1-v1", "Add a total");
+    vi.mocked(fake.generate)
+      .mockResolvedValueOnce(generationDto())
+      .mockResolvedValue(generationDto({ id: "cgen-2", explanation: "Adjusted." }));
     render(
       <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={onPropose} api={fake} />,
     );
@@ -530,10 +534,10 @@ describe("MusePanel", () => {
     write("Add a total");
     fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
     await screen.findByText("Adds the discount.");
-    fake.generate = vi.fn(async () => generationDto({ id: "cgen-2" }));
     write("Rename it");
     fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
-    await waitFor(() => expect(onPropose).toHaveBeenCalledTimes(2));
+    await screen.findByText("Adjusted.");
+    expect(onPropose).toHaveBeenCalledTimes(2);
     expect(useRequirementsUi.getState().museGeneration?.id).toBe("cgen-2");
   });
 
@@ -760,7 +764,8 @@ describe("MusePanel", () => {
       instruction: "Q: Second?\nA: On confirm.",
       previousGenerationId: "cgen-1",
     });
-    expect(onPropose).toHaveBeenCalledTimes(1);
+    // Every version goes to the board, answers included.
+    expect(onPropose).toHaveBeenCalledTimes(2);
     expect(useRequirementsUi.getState().museGeneration?.id).toBe("cgen-2");
   });
 
