@@ -25,7 +25,7 @@ use crate::error::StoreError;
 
 /// Defensive per-proposal file cap in the log (the api validates the
 /// real cap; only the absurd is avoided here).
-pub const MAX_CODEGEN_FILES: usize = 8;
+pub const MAX_CODEGEN_FILES: usize = 32;
 
 fn invalid(message: impl Into<String>) -> StoreError {
     StoreError::InvalidData {

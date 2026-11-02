@@ -180,6 +180,9 @@ pub fn read_ask_scope(
     read_scope_files(roots, scope)
 }
 
+// A proposal the model may return must also be one the log can store.
+const _: () = assert!(ruth_store::codegen::MAX_CODEGEN_FILES >= ruth_meta::code::MAX_CODE_FILES);
+
 /// Map summary sent by the frontend for one analyzed root.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextMapInput {
