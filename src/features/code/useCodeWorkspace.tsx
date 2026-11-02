@@ -108,6 +108,12 @@ export function useCodeWorkspaceState({ saveApiRef, onDocStatus, visible, loader
   const [associatingRootId, setAssociatingRootId] = useState<string | null>(null);
   const [scope, setScope] = useState<ScopeFile[]>([]);
   const [scopeNotice, setScopeNotice] = useState<string | null>(null);
+  // A notice answers one action: it does not stay after the next ones.
+  useEffect(() => {
+    if (scopeNotice === null) return;
+    const timer = setTimeout(() => setScopeNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [scopeNotice]);
   const [reveal, setReveal] = useState<
     { key: string; range: StructureRange; nonce: number } | null
   >(null);

@@ -6686,3 +6686,13 @@ button.archboard-member:hover {
 .muse-mentions button[aria-selected="true"] {
   background: var(--line);
 }
+
+/* A service with no pages must not push the next one down. */
+.workbench-center.architecture-view .project-map-root.compact {
+  flex: none;
+}
+
+.recent-label {
+  flex: none;
+  max-width: 45%;
+}

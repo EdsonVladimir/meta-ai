@@ -2671,7 +2671,10 @@ function ProjectMapSection({
       : null;
 
   return (
-    <section className="project-map-root" aria-label={`Diagram of ${section.title}`}>
+    <section
+      className={`project-map-root${pagesMode && composition === null ? " compact" : ""}`}
+      aria-label={`Diagram of ${section.title}`}
+    >
       {showCaption && <p className="archmap-caption">{section.title}</p>}
       {(state === null || busy) && (
         <p className="hint" role="status">

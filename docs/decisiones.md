@@ -451,6 +451,8 @@ still holds. Commits are on `code-xray`.
   the map and the paths, with no contents; Muse names each file it needs
   and why (modify, pattern or signatures), and the person sees that list
   before generating. Files chosen by hand are never replanned.
+- **An @ file joins the plan.** It used to count as a manual choice
+  and turned planning off. Change files still does.
 - **The bound is size, not a count.** Files to change go first, then
   patterns, within what fits one message; what does not fit is named.
   Signatures come from the local analysis, so a file Muse only needs to

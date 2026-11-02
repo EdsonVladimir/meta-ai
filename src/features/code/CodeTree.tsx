@@ -593,7 +593,7 @@ export function CodeTree({
           ref={menuRef}
           className="menu-popover code-menu"
           role="menu"
-          style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 60 }}
+          style={{ position: "fixed", left: menu.x, right: "auto", top: menu.y, zIndex: 60 }}
         >
           {menu.target.kind === "file" && (
             <button

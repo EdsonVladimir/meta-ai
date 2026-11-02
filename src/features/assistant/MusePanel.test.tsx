@@ -578,6 +578,25 @@ describe("MusePanel", () => {
     expect(vi.mocked(fake.generate).mock.calls[0][0].scope).toHaveLength(3);
   });
 
+  it("keeps planning after an @ file and sends that file too", async () => {
+    const fake = api(4);
+    fake.plan = vi.fn(async () => [{ rel: "core/f1.ts", role: "modify", reason: "changes" }]);
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    const box = screen.getByLabelText("Message to Muse") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "Fix @f3", selectionStart: 7 } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Generate proposal" }));
+    await screen.findByText("Adds the discount.");
+    expect(vi.mocked(fake.generate).mock.calls[0][0].scope).toEqual([
+      { rootId: "r", rel: "core/f3.ts" },
+      { rootId: "r", rel: "core/f1.ts" },
+    ]);
+  });
+
   it("does not plan over files the person chose or with the switch off", async () => {
     const fake = api(3);
     fake.plan = vi.fn(async () => []);

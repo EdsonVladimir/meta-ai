@@ -220,6 +220,16 @@ function newestProposal(entries: Message[]): ProposalMessage | null {
   return null;
 }
 
+/** An @ file joins the automatic pick, which gives up its last file for it. */
+function withMentioned(auto: MuseFile[], mentioned: string[], all: MuseFile[]): MuseFile[] {
+  if (mentioned.length === 0) return auto;
+  const rels = mentioned.reduce(
+    (list, rel) => addMentioned(list, rel, true, MUSE_MAX_FILES) ?? list,
+    auto.map((file) => file.rel),
+  );
+  return all.filter((file) => rels.includes(file.rel));
+}
+
 function ProposalAnswers({
   questions,
   disabled,
@@ -298,6 +308,8 @@ export function MusePanel({
   /** Open `@` token; `index` is the highlighted file. */
   const [mention, setMention] = useState<(Mention & { index: number }) | null>(null);
   const [mentionNotice, setMentionNotice] = useState<string | null>(null);
+  /** @ files of the next message; they do not turn the automatic pick off. */
+  const [mentioned, setMentioned] = useState<string[]>([]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [contextNotice, setContextNotice] = useState<string | null>(null);
   const apiRef = useRef(api);
@@ -320,6 +332,7 @@ export function MusePanel({
     setContextDialog(false);
     setContextNotice(null);
     setPendingPlan(null);
+    setMentioned([]);
     collectMuseFiles(target, apiRef.current.listDir)
       .then((found) => {
         if (stale) return;
@@ -348,7 +361,9 @@ export function MusePanel({
   const blocked = root?.aiBlocked ?? false;
   const all = candidates ?? [];
   const files =
-    chosen === null ? pickMuseFiles(all, text) : all.filter((file) => chosen.has(file.rel));
+    chosen === null
+      ? withMentioned(pickMuseFiles(all, text), mentioned, all)
+      : all.filter((file) => chosen.has(file.rel));
   const picked = new Set(files.map((file) => file.rel));
   const rootNames = Object.fromEntries(roots.map((entry) => [entry.id, entry.name]));
   // Project context: confirmed once per project, attached to every
@@ -378,12 +393,12 @@ export function MusePanel({
           .filter((part): part is string => part !== null)
           .join(", ")})`;
   const contextLineText = !contextEnabled
-    ? "Project context: off · "
+    ? "Project context: off"
     : `Project context: ${contextMapReady ? "map" : "map empty"} · ${
         contextDocCount === 0
           ? "no docs"
           : `${contextDocCount} ${contextDocCount === 1 ? "doc" : "docs"}`
-      } · `;
+      }`;
   // What leaves the machine, in plain view: it must not need a hover.
   const leftOut = all.length - files.length;
   const fileText = (count: number): string => (count === 1 ? "1 file" : `${count} files`);
@@ -676,7 +691,10 @@ export function MusePanel({
               content: input.content,
               resume: {
                 ...saved,
-                scope: plan.fitted.scope.map((rel) => ({ rootId: target.rootId, rel })),
+                scope: [...new Set([...mentioned, ...plan.fitted.scope])].map((rel) => ({
+                  rootId: target.rootId,
+                  rel,
+                })),
                 signatures: plan.fitted.signatures,
               },
               files: plan.files,
@@ -698,6 +716,7 @@ export function MusePanel({
         projectContext: built.context,
       });
       if (thread !== threadRef.current) return;
+      setMentioned([]);
       appendProposal(generation);
       showOnXray(generation);
     } catch (raw) {
@@ -907,14 +926,17 @@ export function MusePanel({
       chosen === null,
       MUSE_MAX_FILES,
     );
-    if (next === null) {
+    if (chosen === null) {
+      setMentioned((prev) => (prev.includes(rel) ? prev : [...prev, rel]));
+    } else if (next === null) {
       setMentionNotice(
         `Muse reads ${MUSE_MAX_FILES} files at most. Remove one in Change files to add ${rel}.`,
       );
       setMention(null);
       return;
+    } else {
+      setChosen(new Set(next));
     }
-    setChosen(new Set(next));
     const applied = applyMention(text, mention, cursor, rel);
     setText(applied.text);
     setMention(null);
