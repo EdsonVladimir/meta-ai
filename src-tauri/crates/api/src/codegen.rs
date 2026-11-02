@@ -218,6 +218,11 @@ fn authorized_root<'a>(
     Ok(root)
 }
 
+/// A plan sends paths to Meta, so a blocked folder stops it first.
+pub fn check_plan_root(roots: &CodeWorkspace, root_id: &str) -> Result<(), ApiError> {
+    authorized_root(roots, root_id).map(|_| ())
+}
+
 /// Reads the project context: map sections name authorized roots and
 /// docs are saved Markdown files read from disk. Same backstop as the
 /// scope — unknown or blocked roots never reach a prompt — before any

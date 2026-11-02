@@ -541,6 +541,58 @@ describe("MusePanel", () => {
     expect(useRequirementsUi.getState().museGeneration?.id).toBe("cgen-2");
   });
 
+  it("lets Muse pick the files, then generates only after the person agrees", async () => {
+    const fake = api(14);
+    fake.plan = vi.fn(async () => [
+      { rel: "core/f3.ts", role: "modify", reason: "changes" },
+      { rel: "core/f4.ts", role: "pattern", reason: "copy" },
+    ]);
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    expect(await screen.findByText("Muse chose 2 files")).toBeTruthy();
+    expect(fake.generate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Generate proposal" }));
+    await screen.findByText("Adds the discount.");
+    expect(vi.mocked(fake.generate).mock.calls[0][0].scope).toEqual([
+      { rootId: "r", rel: "core/f3.ts" },
+      { rootId: "r", rel: "core/f4.ts" },
+    ]);
+  });
+
+  it("falls back to its own pick when the plan fails", async () => {
+    const fake = api(3);
+    fake.plan = vi.fn(async () => {
+      throw { kind: "meta", message: "down" };
+    });
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    expect(vi.mocked(fake.generate).mock.calls[0][0].scope).toHaveLength(3);
+  });
+
+  it("does not plan over files the person chose or with the switch off", async () => {
+    const fake = api(3);
+    fake.plan = vi.fn(async () => []);
+    useRequirementsUi.getState().setMusePicksFiles(false);
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    await screen.findByRole("status");
+    write("Add a total");
+    fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
+    await screen.findByText("Adds the discount.");
+    expect(fake.plan).not.toHaveBeenCalled();
+    useRequirementsUi.getState().setMusePicksFiles(true);
+  });
+
   it("lists files accepted in this thread when changing files", async () => {
     const fake = api();
     render(

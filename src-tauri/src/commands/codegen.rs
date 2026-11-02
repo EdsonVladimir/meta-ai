@@ -662,6 +662,59 @@ pub async fn code_ask(
     })
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodePlanInput {
+    pub root_id: String,
+    pub request: String,
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub project_context: Option<CodeProjectContextInput>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodePlannedFileDto {
+    pub rel: String,
+    pub role: String,
+    pub reason: String,
+}
+
+/// Asks Muse which files a change needs, from paths alone. A blocked
+/// folder fails before any network. Records nothing.
+#[tauri::command]
+pub async fn code_plan(
+    state: State<'_, AppState>,
+    input: CodePlanInput,
+) -> Result<Vec<CodePlannedFileDto>, ApiError> {
+    if input.request.trim().is_empty() || input.paths.is_empty() {
+        return Err(ApiError::coded("empty_plan", "Nothing to plan."));
+    }
+    let project_context = {
+        let mut guard = lock(&state.inner)?;
+        let ready = ready(&mut guard)?;
+        let workspace = workspace_of(ready.code_roots);
+        ruth_api::check_plan_root(&workspace, &input.root_id)?;
+        match input.project_context.as_ref() {
+            Some(context) => ruth_api::read_project_context(&workspace, &to_api_context(context))?,
+            None => ruth_meta::code::ProjectContext::default(),
+        }
+    };
+    let config = ruth_meta::MetaConfig::from_env().map_err(ApiError::from_meta)?;
+    let prompt = ruth_meta::code::build_plan_input(&input.request, &input.paths, &project_context);
+    let planned = ruth_meta::code::plan_code(&config, &prompt, &input.paths)
+        .await
+        .map_err(ApiError::from_meta)?;
+    Ok(planned
+        .into_iter()
+        .map(|file| CodePlannedFileDto {
+            rel: file.rel,
+            role: file.role.as_str().to_string(),
+            reason: file.reason,
+        })
+        .collect())
+}
+
 /// The module's code proposals, with freshness computed on the spot.
 #[tauri::command]
 pub fn code_list_generations(

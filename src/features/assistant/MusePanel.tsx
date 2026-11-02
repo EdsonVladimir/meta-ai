@@ -17,7 +17,9 @@ import {
   readCodeFile,
   setRootProject,
   type AskTurnInput,
+  planCode,
   type CodeGenRequest,
+  type CodePlannedFile,
   type CodeProjectContextInput,
 } from "../code/client";
 import type {
@@ -47,11 +49,13 @@ import {
   type MuseContextChoice,
   type MuseTarget,
 } from "../requirements/uiStore";
+import { collectPlanPaths, fitPlan, type FittedPlan } from "./filePlan";
 import { addMentioned, applyMention, matchMentions, mentionAt, type Mention } from "./fileMention";
 import { MarkdownLite } from "./markdownLite";
 import { CONTEXT_DOCS_SEND_MAX, MuseContextDialog } from "./MuseContextDialog";
 import {
   detectedForRoots,
+  fileSignatures,
   mapSectionsForRoots,
   renderRootSummary,
 } from "./mapSummary";
@@ -70,6 +74,8 @@ import {
 export interface MusePanelApi extends MuseLinkDeps {
   listDir: (rootId: string, rel: string) => ReturnType<typeof listCodeDir>;
   ask: typeof askCode;
+  /** Absent = the panel's own pick, as without a plan. */
+  plan?: typeof planCode;
   generate: (input: CodeGenRequest) => Promise<CodeGenerationDto>;
   acceptFile: (generationId: string, pos: number) => Promise<CodeAcceptDto>;
   discardFile: (generationId: string, pos: number) => Promise<CodeGenerationDto>;
@@ -90,6 +96,7 @@ const MAX_SAVED_ANSWER_CHARS = 4000;
 const defaultApi: MusePanelApi = {
   listDir: listCodeDir,
   ask: askCode,
+  plan: planCode,
   generate: generateCode,
   acceptFile: acceptCodeFile,
   discardFile: discardCodeFile,
@@ -149,11 +156,22 @@ interface FailedProposal {
     requirementId: string;
     scope: MuseFile[];
     previousGenerationId: string | null;
+    /** Files sent as classes and methods only. */
+    signatures?: string[];
   } | null;
   error: string;
 }
 
-type Busy = "ask" | "propose" | null;
+/** Muse's choice of files, waiting for the person to go ahead. */
+interface PendingPlan {
+  text: string;
+  content?: string;
+  resume: NonNullable<FailedProposal["resume"]>;
+  files: CodePlannedFile[];
+  fitted: FittedPlan;
+}
+
+type Busy = "ask" | "plan" | "propose" | null;
 
 interface MusePanelProps {
   target: MuseTarget;
@@ -274,6 +292,9 @@ export function MusePanel({
   const [adjustMode, setAdjustMode] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [contextDialog, setContextDialog] = useState(false);
+  const [pendingPlan, setPendingPlan] = useState<PendingPlan | null>(null);
+  const musePicksFiles = useRequirementsUi((s) => s.musePicksFiles);
+  const setMusePicksFiles = useRequirementsUi((s) => s.setMusePicksFiles);
   /** Open `@` token; `index` is the highlighted file. */
   const [mention, setMention] = useState<(Mention & { index: number }) | null>(null);
   const [mentionNotice, setMentionNotice] = useState<string | null>(null);
@@ -298,6 +319,7 @@ export function MusePanel({
     setAdjustMode(false);
     setContextDialog(false);
     setContextNotice(null);
+    setPendingPlan(null);
     collectMuseFiles(target, apiRef.current.listDir)
       .then((found) => {
         if (stale) return;
@@ -374,7 +396,12 @@ export function MusePanel({
   const newest = newestProposal(messages);
   const showAdjust = adjustMode && newest !== null;
   const canSend =
-    busy === null && !blocked && root !== null && text.trim() !== "" && files.length > 0;
+    busy === null &&
+    pendingPlan === null &&
+    !blocked &&
+    root !== null &&
+    text.trim() !== "" &&
+    files.length > 0;
   // A saved version waits for its Retry: another adjustment would find
   // the proposal out of date and lose that Retry.
   const pendingRetry = failedProposal?.resume != null;
@@ -386,7 +413,9 @@ export function MusePanel({
   const chosenFiles = chosen === null ? [] : files;
   const changeOutgoing = showAdjust
     ? `Adjust proposal sends ${fileText(adjustmentScope(shownProposals, chosenFiles).length)}, the current proposal and your request${contextSuffix}.`
-    : `Propose change sends ${fileText(files.length)} and your request${contextSuffix}.`;
+    : chosen === null && musePicksFiles && api.plan !== undefined && target.kind !== "file"
+      ? `Propose change first sends your request and the file paths${contextSuffix}, and shows the files Muse picks before sending them.`
+      : `Propose change sends ${fileText(files.length)} and your request${contextSuffix}.`;
   const pendingFiles =
     newest === null
       ? 0
@@ -481,12 +510,26 @@ export function MusePanel({
    * chosen docs that still exist on unblocked folders. Dropped files
    * come back as notices; the message still goes.
    */
-  async function currentContext(): Promise<{
+  async function currentContext(signatures: string[] = []): Promise<{
     context: CodeProjectContextInput | undefined;
     notices: string[];
   }> {
     const notices: string[] = [];
-    if (projectId === null || choice?.enabled !== true) return { context: undefined, notices };
+    const signatureText = signatures
+      .map((rel) => {
+        const text = fileSignatures(target.rootId, rel);
+        return text === null ? null : `Signatures of ${rel}:\n${text}`;
+      })
+      .filter((text): text is string => text !== null)
+      .join("\n\n");
+    const withSignatures = (context: CodeProjectContextInput | undefined) => {
+      if (signatureText === "") return context;
+      const base = context ?? { map: [], docs: [] };
+      return { ...base, map: [...base.map, { rootId: target.rootId, text: signatureText }] };
+    };
+    if (projectId === null || choice?.enabled !== true) {
+      return { context: withSignatures(undefined), notices };
+    }
     const ids = contextRoots.map((entry) => entry.id);
     const sections = mapSectionsForRoots(ids);
     const detected = detectedForRoots(ids);
@@ -541,8 +584,10 @@ export function MusePanel({
       );
     }
     const docs = kept.slice(0, CONTEXT_DOCS_SEND_MAX);
-    if (map.length === 0 && docs.length === 0) return { context: undefined, notices };
-    return { context: { map, docs }, notices };
+    if (map.length === 0 && docs.length === 0) {
+      return { context: withSignatures(undefined), notices };
+    }
+    return { context: withSignatures({ map, docs }), notices };
   }
 
   async function runAsk(
@@ -620,8 +665,29 @@ export function MusePanel({
           scope: files,
           previousGenerationId: null,
         };
+        // Files the person chose are theirs: only an automatic pick is planned.
+        if (chosen === null && musePicksFiles && target.kind !== "file" && api.plan !== undefined) {
+          setBusy("plan");
+          const plan = await planFiles(input.message);
+          if (thread !== threadRef.current) return;
+          if (plan !== null) {
+            setPendingPlan({
+              text: input.message,
+              content: input.content,
+              resume: {
+                ...saved,
+                scope: plan.fitted.scope.map((rel) => ({ rootId: target.rootId, rel })),
+                signatures: plan.fitted.signatures,
+              },
+              files: plan.files,
+              fitted: plan.fitted,
+            });
+            return;
+          }
+          setBusy("propose");
+        }
       }
-      const built = await currentContext();
+      const built = await currentContext(saved.signatures);
       if (thread !== threadRef.current) return;
       if (built.notices.length > 0) setContextNotice(built.notices.join(" "));
       const generation = await api.generate({
@@ -647,6 +713,53 @@ export function MusePanel({
     } finally {
       setBusy(null);
     }
+  }
+
+  /**
+   * Asks Muse which files the change needs. Any failure returns null,
+   * and the proposal carries on with the automatic pick: a plan is a
+   * help, never a new way to fail.
+   */
+  async function planFiles(
+    message: string,
+  ): Promise<{ files: CodePlannedFile[]; fitted: FittedPlan } | null> {
+    const plan = api.plan;
+    if (plan === undefined) return null;
+    try {
+      const paths = await collectPlanPaths(target.rel, (rel) =>
+        apiRef.current.listDir(target.rootId, rel),
+      );
+      if (paths.length === 0) return null;
+      const built = await currentContext();
+      const planned = await plan({
+        rootId: target.rootId,
+        request: message,
+        paths: paths.map((path) => path.rel),
+        projectContext: built.context,
+      });
+      const fitted = fitPlan(
+        planned,
+        new Map(paths.map((path) => [path.rel, path.size])),
+        (rel) => fileSignatures(target.rootId, rel) !== null,
+      );
+      if (fitted.scope.length === 0) return null;
+      return { files: planned, fitted };
+    } catch {
+      setContextNotice("Muse could not pick the files, so Ruth picked them.");
+      return null;
+    }
+  }
+
+  function goAheadWithPlan(): void {
+    const plan = pendingPlan;
+    if (plan === null) return;
+    setPendingPlan(null);
+    void runProposeFlow({
+      message: plan.text,
+      content: plan.content,
+      showUser: false,
+      resume: plan.resume,
+    });
   }
 
   /** An answer it builds on is saved with the request, cut to a fair size. */
@@ -1085,6 +1198,48 @@ export function MusePanel({
               ),
             )}
             {busy === "ask" && <div className="muse-message muse-working">Working…</div>}
+            {busy === "plan" && (
+              <div className="muse-message muse-working">Muse is choosing the files…</div>
+            )}
+            {pendingPlan !== null && (
+              <div className="muse-message muse-plan" aria-label="Files Muse chose">
+                <h4>{`Muse chose ${pendingPlan.fitted.scope.length + pendingPlan.fitted.signatures.length} files`}</h4>
+                <ul>
+                  {pendingPlan.files.map((file) => (
+                    <li key={file.rel} title={file.reason}>
+                      <code>{file.rel}</code>
+                      <span className="hint">
+                        {" "}
+                        · {file.role}
+                        {pendingPlan.fitted.leftOut.includes(file.rel) ? " · left out: no room" : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {pendingPlan.fitted.partial.length > 0 && (
+                  <p className="error" role="alert">
+                    {`Too long to send whole, so Muse would rewrite them from a part: ${pendingPlan.fitted.partial.join(", ")}. Review these carefully.`}
+                  </p>
+                )}
+                {pendingPlan.fitted.leftOut.length > 0 && (
+                  <p className="error" role="alert">
+                    {`${pendingPlan.fitted.leftOut.length} files did not fit. Split the request to reach them.`}
+                  </p>
+                )}
+                <div className="button-row">
+                  <button type="button" className="primary small" onClick={goAheadWithPlan}>
+                    Generate proposal
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary small"
+                    onClick={() => setPendingPlan(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             {busy === "propose" && (
               <div className="muse-message muse-working">Generating proposal…</div>
             )}
@@ -1165,6 +1320,16 @@ export function MusePanel({
                   {showFiles ? "Hide files" : "Change files"}
                 </button>
               </div>
+            )}
+            {showFiles && (
+              <label className="hint">
+                <input
+                  type="checkbox"
+                  checked={musePicksFiles}
+                  onChange={(event) => setMusePicksFiles(event.target.checked)}
+                />{" "}
+                Muse picks the files for a proposal
+              </label>
             )}
             {showFiles && (
               <ul className="muse-files" aria-label="Files sent to Muse">

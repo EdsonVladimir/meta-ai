@@ -269,6 +269,9 @@ interface RequirementsUiState {
   setMuseTarget: (target: MuseTarget | null) => void;
   setMuseGeneration: (generation: CodeGenerationDto | null) => void;
   setMuseAccepted: (accepted: MuseAcceptedFile | null) => void;
+  /** Muse picks the files of a proposal (persisted, on by default). */
+  musePicksFiles: boolean;
+  setMusePicksFiles: (on: boolean) => void;
   setMuseContextChoice: (projectId: string, choice: MuseContextChoice) => void;
   setArchInspectorWidth: (width: number | null) => void;
   setArchInspectorCollapsed: (collapsed: boolean) => void;
@@ -428,6 +431,7 @@ export function validateLayoutPartial(persisted: unknown): {
   archInspectorWidth: number | null;
   layerOverrides: LayerOverrides;
   archExternalFolders: ExternalFolder[];
+  musePicksFiles: boolean;
   museContext: Record<string, MuseContextChoice>;
 } {
   const fallback = {
@@ -442,6 +446,7 @@ export function validateLayoutPartial(persisted: unknown): {
     layerOverrides: {},
     archExternalFolders: [],
     museContext: {},
+    musePicksFiles: true,
   };
   if (typeof persisted !== "object" || persisted === null) return fallback;
   const partial = persisted as Record<string, unknown>;
@@ -473,6 +478,7 @@ export function validateLayoutPartial(persisted: unknown): {
     mapHiddenProjects: validateProjectFlags(partial.mapHiddenProjects),
     mapOpenedProjects: validateProjectFlags(partial.mapOpenedProjects),
     museContext: validateMuseContext(partial.museContext),
+    musePicksFiles: partial.musePicksFiles !== false,
     archInspectorWidth: inRange(
       partial.archInspectorWidth,
       MIN_ARCH_INSPECTOR_WIDTH,
@@ -521,6 +527,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
   museGeneration: null,
   museAccepted: null,
   museContext: {},
+  musePicksFiles: true,
   archInspectorWidth: null,
   archInspectorCollapsed: true,
   layerOverrides: {},
@@ -550,6 +557,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
     ),
   setMuseGeneration: (museGeneration) => set({ museGeneration }),
   setMuseAccepted: (museAccepted) => set({ museAccepted }),
+  setMusePicksFiles: (musePicksFiles) => set({ musePicksFiles }),
   setMuseContextChoice: (projectId, choice) =>
     set((state) => ({ museContext: { ...state.museContext, [projectId]: choice } })),
   setArchInspectorWidth: (archInspectorWidth) => set({ archInspectorWidth }),
@@ -641,6 +649,7 @@ export const useRequirementsUi = create<RequirementsUiState>()(
         layerOverrides: state.layerOverrides,
         archExternalFolders: state.archExternalFolders,
         museContext: state.museContext,
+        musePicksFiles: state.musePicksFiles,
       }),
       merge: (persisted, current) => ({
         ...current,

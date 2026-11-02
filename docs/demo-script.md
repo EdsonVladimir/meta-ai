@@ -24,7 +24,7 @@ about its speed.
 | 0:30 | Show flow on `ReservasPageComponent`. Fit | From a template, through the store and the service, to the HTTP call. Every line comes from code Ruth parsed, not from AI. |
 | 0:50 | Card button HTML, then Esc | The code is one click away. |
 | 1:00 | Right-click `reservas/frontend` → Ask Muse. Ask: "How do bookings reach the API?" | Now I talk to Muse from a folder. Ruth tells me exactly what goes to Meta before I send it. |
-| 1:20 | Propose change with the request below. Cut the wait | I ask for a real feature. It is saved as a versioned requirement. |
+| 1:20 | Propose change with the request below. Muse lists the files it needs; Generate proposal. Cut the wait | I ask for a real feature. It is saved as a versioned requirement. Muse picks only the files it needs, from paths alone, and I see them first. |
 | 1:35 | Card and X-ray side by side | Muse's proposal arrives as a separate review. Nothing is on disk. The new code appears on the map, the Code X-ray, in pink, and Ruth runs its own checks. |
 | 1:55 | Preview button on the new form's card on the board. Point at the field list, then Esc | Before accepting, I see the form and check it against my request: every field, and the email locked on edit. It runs nothing and reaches nothing. |
 | 2:10 | Answer a question on the card, or Adjust proposal. Cut the wait | Muse asks, I answer, and it revises. Each change is a new version of the same requirement. |

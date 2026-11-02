@@ -446,6 +446,22 @@ still holds. Commits are on `code-xray`.
 
 **Reading and choosing what Muse sees**
 
+- **Muse picks the files of a proposal.** Choosing files by hand does
+  not scale past a small folder. Propose change first sends the request,
+  the map and the paths, with no contents; Muse names each file it needs
+  and why (modify, pattern or signatures), and the person sees that list
+  before generating. Files chosen by hand are never replanned.
+- **The bound is size, not a count.** Files to change go first, then
+  patterns, within what fits one message; what does not fit is named.
+  Signatures come from the local analysis, so a file Muse only needs to
+  call costs a few lines.
+- **A plan never blocks a proposal.** Any failure falls back to the
+  automatic pick, and a switch in Change files turns it off. It adds one
+  call and sends paths to Meta, and the panel says so.
+- **Files reach Muse with up to 24,000 characters.** They were cut at
+  8,000 while Muse returns whole files, so a longer file could lose its
+  end. A file to change beyond that is flagged before generating.
+
 - **Adjust proposal respects the chosen files.** It read only the
   first proposal's scope, so `@` and Change files did nothing there.
   In a real run Muse never saw the store, asked about it three times

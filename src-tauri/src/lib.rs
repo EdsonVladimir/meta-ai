@@ -32,7 +32,7 @@ use commands::code_links::{
 };
 use commands::codegen::{
     code_accept_file, code_ask, code_discard_file, code_gen_context, code_generate,
-    code_list_generations, code_mockup_screens,
+    code_list_generations, code_mockup_screens, code_plan,
 };
 use commands::delivery::{
     core_create_delivery, core_export_delivery_preview, core_export_delivery_save,
@@ -247,6 +247,7 @@ pub fn run() {
             code_gen_context,
             code_generate,
             code_ask,
+            code_plan,
             code_list_generations,
             code_mockup_screens,
             code_replicate_preview,

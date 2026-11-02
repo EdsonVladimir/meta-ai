@@ -8,6 +8,8 @@ import type { MuseTarget } from "../requirements/uiStore";
 
 /** Same bound as the Rust side (`MAX_CODE_SCOPE_FILES`). */
 export const MUSE_MAX_FILES = 12;
+/** A plan is bound by size, and by this count on the Rust side. */
+export const MUSE_MAX_PLANNED_FILES = 40;
 /** Files listed to choose from; a folder may hold many more. */
 export const MUSE_MAX_CANDIDATES = 60;
 const MAX_DIRS_WALKED = 200;
@@ -140,7 +142,7 @@ export function adjustmentScope(
     seen.add(key);
     out.push({ rootId, rel });
   }
-  return out.slice(0, MUSE_MAX_FILES);
+  return out.slice(0, MUSE_MAX_PLANNED_FILES);
 }
 
 /**

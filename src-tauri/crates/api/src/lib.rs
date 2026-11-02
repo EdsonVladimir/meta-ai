@@ -40,12 +40,13 @@ pub use code_links::{
     SymbolRefDto, ValidatedSnapshot, PORTABILITY_VERSION,
 };
 pub use codegen::{
-    build_stored_codegen, check_accept, context_requirement, context_screen, discard_code_file,
-    generation_freshness, list_mockup_screens, read_ask_scope, read_project_context,
-    record_code_generation, snapshot_code_context, snapshot_code_context_from_screen, AcceptCheck,
-    AcceptReady, CodeGenContext, CodeGenFreshness, CodeScopeRead, CodeScreenContext,
-    CodeScreenSourceItem, ContextMapInput, MockupScreenEntry, MockupScreens, ProjectContextInput,
-    RecordCodeGenInput, ScopeChange, ScopeFileInput, ScreenSourceChange,
+    build_stored_codegen, check_accept, check_plan_root, context_requirement, context_screen,
+    discard_code_file, generation_freshness, list_mockup_screens, read_ask_scope,
+    read_project_context, record_code_generation, snapshot_code_context,
+    snapshot_code_context_from_screen, AcceptCheck, AcceptReady, CodeGenContext, CodeGenFreshness,
+    CodeScopeRead, CodeScreenContext, CodeScreenSourceItem, ContextMapInput, MockupScreenEntry,
+    MockupScreens, ProjectContextInput, RecordCodeGenInput, ScopeChange, ScopeFileInput,
+    ScreenSourceChange,
 };
 pub use delivery::{
     create_work_delivery, get_work_delivery, list_work_deliveries, prepare_work_delivery,

@@ -25,6 +25,7 @@ beforeEach(() => {
     mapHiddenProjects: {},
     mapOpenedProjects: {},
     museContext: {},
+      musePicksFiles: true,
     codeFolderSelection: null,
     centerDoc: null,
     discardSignal: 0,
@@ -257,6 +258,7 @@ describe("persisted panel sizes", () => {
       layerOverrides: { s1: { layer: "state", name: "Billing" } },
       archExternalFolders: [{ rootId: "r1", rel: "vendor" }],
       museContext: {},
+      musePicksFiles: true,
     });
   });
 
@@ -317,6 +319,7 @@ describe("persisted panel sizes", () => {
       layerOverrides: { s1: { layer: "state", name: "Billing" } },
       archExternalFolders: [],
       museContext: {},
+      musePicksFiles: true,
     });
     const fallback = {
       navigatorWidth: null,
@@ -330,6 +333,7 @@ describe("persisted panel sizes", () => {
       layerOverrides: {},
       archExternalFolders: [],
       museContext: {},
+      musePicksFiles: true,
     };
     expect(validateLayoutPartial(null)).toEqual(fallback);
     expect(validateLayoutPartial("basura")).toEqual(fallback);

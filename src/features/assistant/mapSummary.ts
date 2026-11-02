@@ -174,6 +174,32 @@ export function renderRootSummary(
 }
 
 const sectionsByKey = new Map<string, MapSectionSummary>();
+const signaturesByFile = new Map<string, string>();
+
+interface SignatureSymbol {
+  name: string;
+  rel: string;
+  members: Array<{ name: string; detail: string }>;
+}
+
+/** Records the classes and methods of each analyzed file. */
+export function publishFileSignatures(rootId: string, symbols: SignatureSymbol[]): void {
+  const perFile = new Map<string, string[]>();
+  for (const symbol of symbols) {
+    const members = symbol.members.map((member) => `  ${member.name}${member.detail}`.slice(0, 120));
+    const lines = perFile.get(symbol.rel) ?? [];
+    lines.push(symbol.name, ...members);
+    perFile.set(symbol.rel, lines);
+  }
+  for (const [rel, lines] of perFile) {
+    signaturesByFile.set(`${rootId}::${rel}`, lines.join("\n"));
+  }
+}
+
+/** Classes and methods of one file, or null when it was not analyzed. */
+export function fileSignatures(rootId: string, rel: string): string | null {
+  return signaturesByFile.get(`${rootId}::${rel}`) ?? null;
+}
 let detected: DetectedSummaryService[] = [];
 
 /** Records (or replaces) the summary of one ready section. */
@@ -201,5 +227,6 @@ export function detectedForRoots(rootIds: string[]): DetectedSummaryService[] {
 /** Drops every summary. Called when the workspace closes. */
 export function clearMapSummaries(): void {
   sectionsByKey.clear();
+  signaturesByFile.clear();
   detected = [];
 }

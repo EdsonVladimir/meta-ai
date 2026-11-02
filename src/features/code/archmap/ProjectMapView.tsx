@@ -120,6 +120,7 @@ import {
 } from "./projectMaps";
 import {
   publishDetectedServices,
+  publishFileSignatures,
   publishMapSection,
   summarizeSection,
 } from "../../assistant/mapSummary";
@@ -927,6 +928,7 @@ export function ProjectMapView({
       const state = states[section.key];
       if (state === undefined || state.status !== "ready" || state.map === null) continue;
       const merged = mergedRef.current[section.key]?.result ?? null;
+      if (merged !== null) publishFileSignatures(section.root.id, merged.symbols);
       publishMapSection(
         summarizeSection({
           key: section.key,

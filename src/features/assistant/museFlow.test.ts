@@ -9,6 +9,7 @@ import {
   moduleNameOf,
   MUSE_MAX_CANDIDATES,
   MUSE_MAX_FILES,
+  MUSE_MAX_PLANNED_FILES,
   pickMuseFiles,
   type MuseLinkDeps,
 } from "./museFlow";
@@ -145,9 +146,9 @@ describe("adjustmentScope", () => {
   });
 
   it("stays inside the file limit, keeping what is on disk", () => {
-    const many = Array.from({ length: MUSE_MAX_FILES }, (_, i) => `s${i}.ts`);
+    const many = Array.from({ length: MUSE_MAX_PLANNED_FILES }, (_, i) => `s${i}.ts`);
     const out = adjustmentScope([{ scope: scope(many), files: [file("new.ts", "accepted")] }]);
-    expect(out).toHaveLength(MUSE_MAX_FILES);
+    expect(out).toHaveLength(MUSE_MAX_PLANNED_FILES);
     expect(out[0].rel).toBe("new.ts");
   });
 });

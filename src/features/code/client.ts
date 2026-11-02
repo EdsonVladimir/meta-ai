@@ -129,6 +129,22 @@ export interface CodeProjectContextInput {
   docs: Array<{ rootId: string; rel: string }>;
 }
 
+export interface CodePlannedFile {
+  rel: string;
+  role: string;
+  reason: string;
+}
+
+/** Asks Muse which files a change needs. Paths only, never contents. */
+export function planCode(input: {
+  rootId: string;
+  request: string;
+  paths: string[];
+  projectContext?: CodeProjectContextInput;
+}): Promise<CodePlannedFile[]> {
+  return call("code_plan", { input });
+}
+
 export function askCode(
   question: string,
   files: Array<{ rootId: string; rel: string }>,

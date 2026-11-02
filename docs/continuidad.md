@@ -133,6 +133,11 @@ environment).
 - Proposal diffs open in a dialog with Accept and Discard; `@`
   adds a thread file to a Muse message; NgRx `signalStore`
   consts get State cards with their literal members.
+- Propose change plans first: Muse picks files from paths and the
+  map, the panel shows them with their role, and Generate proposal
+  sends them within a size budget. Any failure falls back to the
+  automatic pick; a switch in Change files turns it off. Needs a
+  real run to judge the quality of the picks.
 - Muse project context: confirmed once per project, then
   attached to every Ask, Propose change, Adjust proposal and
   Retry. Session map summaries (services, layers, routes,
