@@ -58,7 +58,8 @@ import {
   collectBootstrap,
   collectComponentFacts,
   collectHttpInterceptors,
-  collectRouteRecords,
+  collectRouteTables,
+  type RouteTableEntry,
 } from "./tsAngularFacts";
 import { collectNestPipeline } from "./tsNestFacts";
 import type {
@@ -809,6 +810,34 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
     collectNews(source, decl, id, refs, ordinal);
   }
 
+  /** A routes file holds no class: the table is its card, one row per route. */
+  function emitRouteTable(decl: ts.VariableDeclaration, entries: RouteTableEntry[]): void {
+    symbols.push({
+      id: symbolId(input.rootId, input.rel, ordinal.next++),
+      language: "ts",
+      kind: "class",
+      name: shortText(decl.name.getText(source), 60),
+      rootId: input.rootId,
+      rel: input.rel,
+      range: toRange(source, decl),
+      members: entries.slice(0, STRUCTURE_LIMITS.maxMembers).map(({ node, record }) => {
+        const target = record.component ?? record.lazyImport ?? "?";
+        const opens = record.lazyImport === null ? target : `${record.lazyImport} (lazy)`;
+        const guards = record.canActivate.length > 0 ? ` · ${record.canActivate.join(", ")}` : "";
+        return {
+          name: shortText(`/${record.path ?? "(computed path)"}`, 60),
+          kind: "field" as const,
+          detail: shortText(`→ ${opens}${guards}`, 80),
+          range: toRange(source, node),
+          bodyHash: memberBodyHash(source, node),
+        };
+      }),
+      membersTruncated: entries.length > STRUCTURE_LIMITS.maxMembers,
+      heuristic: "route table",
+      bodyHash: memberBodyHash(source, decl),
+    });
+  }
+
   function visit(node: ts.Node): void {
     if (ts.isClassDeclaration(node)) {
       emitClass(node);
@@ -972,9 +1001,13 @@ function parseFile(input: StructureInput, ordinal: { next: number }): FileSymbol
     ...collectNestPipeline(source, (target, what) => evidenceOf(source, target, what)),
     ...collectHttpInterceptors(source, (target, what) => evidenceOf(source, target, what)),
   ];
-  const routes = collectRouteRecords(source, input.rel, (node, what) =>
+  const routeTables = collectRouteTables(source, input.rel, (node, what) =>
     evidenceOf(source, node, what),
   );
+  for (const table of routeTables) {
+    if (table.declaration !== null) emitRouteTable(table.declaration, table.entries);
+  }
+  const routes = routeTables.flatMap((table) => table.entries.map((entry) => entry.record));
   const bootstrap = collectBootstrap(source);
   return {
     symbols,

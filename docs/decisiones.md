@@ -564,6 +564,13 @@ still holds. Commits are on `code-xray`.
   started on 2026-10-26, the first commit, after the organizers allowed
   it. The README says so, and the earlier prototype stays declared.
 
+- **A route table is a card.** A standalone `app.routes.ts` holds a
+  constant and no class, so Classes never showed it. A named table now
+  gets a card in the Modules & routes column (Composition before, a name
+  nobody looked for) with one row per route; a `RouterModule`
+  table gets one beside its module class. Redirects have no target and
+  stay out of the rows, and an inline table has no name to show.
+
 **Agreed and not built yet**
 
 - **Key screen:** store the key in the system keyring, so the app can

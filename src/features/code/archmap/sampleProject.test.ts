@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { combineResults } from "../structure/structureMerge";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
+import { classifySymbol } from "./archLayers";
 import { buildComposition } from "./compositionModel";
 import { memberSignalLines } from "./flowLayout";
 import { buildFlowGraph, TEMPLATE_MEMBER, type FlowProject } from "./flowModel";
@@ -77,6 +78,18 @@ it("proves the demo project routes UI through a store", () => {
     result: analyzeSample(["frontend"]),
   };
   expect(projectUsesStore([project])).toBe(true);
+});
+
+it("shows the demo app's route table as a wiring card", () => {
+  const table = analyzeSample(["frontend"]).symbols.find((symbol) => symbol.name === "routes");
+  expect(table?.rel).toBe("frontend/src/app/app.routes.ts");
+  expect(table?.members.map((member) => member.name)).toEqual(["/reservas"]);
+  const verdict = classifySymbol(table?.rel ?? "", {
+    name: "routes",
+    kind: "class",
+    decorators: [],
+  });
+  expect(verdict.layer).toBe("composition");
 });
 
 it("orders the demo app from its routes", () => {

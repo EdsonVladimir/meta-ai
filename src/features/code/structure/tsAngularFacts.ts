@@ -154,17 +154,30 @@ function joinPaths(parent: string | null, path: string | null): string | null {
   return joined;
 }
 
+/** One route of a table, with the object literal that wrote it. */
+export interface RouteTableEntry {
+  node: ts.Node;
+  record: RouteRecordFact;
+}
+
+export interface RouteTable {
+  /** The named array; null when written inline in the call. */
+  declaration: ts.VariableDeclaration | null;
+  entries: RouteTableEntry[];
+}
+
 /**
  * Route tables: arrays typed `Routes`, or given to `provideRouter`,
  * `RouterModule.forRoot` or `forChild`. Only literal paths and plain
  * identifiers count; anything else stays out, never guessed.
  */
-export function collectRouteRecords(
+export function collectRouteTables(
   source: ts.SourceFile,
   rel: string,
   evidence: (node: ts.Node, what: string) => string,
-): RouteRecordFact[] {
+): RouteTable[] {
   const named = new Map<string, ts.ArrayLiteralExpression>();
+  const declarations = new Map<ts.ArrayLiteralExpression, ts.VariableDeclaration>();
   const tables = new Set<ts.ArrayLiteralExpression>();
   const arrayOf = (node: ts.Expression | undefined): ts.ArrayLiteralExpression | null => {
     if (node === undefined) return null;
@@ -179,6 +192,7 @@ export function collectRouteRecords(
       ts.isArrayLiteralExpression(current.initializer)
     ) {
       named.set(current.name.text, current.initializer);
+      declarations.set(current.initializer, current);
       const type = current.type?.getText(source);
       if (type === "Routes" || type === "Route[]") tables.add(current.initializer);
     }
@@ -201,8 +215,11 @@ export function collectRouteRecords(
   scan(source);
   scanCalls(source);
 
-  const out: RouteRecordFact[] = [];
-  const read = (table: ts.ArrayLiteralExpression, parent: string | null): void => {
+  const read = (
+    table: ts.ArrayLiteralExpression,
+    parent: string | null,
+    out: RouteTableEntry[],
+  ): void => {
     for (const element of table.elements) {
       if (!ts.isObjectLiteralExpression(element)) continue;
       const props = new Map<string, ts.Expression>();
@@ -217,27 +234,33 @@ export function collectRouteRecords(
       const guards = props.get("canActivate");
       if (component !== undefined || lazy !== null) {
         out.push({
-          rel,
-          path,
-          component:
-            component !== undefined && ts.isIdentifier(component)
-              ? component.text
-              : (lazy?.exported ?? null),
-          lazyImport: lazy?.target ?? null,
-          loadsChildren: nested !== undefined,
-          canActivate:
-            guards !== undefined && ts.isArrayLiteralExpression(guards)
-              ? guards.elements.filter(ts.isIdentifier).map((entry) => entry.text)
-              : [],
-          evidence: evidence(element, `route ${path ?? "?"}`),
+          node: element,
+          record: {
+            rel,
+            path,
+            component:
+              component !== undefined && ts.isIdentifier(component)
+                ? component.text
+                : (lazy?.exported ?? null),
+            lazyImport: lazy?.target ?? null,
+            loadsChildren: nested !== undefined,
+            canActivate:
+              guards !== undefined && ts.isArrayLiteralExpression(guards)
+                ? guards.elements.filter(ts.isIdentifier).map((entry) => entry.text)
+                : [],
+            evidence: evidence(element, `route ${path ?? "?"}`),
+          },
         });
       }
       const children = props.get("children");
-      if (children !== undefined && ts.isArrayLiteralExpression(children)) read(children, path);
+      if (children !== undefined && ts.isArrayLiteralExpression(children)) read(children, path, out);
     }
   };
-  for (const table of tables) read(table, "");
-  return out;
+  return [...tables].map((table) => {
+    const entries: RouteTableEntry[] = [];
+    read(table, "", entries);
+    return { declaration: declarations.get(table) ?? null, entries };
+  });
 }
 
 /** `bootstrapApplication(App)` and `bootstrap: [App]`. */

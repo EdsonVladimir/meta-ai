@@ -564,3 +564,47 @@ export class Page {
     expect(graph.nodes.some((node) => node.symbol.name === "AuditoriaStore")).toBe(true);
   });
 });
+
+describe("route tables", () => {
+  const table = `import { Routes } from "@angular/router";
+export const routes: Routes = [
+  { path: "", redirectTo: "reservas", pathMatch: "full" },
+  { path: "reservas", component: ReservasPage, canActivate: [authGuard] },
+  { path: "admin", loadChildren: () => import("./admin/admin.routes").then((m) => m.ADMIN) },
+];`;
+
+  it("shows a typed route table as a card with one row per route", () => {
+    const result = analyzeTsFiles([input("r", "src/app/app.routes.ts", table)]);
+    const symbol = result.symbols.find((entry) => entry.name === "routes");
+    expect(symbol?.kind).toBe("class");
+    expect(symbol?.heuristic).toBe("route table");
+    expect(symbol?.range.startLine).toBe(2);
+    expect(symbol?.members.map((member) => [member.name, member.detail])).toEqual([
+      ["/reservas", "→ ReservasPage · authGuard"],
+      ["/admin", "→ ./admin/admin.routes (lazy)"],
+    ]);
+    expect(symbol?.members[0].range?.startLine).toBe(4);
+    expect(result.routes?.map((route) => route.path)).toEqual(["reservas", "admin"]);
+  });
+
+  it("names the table given to RouterModule, next to its module class", () => {
+    const result = analyzeTsFiles([
+      input(
+        "r",
+        "src/app/app-routing.module.ts",
+        `const appRoutes = [{ path: "a", component: A }];
+@NgModule({ imports: [RouterModule.forRoot(appRoutes)] })
+export class AppRoutingModule {}`,
+      ),
+    ]);
+    expect(result.symbols.map((entry) => entry.name).sort()).toEqual([
+      "AppRoutingModule",
+      "appRoutes",
+    ]);
+  });
+
+  it("makes no card for a plain array", () => {
+    const result = analyzeTsFiles([input("r", "a.ts", `export const items = [{ path: "a" }];`)]);
+    expect(result.symbols).toEqual([]);
+  });
+});

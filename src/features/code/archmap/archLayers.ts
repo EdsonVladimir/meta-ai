@@ -68,7 +68,7 @@ export const ARCH_LAYERS: ArchLayerDef[] = [
   {
     id: "composition",
     order: 6,
-    label: "Composition",
+    label: "Modules & routes",
     description: "Wiring: modules, routes, barrels and entry points.",
     badge: "CO",
   },
