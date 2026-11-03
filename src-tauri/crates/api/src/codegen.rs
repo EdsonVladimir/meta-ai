@@ -503,6 +503,45 @@ pub fn context_screen(context: &CodeGenContext) -> Option<ruth_meta::code::CodeS
     })
 }
 
+/// The path a proposed file means. The model sometimes drops the
+/// folder prefix (`src/a.ts` for `web/src/a.ts`), often copying how the
+/// person wrote it. When that path does not exist and exactly one file
+/// sent in the scope ends with it, it is that file: the model read it.
+/// None or several, or the full path proposed too, keeps it as written,
+/// so the usual checks refuse it. Never guessed beyond the scope.
+fn scope_rel_for(
+    context: &CodeGenContext,
+    root_path: &std::path::Path,
+    proposed: &[(&str, &str)],
+    root_id: &str,
+    rel: &str,
+) -> String {
+    let known = |candidate: &str| {
+        context
+            .files
+            .iter()
+            .any(|read| read.root_id == root_id && read.rel == candidate)
+    };
+    if known(rel) || ruth_code::file_exists(root_path, rel).unwrap_or(false) {
+        return rel.to_string();
+    }
+    let suffix = format!("/{}", rel.trim_start_matches("./").trim_start_matches('/'));
+    let mut matches = context
+        .files
+        .iter()
+        .filter(|read| read.root_id == root_id && read.rel.ends_with(&suffix));
+    match (matches.next(), matches.next()) {
+        (Some(only), None)
+            if !proposed
+                .iter()
+                .any(|(id, other)| *id == root_id && *other == only.rel) =>
+        {
+            only.rel.clone()
+        }
+        _ => rel.to_string(),
+    }
+}
+
 /// Validated input for recording a newly produced generation.
 pub struct RecordCodeGenInput {
     pub context: CodeGenContext,
@@ -526,6 +565,12 @@ pub fn build_stored_codegen(
     input: RecordCodeGenInput,
 ) -> Result<StoredCodeGeneration, ApiError> {
     let mut files = Vec::with_capacity(input.code.files.len());
+    let proposed: Vec<(&str, &str)> = input
+        .code
+        .files
+        .iter()
+        .map(|file| (file.root_id.as_str(), file.rel.as_str()))
+        .collect();
     for (pos, file) in input.code.files.iter().enumerate() {
         let Some(root) = roots.get(&file.root_id) else {
             return Err(coded(
@@ -534,8 +579,15 @@ pub fn build_stored_codegen(
             ));
         };
         let root_path = PathBuf::from(&root.path);
+        let rel = scope_rel_for(
+            &input.context,
+            &root_path,
+            &proposed,
+            &file.root_id,
+            &file.rel,
+        );
         let creates = file.operation == ruth_meta::code::CodeOperation::Create
-            && !ruth_code::file_exists(&root_path, &file.rel).unwrap_or(false);
+            && !ruth_code::file_exists(&root_path, &rel).unwrap_or(false);
         let (operation, expected_fingerprint) = if creates {
             (ruth_meta::code::CodeOperation::Create, None)
         } else {
@@ -544,11 +596,11 @@ pub fn build_stored_codegen(
                     .context
                     .files
                     .iter()
-                    .find(|read| read.root_id == file.root_id && read.rel == file.rel)
+                    .find(|read| read.root_id == file.root_id && read.rel == rel)
                 {
                     known.fingerprint.clone()
                 } else {
-                    ruth_code::read_file(&root_path, &file.rel)
+                    ruth_code::read_file(&root_path, &rel)
                         .map_err(code_err)?
                         .fingerprint
                 }
@@ -558,7 +610,7 @@ pub fn build_stored_codegen(
         files.push(StoredProposalFile {
             pos: pos as u32,
             root_id: file.root_id.clone(),
-            rel: file.rel.clone(),
+            rel,
             operation: operation.as_str().to_string(),
             expected_fingerprint,
             content: file.content.clone(),

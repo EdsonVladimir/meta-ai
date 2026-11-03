@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { addMentioned, applyMention, matchMentions, mentionAt } from "./fileMention";
+import {
+  addMentioned,
+  applyMention,
+  matchMentions,
+  mentionAt,
+  requestedFiles,
+} from "./fileMention";
 
 describe("mentionAt", () => {
   it("finds the token under the cursor", () => {
@@ -44,5 +50,27 @@ describe("addMentioned", () => {
   it("makes room in an automatic pick only", () => {
     expect(addMentioned(["a", "b"], "c", true, 2)).toEqual(["a", "c"]);
     expect(addMentioned(["a", "b"], "c", false, 2)).toBeNull();
+  });
+});
+
+describe("requestedFiles", () => {
+  const rels = [
+    "web/src/app/detalle/detalle.store.ts",
+    "web/src/app/detalle/detalle.component.html",
+    "web/src/app/a/index.ts",
+    "web/src/app/b/index.ts",
+  ];
+
+  it("finds the files a question names, by path or by a unique name", () => {
+    expect(
+      requestedFiles(
+        ["Send src/app/detalle/detalle.store.ts and detalle.component.html?", "And detalle.store.ts?"],
+        rels,
+      ),
+    ).toEqual(["web/src/app/detalle/detalle.store.ts", "web/src/app/detalle/detalle.component.html"]);
+  });
+
+  it("leaves out unknown and ambiguous names", () => {
+    expect(requestedFiles(["Is index.ts or missing.ts needed? Use If-Match."], rels)).toEqual([]);
   });
 });

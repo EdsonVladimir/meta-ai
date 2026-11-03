@@ -50,7 +50,14 @@ import {
   type MuseTarget,
 } from "../requirements/uiStore";
 import { collectPlanPaths, fitPlan, type FittedPlan } from "./filePlan";
-import { addMentioned, applyMention, matchMentions, mentionAt, type Mention } from "./fileMention";
+import {
+  addMentioned,
+  applyMention,
+  matchMentions,
+  mentionAt,
+  requestedFiles,
+  type Mention,
+} from "./fileMention";
 import { MarkdownLite } from "./markdownLite";
 import { CONTEXT_DOCS_SEND_MAX, MuseContextDialog } from "./MuseContextDialog";
 import {
@@ -62,7 +69,9 @@ import {
 import {
   adjustmentScope,
   collectMuseFiles,
-  composeAnswers,
+  MUSE_MAX_CANDIDATES,
+  MUSE_MAX_SEARCH,
+  answerPrefix,
   filesLeftOut,
   linkMuseTarget,
   MUSE_MAX_FILES,
@@ -158,6 +167,8 @@ interface FailedProposal {
     previousGenerationId: string | null;
     /** Files sent as classes and methods only. */
     signatures?: string[];
+    /** Requirement version the failed adjustment saved. */
+    savedVersionId?: string;
   } | null;
   error: string;
 }
@@ -230,50 +241,68 @@ function withMentioned(auto: MuseFile[], mentioned: string[], all: MuseFile[]): 
   return all.filter((file) => rels.includes(file.rel));
 }
 
-function ProposalAnswers({
+/**
+ * Questions on the newest proposal card. Answers are written in the
+ * composer, where @, Change files and the outgoing line apply; a file a
+ * question names and the project has can be added in one click.
+ */
+function ProposalQuestions({
   questions,
+  requested,
   disabled,
-  onSend,
+  onAnswer,
+  onAddFiles,
 }: {
   questions: string[];
+  requested: string[];
   disabled: boolean;
-  onSend: (text: string) => void;
+  onAnswer: (question: string) => void;
+  onAddFiles: () => void;
 }) {
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const text = composeAnswers(questions, answers);
   return (
     <>
       <h4>Questions</h4>
       <ul className="muse-answers">
         {questions.map((question, index) => (
-          <li key={index}>
-            <label className="muse-answer-row">
-              <span className="muse-answer-q">{question}</span>
-              <input
-                type="text"
-                value={answers[index] ?? ""}
-                disabled={disabled}
-                onChange={(event) =>
-                  setAnswers((prev) => ({ ...prev, [index]: event.target.value }))
-                }
-              />
-            </label>
+          <li key={index} className="muse-answer-row">
+            <span className="muse-answer-q">{question}</span>
+            <button
+              type="button"
+              className="secondary small"
+              aria-label={`Answer: ${question}`}
+              title="Quote this question in the message box, then write the answer there."
+              disabled={disabled}
+              onClick={() => onAnswer(question)}
+            >
+              Answer
+            </button>
           </li>
         ))}
       </ul>
-      <div className="button-row">
-        <button
-          type="button"
-          className="secondary small"
-          disabled={disabled || text === ""}
-          onClick={() => onSend(text)}
-        >
-          Send answers
-        </button>
-      </div>
+      {requested.length > 0 && (
+        <div className="muse-requested">
+          <span className="hint">
+            {`Muse asks for: ${requested.map((rel) => rel.slice(rel.lastIndexOf("/") + 1)).join(", ")}`}
+          </span>
+          <button
+            type="button"
+            className="secondary small"
+            title={requested.join("\n")}
+            disabled={disabled}
+            onClick={onAddFiles}
+          >
+            {requested.length === 1
+              ? "Add the file Muse asked for"
+              : `Add the ${requested.length} files Muse asked for`}
+          </button>
+        </div>
+      )}
     </>
   );
 }
+
+/** Rows the file list draws at once; the search narrows the rest. */
+const MAX_SHOWN_FILES = 100;
 
 export function MusePanel({
   target,
@@ -310,6 +339,7 @@ export function MusePanel({
   const [mentionNotice, setMentionNotice] = useState<string | null>(null);
   /** @ files of the next message; they do not turn the automatic pick off. */
   const [mentioned, setMentioned] = useState<string[]>([]);
+  const [fileQuery, setFileQuery] = useState("");
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [contextNotice, setContextNotice] = useState<string | null>(null);
   const apiRef = useRef(api);
@@ -333,7 +363,8 @@ export function MusePanel({
     setContextNotice(null);
     setPendingPlan(null);
     setMentioned([]);
-    collectMuseFiles(target, apiRef.current.listDir)
+    setFileQuery("");
+    collectMuseFiles(target, apiRef.current.listDir, MUSE_MAX_SEARCH)
       .then((found) => {
         if (stale) return;
         setCandidates(found.files);
@@ -359,12 +390,21 @@ export function MusePanel({
   }, [messages, busy, failed, failedProposal]);
 
   const blocked = root?.aiBlocked ?? false;
-  const all = candidates ?? [];
+  // `pool` is what the person can search; `all` is what Muse picks from
+  // and names, as before, so a large folder sends no more names.
+  const pool = candidates ?? [];
+  const all = pool.slice(0, MUSE_MAX_CANDIDATES);
   const files =
     chosen === null
-      ? withMentioned(pickMuseFiles(all, text), mentioned, all)
-      : all.filter((file) => chosen.has(file.rel));
+      ? withMentioned(pickMuseFiles(all, text), mentioned, pool)
+      : pool.filter((file) => chosen.has(file.rel));
   const picked = new Set(files.map((file) => file.rel));
+  const listed = [...all, ...files.filter((file) => !all.includes(file))];
+  // The search looks through the whole folder, not just the first files.
+  const needle = fileQuery.trim().toLowerCase();
+  const found =
+    needle === "" ? listed : pool.filter((file) => file.rel.toLowerCase().includes(needle));
+  const shownFiles = found.slice(0, MAX_SHOWN_FILES);
   const rootNames = Object.fromEntries(roots.map((entry) => [entry.id, entry.name]));
   // Project context: confirmed once per project, attached to every
   // send while enabled. Loose folders keep today's behavior.
@@ -400,7 +440,7 @@ export function MusePanel({
           : `${contextDocCount} ${contextDocCount === 1 ? "doc" : "docs"}`
       }`;
   // What leaves the machine, in plain view: it must not need a hover.
-  const leftOut = all.length - files.length;
+  const leftOut = all.filter((file) => !picked.has(file.rel)).length;
   const fileText = (count: number): string => (count === 1 ? "1 file" : `${count} files`);
   const askOutgoing = [
     `Ask sends ${fileText(files.length)}`,
@@ -420,14 +460,39 @@ export function MusePanel({
   // A saved version waits for its Retry: another adjustment would find
   // the proposal out of date and lose that Retry.
   const pendingRetry = failedProposal?.resume != null;
+  // A failed adjustment does not block the next one: the next replaces
+  // its Retry and carries its request, so nothing typed is lost.
+  const replaceable =
+    failedProposal !== null &&
+    failedProposal.kind === "adjust" &&
+    failedProposal.resume !== null &&
+    failedProposal.generation !== null
+      ? failedProposal
+      : null;
+  const holdsAdjust = pendingRetry && replaceable === null;
   const shownProposals = messages.flatMap((entry) =>
     entry.role === "proposal" ? [latest(entry.generation)] : [],
   );
   const contextSuffix = contextPart === null ? "" : `, ${contextPart}`;
   const droppedFiles = filesLeftOut(shownProposals);
-  const chosenFiles = chosen === null ? [] : files;
+  // An automatic pick is not the person's; an @ file is, and goes first.
+  const chosenFiles =
+    chosen === null
+      ? mentioned.flatMap((rel) => pool.filter((file) => file.rel === rel))
+      : files;
+  // Files the newest questions name, found here and not already going.
+  const adjustSends = new Set(
+    adjustmentScope(shownProposals, chosenFiles).map((file) => file.rel),
+  );
+  const requested =
+    newest === null
+      ? []
+      : requestedFiles(
+          latest(newest.generation).questions,
+          pool.map((file) => file.rel),
+        ).filter((rel) => !adjustSends.has(rel));
   const changeOutgoing = showAdjust
-    ? `Adjust proposal sends ${fileText(adjustmentScope(shownProposals, chosenFiles).length)}, the current proposal and your request${contextSuffix}.`
+    ? `Adjust proposal sends ${fileText(adjustSends.size)}, the current proposal and your request${contextSuffix}.`
     : chosen === null && musePicksFiles && api.plan !== undefined && target.kind !== "file"
       ? `Propose change first sends your request and the file paths${contextSuffix}, and shows the files Muse picks before sending them.`
       : `Propose change sends ${fileText(files.length)} and your request${contextSuffix}.`;
@@ -444,7 +509,7 @@ export function MusePanel({
   }, [pendingFiles]);
   const canAdjust =
     busy === null &&
-    !pendingRetry &&
+    !holdsAdjust &&
     !blocked &&
     root !== null &&
     text.trim() !== "" &&
@@ -507,7 +572,7 @@ export function MusePanel({
 
   /** Files written since the thread opened must be selectable. */
   function refreshCandidates(): void {
-    collectMuseFiles(target, apiRef.current.listDir)
+    collectMuseFiles(target, apiRef.current.listDir, MUSE_MAX_SEARCH)
       .then((found) => {
         setCandidates(found.files);
         setTruncated(found.truncated);
@@ -799,8 +864,12 @@ export function MusePanel({
     text: string;
     showUser: boolean;
     resume: FailedProposal["resume"];
+    /** A failed adjustment this one replaces: its request goes too. */
+    replaces?: FailedProposal | null;
   }): Promise<void> {
     if (root === null) return;
+    const replaced = input.replaces ?? null;
+    const instruction = replaced === null ? input.text : `${replaced.text}\n\n${input.text}`;
     if (input.showUser) appendMessage("user", input.text);
     const thread = threadRef.current;
     setBusy("propose");
@@ -814,7 +883,11 @@ export function MusePanel({
           input.generation.requirementArtifactId,
         );
         const current = currentVersion(detail);
-        if (current === undefined || detail.currentVersionId !== input.generation.requirementVersionId) {
+        const expected = [
+          input.generation.requirementVersionId,
+          replaced?.resume?.savedVersionId,
+        ];
+        if (current === undefined || !expected.includes(detail.currentVersionId)) {
           if (thread === threadRef.current) {
             setNotice(
               `The requirement changed since this proposal (current ${detail.currentVersionId}, proposal used ${input.generation.requirementVersionId}). Start a new proposal to adjust the latest.`,
@@ -822,7 +895,7 @@ export function MusePanel({
           }
           return;
         }
-        await api.saveVersion({
+        const savedDetail = await api.saveVersion({
           projectId: input.generation.projectId,
           artifactId: input.generation.requirementArtifactId,
           expectedVersionId: detail.currentVersionId,
@@ -837,9 +910,10 @@ export function MusePanel({
             messages.flatMap((entry) =>
               entry.role === "proposal" ? [latest(entry.generation)] : [],
             ),
-            chosenFiles,
+            [...chosenFiles, ...(replaced?.resume?.scope ?? [])],
           ),
           previousGenerationId: input.generation.id,
+          savedVersionId: savedDetail?.currentVersionId,
         };
       }
       const built = await currentContext();
@@ -850,18 +924,19 @@ export function MusePanel({
         moduleId: saved.moduleId,
         source: { kind: "requirement", artifactId: saved.requirementId },
         scope: saved.scope,
-        instruction: input.text,
+        instruction,
         previousGenerationId: saved.previousGenerationId ?? undefined,
         projectContext: built.context,
       });
       if (thread !== threadRef.current) return;
+      setMentioned([]);
       appendProposal(generation);
       showOnXray(generation);
     } catch (raw) {
       if (thread !== threadRef.current) return;
       setFailedProposal({
         kind: "adjust",
-        text: input.text,
+        text: instruction,
         generation: input.generation,
         resume: saved,
         error: reason(raw),
@@ -876,7 +951,13 @@ export function MusePanel({
     const text = raw.trim();
     if (newest === null || text === "") return;
     setText("");
-    await runAdjustFlow({ generation: latest(newest.generation), text, showUser: true, resume: null });
+    await runAdjustFlow({
+      generation: replaceable?.generation ?? latest(newest.generation),
+      text,
+      showUser: true,
+      resume: null,
+      replaces: replaceable,
+    });
   }
 
   function retryProposal(): void {
@@ -903,7 +984,7 @@ export function MusePanel({
     mention === null
       ? []
       : matchMentions(
-          all.map((file) => file.rel),
+          pool.map((file) => file.rel),
           mention.query,
         );
 
@@ -914,6 +995,38 @@ export function MusePanel({
     // The list is read when the menu opens: new files must appear.
     if (found !== null && mention === null) refreshCandidates();
     setMention(found === null ? null : { ...found, index: 0 });
+  }
+
+  function answerQuestion(question: string): void {
+    const next = answerPrefix(text, question);
+    setText(next);
+    setAdjustMode(true);
+    requestAnimationFrame(() => {
+      const box = composerRef.current;
+      if (box === null) return;
+      box.focus();
+      box.setSelectionRange(next.length, next.length);
+    });
+  }
+
+  /** Adds the requested files the way @ does, never past a full choice. */
+  function addRequested(): void {
+    if (chosen === null) {
+      setMentioned((prev) => [...prev, ...requested.filter((rel) => !prev.includes(rel))]);
+      return;
+    }
+    let next = files.map((file) => file.rel);
+    for (const rel of requested) {
+      const added = addMentioned(next, rel, false, MUSE_MAX_FILES);
+      if (added === null) {
+        setMentionNotice(
+          `Muse reads ${MUSE_MAX_FILES} files at most. Remove one in Change files to add ${rel}.`,
+        );
+        break;
+      }
+      next = added;
+    }
+    setChosen(new Set(next));
   }
 
   function pickMention(rel: string): void {
@@ -1115,18 +1228,12 @@ export function MusePanel({
                       </>
                     )}
                     {latest(message.generation).questions.length > 0 && (
-                      <ProposalAnswers
-                        key={latest(message.generation).id}
+                      <ProposalQuestions
                         questions={latest(message.generation).questions}
-                        disabled={busy !== null || pendingRetry}
-                        onSend={(answers) =>
-                          void runAdjustFlow({
-                            generation: latest(message.generation),
-                            text: answers,
-                            showUser: true,
-                            resume: null,
-                          })
-                        }
+                        requested={requested}
+                        disabled={busy !== null || holdsAdjust}
+                        onAnswer={answerQuestion}
+                        onAddFiles={addRequested}
                       />
                     )}
                   </div>
@@ -1282,7 +1389,11 @@ export function MusePanel({
               <div className="muse-error-row" role="alert">
                 <span className="error">
                   {failedProposal.error}
-                  {failedProposal.resume !== null ? " Your request is saved; Retry only generates." : ""}
+                  {failedProposal.resume === null
+                    ? ""
+                    : replaceable !== null
+                      ? " Your request is saved: Retry sends it again, or Adjust proposal adds to it."
+                      : " Your request is saved; Retry only generates."}
                 </span>
                 <button
                   type="button"
@@ -1328,7 +1439,7 @@ export function MusePanel({
             {candidates !== null && candidates.length > 0 && (
               <div className="muse-reads">
                 <span className="hint" role="status">
-                  {`Muse reads ${files.length} of ${candidates.length}${truncated ? "+" : ""} files here.`}
+                  {`Muse reads ${files.length} of ${all.length}${truncated || pool.length > all.length ? "+" : ""} files here.`}
                 </span>
                 <button
                   type="button"
@@ -1354,8 +1465,27 @@ export function MusePanel({
               </label>
             )}
             {showFiles && (
+              <input
+                type="search"
+                className="muse-file-search"
+                aria-label="Search files"
+                placeholder="Search files"
+                value={fileQuery}
+                onChange={(event) => setFileQuery(event.target.value)}
+              />
+            )}
+            {showFiles && needle !== "" && (
+              <p className="hint">
+                {found.length === 0
+                  ? "No file here matches."
+                  : found.length > shownFiles.length
+                    ? `${found.length} match; the first ${shownFiles.length} are shown. Type more to narrow.`
+                    : `${found.length} ${found.length === 1 ? "file matches" : "files match"}.`}
+              </p>
+            )}
+            {showFiles && (
               <ul className="muse-files" aria-label="Files sent to Muse">
-                {all.map((file) => (
+                {shownFiles.map((file) => (
                   <li key={file.rel}>
                     <label title={file.rel}>
                       <input

@@ -152,6 +152,48 @@ fn a_create_over_an_existing_file_is_recorded_as_a_modify() {
 }
 
 #[test]
+fn a_path_missing_its_folder_prefix_lands_on_the_one_scope_file_it_ends() {
+    let mut baby = baby();
+    let context = snapshot_code_context(
+        &baby.store,
+        &baby.roots,
+        &baby.project,
+        &baby.module,
+        &baby.req,
+        &scope_one(),
+    )
+    .expect("context");
+    let record = |code| RecordCodeGenInput {
+        context: context.clone(),
+        code,
+        model: "m".to_string(),
+        usage: None,
+        created_at: "t".to_string(),
+    };
+    let stored = build_stored_codegen(
+        &baby.roots,
+        &mut baby.ids,
+        record(proposal(vec![
+            modify("a.ts", "const a = 2;\n"),
+            create("new/b.ts", "x\n"),
+        ])),
+    )
+    .expect("stored");
+    assert_eq!(stored.files[0].rel, "src/a.ts");
+    assert_eq!(stored.files[0].operation, "modify");
+    assert!(stored.files[0].expected_fingerprint.is_some());
+    assert_eq!(stored.files[1].rel, "new/b.ts");
+    // Nothing in the scope ends with it: still refused, never guessed.
+    let err = build_stored_codegen(
+        &baby.roots,
+        &mut baby.ids,
+        record(proposal(vec![modify("other/z.ts", "x\n")])),
+    )
+    .expect_err("unknown path");
+    assert_eq!(err.kind, "code_not_found");
+}
+
+#[test]
 fn a_blocked_folder_never_reaches_a_prompt() {
     let mut baby = baby();
     let scope = scope_one();

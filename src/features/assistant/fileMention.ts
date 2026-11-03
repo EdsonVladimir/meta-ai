@@ -69,3 +69,25 @@ export function addMentioned(
   if (picked.length < max) return [...picked, rel];
   return automatic ? [...picked.slice(0, max - 1), rel] : null;
 }
+
+const FILE_TOKEN = /[\w@.\-/]+\.[A-Za-z]{1,5}\b/g;
+
+/**
+ * Files a text names that exist here, in order. A path matches a file
+ * that ends with it; a bare name only when one file has it. Anything
+ * unknown or ambiguous is left out, never guessed.
+ */
+export function requestedFiles(texts: string[], rels: string[]): string[] {
+  const out: string[] = [];
+  for (const text of texts) {
+    for (const raw of text.match(FILE_TOKEN) ?? []) {
+      const token = raw.replace(/^\.?\/+/, "");
+      const byPath = rels.filter((rel) => rel === token || rel.endsWith(`/${token}`));
+      const base = baseName(token);
+      const found =
+        byPath.length > 0 ? byPath : rels.filter((rel) => baseName(rel) === base);
+      if (found.length === 1 && !out.includes(found[0])) out.push(found[0]);
+    }
+  }
+  return out;
+}

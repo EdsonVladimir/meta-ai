@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   collectMuseFiles,
-  composeAnswers,
+  answerPrefix,
   adjustmentScope,
   filesLeftOut,
   linkMuseTarget,
@@ -26,6 +26,14 @@ const folder = (name: string, dir = "") => ({
 });
 
 describe("collectMuseFiles", () => {
+  it("collects past the candidate limit when asked to search", async () => {
+    const entries = Array.from({ length: 70 }, (_, i) => file(`f${String(i).padStart(2, "0")}.ts`));
+    const listDir = async () => ({ entries });
+    const target = { rootId: "r", rel: "", kind: "folder" as const };
+    expect((await collectMuseFiles(target, listDir)).files).toHaveLength(MUSE_MAX_CANDIDATES);
+    expect((await collectMuseFiles(target, listDir, 1000)).files).toHaveLength(70);
+  });
+
   it("leaves out generated reports and files too large to read", async () => {
     const entries: Record<string, Array<{ name: string; rel: string; kind: string; size: number | null }>> = {
       "": [
@@ -145,6 +153,20 @@ describe("adjustmentScope", () => {
     expect(out.map((entry) => entry.rel)).toEqual(["new.ts", "a.ts", "b.ts"]);
   });
 
+  it("reads the files a version modifies, even those it dropped", () => {
+    const out = adjustmentScope([
+      {
+        scope: scope(["a.ts"]),
+        files: [
+          { ...file("port.ts"), operation: "modify" },
+          { ...file("made.ts"), operation: "create" },
+        ],
+      },
+      { scope: scope(["a.ts"]), files: [{ ...file("http.ts"), operation: "modify" }] },
+    ]);
+    expect(out.map((entry) => entry.rel)).toEqual(["http.ts", "port.ts", "a.ts"]);
+  });
+
   it("stays inside the file limit, keeping what is on disk", () => {
     const many = Array.from({ length: MUSE_MAX_PLANNED_FILES }, (_, i) => `s${i}.ts`);
     const out = adjustmentScope([{ scope: scope(many), files: [file("new.ts", "accepted")] }]);
@@ -196,15 +218,10 @@ describe("linkMuseTarget", () => {
   });
 });
 
-describe("composeAnswers", () => {
-  it("composes the answered questions only", () => {
-    expect(composeAnswers(["First?", "Second?"], { 0: "  Yes. ", 1: "   " })).toBe(
-      "Q: First?\nA: Yes.",
-    );
-    expect(composeAnswers(["First?", "Second?"], { 0: "Yes.", 1: "No." })).toBe(
-      "Q: First?\nA: Yes.\n\nQ: Second?\nA: No.",
-    );
-    expect(composeAnswers(["First?"], {})).toBe("");
+describe("answerPrefix", () => {
+  it("quotes the question after what is already written", () => {
+    expect(answerPrefix("", "First?")).toBe("Q: First?\nA: ");
+    expect(answerPrefix("Use doubles.\n", "First?")).toBe("Use doubles.\n\nQ: First?\nA: ");
   });
 });
 

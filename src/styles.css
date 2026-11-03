@@ -6204,6 +6204,10 @@ button.archboard-member:hover {
   font-size: 0.8rem;
 }
 
+.muse-file-search {
+  width: 100%;
+}
+
 .muse-files label {
   display: flex;
   align-items: baseline;
@@ -6464,7 +6468,7 @@ button.archboard-member:hover {
   margin: 0;
 }
 
-/* Answers on the newest proposal card: one input per question. */
+/* Questions on the newest proposal card: answered in the composer. */
 .muse-answers {
   list-style: none;
   margin: 0 0 0.4rem;
@@ -6477,15 +6481,20 @@ button.archboard-member:hover {
 .muse-answer-row {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 0.2rem;
+}
+
+.muse-requested {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.4rem;
 }
 
 .muse-answer-q {
   font-size: 0.85rem;
-}
-
-.muse-answer-row input[type="text"] {
-  width: 100%;
 }
 
 /* Files behind a card: quiet until needed, the card keeps its height. */

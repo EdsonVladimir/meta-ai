@@ -180,6 +180,28 @@ describe("MusePanel", () => {
     expect(screen.getByText("Why?")).toBeTruthy();
   });
 
+  it("finds any file of the folder from the search in Change files", async () => {
+    const fake = api(80);
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Change files" }));
+    expect(screen.queryByLabelText("core/f79.ts")).toBeNull();
+    // Twelve are picked: one goes out to make room.
+    fireEvent.click(screen.getByLabelText("core/f11.ts"));
+    fireEvent.change(screen.getByLabelText("Search files"), { target: { value: "F79" } });
+    expect(screen.queryByLabelText("core/f0.ts")).toBeNull();
+    fireEvent.click(screen.getByLabelText("core/f79.ts"));
+    fireEvent.change(screen.getByLabelText("Search files"), { target: { value: "" } });
+    expect((screen.getByLabelText("core/f79.ts") as HTMLInputElement).checked).toBe(true);
+    write("Why?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    const sent = vi.mocked(fake.ask).mock.calls[0][1] as Array<{ rel: string }>;
+    expect(sent.map((file) => file.rel)).toContain("core/f79.ts");
+    expect(sent.map((file) => file.rel)).not.toContain("core/f11.ts");
+  });
+
   it("drops a late answer once the thread moved on", async () => {
     let answer: (reply: { answer: string; model: string }) => void = () => {};
     const fake = api();
@@ -501,6 +523,23 @@ describe("MusePanel", () => {
     expect(useRequirementsUi.getState().archScope).toEqual({ kind: "all" });
   });
 
+  it("finds an @ file past the first files of a large folder, without naming the rest", async () => {
+    const fake = api(80);
+    render(
+      <MusePanel target={target} roots={[root]} onClose={() => {}} onPropose={() => {}} api={fake} />,
+    );
+    expect((await screen.findByRole("status")).textContent).toContain("of 60+");
+    const box = screen.getByLabelText("Message to Muse") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "explain @f79", selectionStart: 12 } });
+    expect(await screen.findByRole("option", { name: "core/f79.ts" })).toBeTruthy();
+    fireEvent.keyDown(box, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await screen.findByText("It validates.");
+    const call = vi.mocked(fake.ask).mock.calls[0];
+    expect((call[1] as Array<{ rel: string }>).map((file) => file.rel)).toContain("core/f79.ts");
+    expect(call[0]).not.toContain("core/f70.ts");
+  });
+
   it("adds a file with @ and sends it", async () => {
     const fake = api(14);
     render(
@@ -734,37 +773,61 @@ describe("MusePanel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps typed answers while hidden", async () => {
+  it("keeps an answer being written while hidden", async () => {
     const fake = api();
     const generation = generationDto({ questions: ["Public?"] });
     fake.generate = vi.fn(async () => generation);
     const { rerender } = await proposeOnce(fake);
-    fireEvent.change(screen.getByLabelText("Public?"), { target: { value: "Yes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Answer: Public?" }));
+    const box = () => screen.getByLabelText("Message to Muse") as HTMLTextAreaElement;
+    fireEvent.change(box(), { target: { value: "Q: Public?\nA: Yes" } });
     const props = { target, roots: [root], onClose: () => {}, onPropose: () => {}, api: fake };
     rerender(<MusePanel {...props} hidden />);
     rerender(<MusePanel {...props} />);
-    expect((screen.getByLabelText("Public?") as HTMLInputElement).value).toBe("Yes");
+    expect(box().value).toBe("Q: Public?\nA: Yes");
   });
 
-  it("holds new adjustments while a saved one waits for Retry", async () => {
-    const fake = api();
+  it("lets a new adjustment replace a waiting Retry, keeping both requests", async () => {
+    const fake = api(14);
     await proposeOnce(fake);
     const versionId = generationDto().requirementVersionId;
+    let current = versionId;
+    let content = "Base";
     Object.assign(fake, {
       getRequirement: vi.fn(async () => ({
-        currentVersionId: versionId,
-        versions: [{ id: versionId, content: "Base" }],
+        currentVersionId: current,
+        versions: [{ id: current, content }],
       })),
-      saveVersion: vi.fn(async () => ({})),
-      generate: vi.fn(async () => {
-        throw { kind: "meta_timeout", message: "Timed out." };
+      saveVersion: vi.fn(async (input: { content: string }) => {
+        current = current === versionId ? "req-1-v2" : "req-1-v3";
+        content = input.content;
+        return { currentVersionId: current, versions: [{ id: current, content }] };
       }),
+      generate: vi
+        .fn()
+        .mockRejectedValueOnce({ kind: "code_not_found", message: "\"src/a.ts\" does not exist" })
+        .mockResolvedValue(generationDto({ id: "cgen-2", explanation: "Adjusted.", questions: [] })),
     });
     write("Add a store");
     fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
     await screen.findByRole("button", { name: "Retry proposal" });
-    write("Another change");
-    expect(screen.getByRole("button", { name: "Adjust proposal" })).toHaveProperty("disabled", true);
+    const box = screen.getByLabelText("Message to Muse") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "Use the adapter @f13", selectionStart: 20 } });
+    await screen.findByRole("option", { name: "core/f13.ts" });
+    fireEvent.keyDown(box, { key: "Enter" });
+    const adjust = screen.getByRole("button", { name: "Adjust proposal" });
+    expect(adjust).toHaveProperty("disabled", false);
+    fireEvent.click(adjust);
+    await screen.findByText("Adjusted.");
+    expect(vi.mocked(fake.saveVersion).mock.calls[1][0]).toMatchObject({
+      expectedVersionId: "req-1-v2",
+      content: "Base\n\nAdjustment: Add a store\n\nAdjustment: Use the adapter @f13.ts",
+    });
+    const sent = vi.mocked(fake.generate).mock.calls[1][0];
+    expect(sent.instruction).toBe("Add a store\n\nUse the adapter @f13.ts");
+    expect(sent.previousGenerationId).toBe("cgen-1");
+    expect(sent.scope[0].rel).toBe("core/f13.ts");
+    expect(screen.queryByRole("button", { name: "Retry proposal" })).toBeNull();
   });
 
   it("keeps the thread while hidden and when the same folder is asked again", async () => {
@@ -823,8 +886,11 @@ describe("MusePanel", () => {
     write("Add a total");
     fireEvent.click(screen.getByRole("button", { name: "Propose change" }));
     await screen.findByText("Adds the discount.");
-    fireEvent.change(screen.getByLabelText("Second?"), { target: { value: "On confirm." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Answer: Second?" }));
+    const box = screen.getByLabelText("Message to Muse") as HTMLTextAreaElement;
+    expect(box.value).toBe("Q: Second?\nA: ");
+    fireEvent.change(box, { target: { value: `${box.value}On confirm.` } });
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
     await screen.findByText("Adjusted.");
     expect(fake.generate).toHaveBeenCalledTimes(2);
     expect(fake.generate).toHaveBeenNthCalledWith(2, {
@@ -857,6 +923,42 @@ describe("MusePanel", () => {
     expect(fake.saveVersion).not.toHaveBeenCalled();
     expect(fake.generate).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Replaced by/)).toBeNull();
+  });
+
+  it("sends an @ file with an adjustment", async () => {
+    const fake = api(14);
+    withVersions(fake, "req-1-v1", "Add a total");
+    vi.mocked(fake.generate)
+      .mockResolvedValueOnce(generationDto())
+      .mockResolvedValue(generationDto({ id: "cgen-2", explanation: "Adjusted.", questions: [] }));
+    await proposeOnce(fake);
+    const box = screen.getByLabelText("Message to Muse") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "wire it in @f13", selectionStart: 15 } });
+    await screen.findByRole("option", { name: "core/f13.ts" });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(screen.getByText(/Adjust proposal sends/).textContent).toContain("Adjust proposal sends 2 files");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    await screen.findByText("Adjusted.");
+    const scope = vi.mocked(fake.generate).mock.calls[1][0].scope.map((entry) => entry.rel);
+    expect(scope[0]).toBe("core/f13.ts");
+  });
+
+  it("adds the files Muse asks for, only those that exist", async () => {
+    const fake = api(80);
+    withVersions(fake, "req-1-v1", "Add a total");
+    vi.mocked(fake.generate)
+      .mockResolvedValueOnce(
+        generationDto({ questions: ["Send core/f70.ts and f71.ts, and nope.ts?"] }),
+      )
+      .mockResolvedValue(generationDto({ id: "cgen-2", explanation: "Adjusted.", questions: [] }));
+    await proposeOnce(fake);
+    fireEvent.click(screen.getByRole("button", { name: "Add the 2 files Muse asked for" }));
+    expect(screen.queryByRole("button", { name: /files? Muse asked for/ })).toBeNull();
+    write("Here they are.");
+    fireEvent.click(screen.getByRole("button", { name: "Adjust proposal" }));
+    await screen.findByText("Adjusted.");
+    const scope = vi.mocked(fake.generate).mock.calls[1][0].scope.map((entry) => entry.rel);
+    expect(scope.slice(0, 2)).toEqual(["core/f70.ts", "core/f71.ts"]);
   });
 
   it("adjusts with get, save then generate in order", async () => {
@@ -916,7 +1018,7 @@ describe("MusePanel", () => {
     expect(screen.getAllByText("Accept")).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "Show on X-ray" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "New proposal" })).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Answer:/ })).toBeNull();
     expect(screen.getByText("On reserve or on confirm?")).toBeTruthy();
     expect(screen.queryByLabelText("On reserve or on confirm?")).toBeNull();
   });

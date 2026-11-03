@@ -571,6 +571,39 @@ still holds. Commits are on `code-xray`.
   table gets one beside its module class. Redirects have no target and
   stay out of the rows, and an inline table has no name to show.
 
+- **Muse's questions are answered in the composer.** In a real project
+  the owner typed file paths into the answer boxes, and Muse got only
+  the names, so it kept asking. An `Answer` button now quotes the
+  question in the composer, where `@`, Change files and the outgoing
+  line apply. When a question names files the project has, one button
+  adds them; a name that matches no file, or more than one, is left
+  out, never guessed.
+
+- **An adjustment reads what is on disk.** It sends the files a pending
+  version modifies, newest first, after the chosen and accepted ones.
+  Without them Muse could not keep those files and dropped them from
+  the next version. An `@` file now goes with an adjustment too: before,
+  it counted only once the person had changed the file list.
+
+- **Search reaches the whole folder, names do not.** `@`, Change files
+  and the requested files search up to 2,000 files. Muse still picks
+  from, and gets the names of, the first 60 only, so a large folder
+  sends no more than before. In a large project, the files a task
+  needed were past the first 60 and could not be found. Change files
+  has a search box over the same files.
+
+- **A failed adjustment never locks the thread.** Adjust proposal stays
+  open while a Retry waits. The new adjustment replaces the Retry: it
+  sends the failed request and the new one together, with the files
+  added since. Before, Retry was the only way out, and it repeated the
+  same request that had just failed.
+
+- **A path missing its folder prefix lands on its scope file.** Muse
+  sometimes writes `src/a.ts` for `web/src/a.ts`, often copying how the
+  person wrote it, and the whole version was refused. When that path
+  does not exist and exactly one file sent to Muse ends with it, Ruth
+  records that file. None or several, and it is refused as before.
+
 **Agreed and not built yet**
 
 - **Key screen:** store the key in the system keyring, so the app can

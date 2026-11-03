@@ -12,6 +12,12 @@ export const MUSE_MAX_FILES = 12;
 export const MUSE_MAX_PLANNED_FILES = 40;
 /** Files listed to choose from; a folder may hold many more. */
 export const MUSE_MAX_CANDIDATES = 60;
+/**
+ * Files `@`, Change files and requested files can find. Only paths the
+ * person picks leave the machine; names still go for the first
+ * MUSE_MAX_CANDIDATES only.
+ */
+export const MUSE_MAX_SEARCH = 2000;
 const MAX_DIRS_WALKED = 200;
 const SOURCE = /\.(ts|tsx|js|jsx|mts|rs|java|kt|py|go|cs|php|rb|html|css|scss|sql)$/i;
 const NOT_SOURCE = /(\.spec\.|\.test\.|\.d\.ts$|\.min\.)/i;
@@ -29,14 +35,10 @@ export interface MuseFile {
   rel: string;
 }
 
-/** Answers sent from a proposal card: "Q: ..\nA: .." for the answered ones only. */
-export function composeAnswers(questions: string[], answers: Record<number, string>): string {
-  const blocks: string[] = [];
-  questions.forEach((question, index) => {
-    const answer = (answers[index] ?? "").trim();
-    if (answer !== "") blocks.push(`Q: ${question}\nA: ${answer}`);
-  });
-  return blocks.join("\n\n");
+/** The composer text with a question quoted, ready for its answer. */
+export function answerPrefix(text: string, question: string): string {
+  const quoted = `Q: ${question}\nA: `;
+  return text.trim() === "" ? quoted : `${text.trimEnd()}\n\n${quoted}`;
 }
 
 interface Entry {
@@ -50,6 +52,7 @@ interface Entry {
 export async function collectMuseFiles(
   target: MuseTarget,
   listDir: (rootId: string, rel: string) => Promise<{ entries: Entry[] }>,
+  limit = MUSE_MAX_CANDIDATES,
 ): Promise<{ files: MuseFile[]; truncated: boolean }> {
   if (target.kind === "file") {
     return { files: [{ rootId: target.rootId, rel: target.rel }], truncated: false };
@@ -57,7 +60,8 @@ export async function collectMuseFiles(
   const files: MuseFile[] = [];
   const queue = [target.rel];
   let walked = 0;
-  while (queue.length > 0 && walked < MAX_DIRS_WALKED && files.length < MUSE_MAX_CANDIDATES) {
+  const maxDirs = Math.max(MAX_DIRS_WALKED, limit);
+  while (queue.length > 0 && walked < maxDirs && files.length < limit) {
     const dir = queue.shift() as string;
     walked += 1;
     const { entries } = await listDir(target.rootId, dir);
@@ -76,8 +80,8 @@ export async function collectMuseFiles(
       }
     }
   }
-  const truncated = queue.length > 0 || files.length > MUSE_MAX_CANDIDATES;
-  return { files: files.slice(0, MUSE_MAX_CANDIDATES), truncated };
+  const truncated = queue.length > 0 || files.length > limit;
+  return { files: files.slice(0, limit), truncated };
 }
 
 /** Roles in reading order: what explains a feature comes first. */
@@ -121,22 +125,29 @@ export function pickMuseFiles(candidates: MuseFile[], message: string): MuseFile
 /**
  * What an adjustment reads: the files the person chose first, then
  * files already accepted, because they are on disk now and Muse must
- * see them to change them, then the scope of the proposal adjusted.
+ * see them to change them. Then the files a pending version modifies,
+ * newest first: without what is on disk Muse cannot keep them, so it
+ * drops them. Last, the scope of the proposal adjusted.
  */
 export function adjustmentScope(
   proposals: Array<{
     scope: MuseFile[];
-    files: Array<MuseFile & { state: string }>;
+    files: Array<MuseFile & { state: string; operation?: string }>;
   }>,
   chosen: MuseFile[] = [],
 ): MuseFile[] {
   const accepted = proposals.flatMap((proposal) =>
     proposal.files.filter((file) => file.state === "accepted"),
   );
+  const modified = [...proposals]
+    .reverse()
+    .flatMap((proposal) =>
+      proposal.files.filter((file) => file.state === "pending" && file.operation === "modify"),
+    );
   const newest = proposals[proposals.length - 1]?.scope ?? [];
   const seen = new Set<string>();
   const out: MuseFile[] = [];
-  for (const { rootId, rel } of [...chosen, ...accepted, ...newest]) {
+  for (const { rootId, rel } of [...chosen, ...accepted, ...modified, ...newest]) {
     const key = `${rootId}\n${rel}`;
     if (seen.has(key)) continue;
     seen.add(key);
