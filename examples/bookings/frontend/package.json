@@ -1,5 +1,5 @@
 {
-  "name": "reservas-frontend",
+  "name": "bookings-frontend",
   "private": true,
   "version": "0.1.0",
   "description": "Room-booking UI. Demo target for Ruth.",

@@ -1,11 +1,11 @@
-export interface Reserva {
+export interface Booking {
   id: number;
   room: string;
   date: string;
   guests: number;
 }
 
-export interface CreateReserva {
+export interface CreateBooking {
   room: string;
   date: string;
   guests: number;

@@ -1,9 +1,9 @@
 import { Component, inject } from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { ReservasStore } from "./reservas.store";
+import { BookingsStore } from "./bookings.store";
 
 @Component({
-  selector: "app-reserva-form",
+  selector: "app-booking-form",
   standalone: true,
   imports: [FormsModule],
   template: `
@@ -24,8 +24,8 @@ import { ReservasStore } from "./reservas.store";
     </form>
   `,
 })
-export class ReservaFormComponent {
-  private readonly store = inject(ReservasStore);
+export class BookingFormComponent {
+  private readonly store = inject(BookingsStore);
   protected room = "";
   protected date = "";
   protected guests = 1;

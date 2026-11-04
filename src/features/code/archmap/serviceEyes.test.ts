@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { SERVICE_EYE_THRESHOLD, serviceEyeOpen } from "./serviceEyes";
 
 describe("serviceEyeOpen", () => {
-  it("opens every service at 3 or fewer, like examples/reservas", () => {
+  it("opens every service at 3 or fewer, like examples/bookings", () => {
     expect(SERVICE_EYE_THRESHOLD).toBe(3);
     expect(serviceEyeOpen("a::fe", {}, {}, 2)).toBe(true);
     expect(serviceEyeOpen("a::fe", {}, {}, 3)).toBe(true);

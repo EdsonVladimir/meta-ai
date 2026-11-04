@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "reservas-frontend": {
+    "bookings-frontend": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -13,7 +13,7 @@
         "build": {
           "builder": "@angular-devkit/build-angular:application",
           "options": {
-            "outputPath": "dist/reservas-frontend",
+            "outputPath": "dist/bookings-frontend",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": ["zone.js"],
@@ -39,10 +39,10 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "reservas-frontend:build:production"
+              "buildTarget": "bookings-frontend:build:production"
             },
             "development": {
-              "buildTarget": "reservas-frontend:build:development"
+              "buildTarget": "bookings-frontend:build:development"
             }
           },
           "defaultConfiguration": "development"

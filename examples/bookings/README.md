@@ -1,4 +1,4 @@
-# Reservas
+# Bookings
 
 A small room-booking app. It is a demo target for Ruth: the IDE opens
 this project to show the architecture map and the Code X-ray, and the
@@ -7,8 +7,8 @@ here yet.
 
 ## Layout
 
-- `backend/` — NestJS + TypeORM API (SQLite). Serves `GET /reservas`
-  and `POST /reservas` with no path prefix.
+- `backend/` — NestJS + TypeORM API (SQLite). Serves `GET /bookings`
+  and `POST /bookings` with no path prefix.
 - `frontend/` — Angular standalone UI with signals. The store keeps
   the bookings in a `signal` with a `computed` count, and the service
   calls the API through `HttpClient`.
@@ -24,9 +24,9 @@ npm run typecheck
 npm start       # builds, then serves the API
 ```
 
-`GET http://localhost:3000/reservas` answers `[]` on a fresh
-database; the `reservas.db` file is created next to the backend and
-is ignored by git. `POST /reservas` with
+`GET http://localhost:3000/bookings` answers `[]` on a fresh
+database; the `bookings.db` file is created next to the backend and
+is ignored by git. `POST /bookings` with
 `{"room": "A1", "date": "2026-11-01", "guests": 2}` stores a row.
 
 Then the frontend (Angular 18 standalone):

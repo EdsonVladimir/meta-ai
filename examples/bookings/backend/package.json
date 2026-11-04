@@ -1,5 +1,5 @@
 {
-  "name": "reservas-backend",
+  "name": "bookings-backend",
   "private": true,
   "version": "0.1.0",
   "description": "Room-booking API. Demo target for Ruth.",

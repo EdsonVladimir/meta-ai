@@ -10,7 +10,7 @@ dist-ssr/
 target/
 src-tauri/target/
 *.node
-# Angular dev-server cache (examples/reservas/frontend)
+# Angular dev-server cache (examples/bookings/frontend)
 .angular/
 
 # Secretos y entorno local (nunca commitear claves)
@@ -48,3 +48,7 @@ logs/
 *.db-journal
 *.sqlite
 *.sqlite-journal
+
+# Local agent instructions (kept on disk, not published)
+AGENTS.md
+CLAUDE.md

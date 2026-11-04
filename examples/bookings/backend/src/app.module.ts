@@ -1,16 +1,16 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
-import { ReservasModule } from "./reservas/reservas.module";
+import { BookingsModule } from "./bookings/bookings.module";
 
 @Module({
   imports: [
     TypeOrmModule.forRoot({
       type: "sqlite",
-      database: "reservas.db",
+      database: "bookings.db",
       entities: [__dirname + "/**/*.entity{.ts,.js}"],
       synchronize: true,
     }),
-    ReservasModule,
+    BookingsModule,
   ],
 })
 export class AppModule {}

@@ -1,48 +1,78 @@
-# Ruth IDE — Design and code as perspectives of one project
+# Ruth IDE — See your code as a map, change it with Muse
 
-Visual workspace turning requirements into linked design
-artifacts and code. When a rule changes, it identifies affected
-dependencies and proposes adjustments for a person to review.
+Ruth is a desktop IDE that reads a project locally and draws it as an
+architecture map: pages, stores, services, controllers, and the modules
+and routes that wire them. Meta's Muse proposes changes to that code,
+and every change arrives as a review you accept or discard. Nothing is
+written to disk without your Accept.
 
 ## The problem
 
-Requirements, designs and code drift apart: a rule changes and
-nobody knows which diagrams and files it affects. Ruth keeps
-one project where requirements link to designs, mockups and
-code symbols with evidence, and every AI output arrives as a
-reviewable proposal — nothing is applied silently, and nothing
-is written to disk without the person's Accept.
+Requirements change every day, and nobody knows which code they touch.
+AI writes code fast, but it gets harder to know what it did. Ruth keeps
+the understanding with the person: the map comes from parsed code, not
+from AI, and Muse's work shows up on that map before it reaches the
+disk.
+
+## What it does
+
+- **Architecture map.** Classes, Files and Pages views of an Angular,
+  NestJS, TypeScript or Rust project, grouped by layer. Every edge
+  carries its evidence; what cannot be verified is shown as
+  unresolved, never connected.
+- **Show flow.** Follows a feature from a template through the store
+  and the service to the HTTP call and the backend controller.
+- **Muse in the Assistant.** Ask about the code, or Propose change.
+  Before anything is sent, Ruth says exactly what leaves the machine.
+  For a change, Muse first picks the files it needs from their paths,
+  and you see that list before any code is sent.
+- **Proposals as reviews.** The new code appears on the map in pink
+  (the Code X-ray), with Ruth's own checks, a diff per file and a
+  preview of new Angular templates. Answer Muse's questions or adjust
+  the proposal; each change is a new version of the same requirement.
+- **Your decision.** Accept file by file or all at once. Each accept
+  checks the file's fingerprint, so a file changed on disk since is
+  never overwritten.
+- **Private code stays private.** Mark a folder Never send to Muse;
+  this is enforced in the backend, not only in the interface.
+- **Integrated terminal** to build and test without leaving Ruth.
 
 ## Muse: real calls, only from buttons
 
-Muse is the Meta assistant: Test connection, Ask, Propose
-requirements, Generate flow/ER, Propose screens and Propose
-change/code. Every call goes to real Meta models (Responses
-API, default `muse-spark-1.3`) and only fires from an explicit
-button, or from Automatic AI update once you turn it on for a
-module. Never at startup, and never from tests. The key lives in `META_API_KEY` in the native process
-environment; it never crosses to the frontend, logs or files.
+Every call goes to real Meta models (Responses API, default
+`muse-spark-1.3`) and fires only from an explicit button. Never at
+startup, and never from tests. The key lives in `META_API_KEY` in the
+native process environment; it never reaches the frontend, logs or
+files.
 
-## Demo path (examples/reservas)
+## Demo (examples/bookings)
 
-The sample is a small room-booking app (NestJS + SQLite API,
-Angular 18 standalone UI). Its own
-[Run section](examples/reservas/README.md) starts both.
+The sample is a small room-booking app: a NestJS + SQLite API and an
+Angular 18 standalone UI with signals. Its own
+[README](examples/bookings/README.md) shows how to run both.
 
-1. `npm run tauri dev`, export `META_API_KEY` first (below).
-2. Open project on `examples/reservas`. It lands on Architecture:
-   the map draws the UI → store → service chains with evidence,
-   and Pages orders the app from its routes.
-3. Right-click a folder → Ask Muse. Ask about the code, then
-   use Propose change for the missing user registration.
-4. Review the proposal in the thread and on the X-ray, answer
-   its questions or adjust it, then Accept file by file or with
-   Accept all. Each accept checks the file's fingerprint.
+1. Export `META_API_KEY` (below), then start Ruth.
+2. Add the folder `examples/bookings` as a project. It opens on
+   Architecture; use Show flow on `BookingsPageComponent`.
+3. Right-click `frontend` → Ask Muse:
+   *"How do bookings reach the API? Walk me through it from the page
+   to the HTTP call."*
+4. Propose change:
+   *"Add user registration: a form with first name, last name, birth
+   date, email and gender (male, female, other), plus a list to edit
+   and delete users. The email cannot be changed after creation.
+   Follow the same layers as bookings."*
+5. Review the proposal on the X-ray, answer its questions or adjust
+   it, then Accept. Build with `npx ng build` in Ruth's terminal and
+   see the new feature on the map.
+
+A window at least 1600 px wide shows the whole chain next to the
+Assistant.
 
 ## Install
 
 - Node.js 18+ and npm; stable Rust and Cargo.
-- On Linux, Tauri 2 system dependencies (see the
+- On Linux, the Tauri 2 system dependencies (see the
   [official prerequisites](https://v2.tauri.app/start/prerequisites/)).
 - A Meta Model API key for the live calls.
 
@@ -50,34 +80,25 @@ Angular 18 standalone UI). Its own
 npm install
 ```
 
-Packaged app (Debian): `npm run tauri build` produces a `.deb`
-and an AppImage under `src-tauri/target/release/bundle/`.
-Install with `sudo dpkg -i` on the `.deb`, or `chmod +x` and
-run the AppImage directly.
+Packaged app (Linux): `npm run tauri build` produces a `.deb` and an
+AppImage under `src-tauri/target/release/bundle/`. Install the `.deb`
+with `sudo dpkg -i`, or `chmod +x` the AppImage and run it.
 
-## Run from source
+## Run
 
-Desktop app (compiles Rust, opens the native window):
-
-```sh
-npm run tauri dev
-```
-
-Web UI only (no native commands):
-
-```sh
-npm run dev
-```
-
-The key is read from the environment, without touching history:
+Read the key into the environment without leaving it in the shell
+history, then start Ruth from that same terminal:
 
 ```sh
 read -rsp 'META_API_KEY: ' META_API_KEY && export META_API_KEY && echo
+npm run tauri dev
 ```
 
-Opened from the system menu the app has no key and Muse will
-not work. Data lives in `~/.local/share/ide.ruth.app/`
-(`ruth.db`; debug builds use `ruth-dev.db` and start empty).
+Opened from the system menu, the app has no key and Muse will not
+work. `npm run dev` serves only the web UI, without native commands.
+
+Data lives in `~/.local/share/ide.ruth.app/` (`ruth.db`; development
+builds use `ruth-dev.db` and start empty).
 
 ## Tests
 
@@ -85,39 +106,40 @@ not work. Data lives in `~/.local/share/ide.ruth.app/`
 npm test                  # frontend (vitest)
 npx tsc --noEmit          # frontend types
 npm run build             # production web build
-cd src-tauri && cargo test --workspace   # Rust, no real network
+cd src-tauri && cargo test --workspace   # Rust, no network
 ```
 
-Automated tests never consume the Meta API; only the buttons
-above make real calls. Details and manual cases:
+Automated tests never call the Meta API. Manual cases are in
 [docs/guia-detallada.md](docs/guia-detallada.md).
 
 ## Architecture
 
-Tauri 2 desktop app: React 19 + TypeScript UI, Rust
-workspace behind serializable commands. `ruth-core` owns the
-domain (no Tauri, Serde, clock or network); `ruth-api`
-transacts validate → persist → publish; `ruth-store` keeps
-versioned SQLite with transactional migrations;
-`ruth-meta` owns the Meta contract; `ruth-code` analyzes
-TypeScript and Rust with read caps and fingerprints;
-`ruth-term` runs the integrated terminals. Zustand holds UI
-selection only. See
-[docs/arquitectura.md](docs/arquitectura.md) (authoritative),
-[docs/alcance-hackathon.md](docs/alcance-hackathon.md) (scope)
-and [docs/continuidad.md](docs/continuidad.md) (status).
+Tauri 2 desktop app: a React 19 + TypeScript UI over a Rust workspace.
+`ruth-core` owns the domain (no Tauri, Serde, clock or network);
+`ruth-api` validates, persists and publishes every change;
+`ruth-store` keeps versioned SQLite with transactional migrations;
+`ruth-meta` owns the Meta contract and validates every response;
+`ruth-code` reads files within the project with size caps and
+fingerprints; `ruth-term` runs the integrated terminals. The
+TypeScript analysis runs in a web worker. See
+[docs/arquitectura.md](docs/arquitectura.md) and
+[docs/architecture-map.md](docs/architecture-map.md).
 
 ## Limits
 
-Analysis is TypeScript-first with caps and no LSP or global
-search; maps re-run when returning to the perspective.
-Unsaved drafts live only in memory. The terminal caps at
-three sessions and inherits your environment minus `META_*`.
-Windows compiles but is unverified here.
+- Analysis is TypeScript-first, without a language server; maps
+  re-run when you return to a view.
+- A proposal writes at most 12 files; Muse reads up to 40 files per
+  proposal. Larger changes go in steps.
+- Ruth checks syntax, scope and links, but does not compile a
+  proposal before Accept: build it after accepting.
+- Unsaved drafts live only in memory. The terminal allows three
+  sessions and inherits your environment minus `META_*`.
+- Built and verified on Linux. Windows compiles but is unverified.
 
 ## Provenance
 
 Built during the event: work started in this repository on
-2026-10-26, once the organizers confirmed it could begin. An
-earlier exploration existed before it (Atelier / Ruth IDE); its
-code was not read or reused here.
+2026-10-26, once the organizers confirmed it could begin. An earlier
+exploration existed before it (Atelier / Ruth IDE); its code was not
+read or reused here.

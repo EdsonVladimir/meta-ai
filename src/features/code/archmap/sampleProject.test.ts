@@ -1,5 +1,5 @@
 // Sample project: the public room-booking demo target in
-// examples/reservas yields every link the demo needs.
+// examples/bookings yields every link the demo needs.
 import { readdirSync, readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { combineResults } from "../structure/structureMerge";
@@ -14,7 +14,7 @@ import { STRUCTURE_LIMITS } from "../structure/structureTypes";
 import type { StructureInput, StructureResult } from "../structure/structureTypes";
 
 function collectInputs(side: string): StructureInput[] {
-  const root = new URL(`../../../../examples/reservas/${side}/`, import.meta.url);
+  const root = new URL(`../../../../examples/bookings/${side}/`, import.meta.url);
   const out: StructureInput[] = [];
   const walk = (dir: URL, prefix: string): void => {
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
@@ -28,7 +28,7 @@ function collectInputs(side: string): StructureInput[] {
       } else if (entry.name.endsWith(".ts")) {
         const rel = `${prefix}${entry.name}`;
         out.push({
-          rootId: "reservas",
+          rootId: "bookings",
           rel: `${side}/${rel}`,
           content: readFileSync(new URL(entry.name, dir), "utf8"),
           hash: `sample:${side}/${rel}`,
@@ -51,21 +51,21 @@ function analyzeSample(sides = ["frontend", "backend"]): StructureResult {
 
 it("walks the demo page from its template down to the HTTP call", () => {
   const result = analyzeSample(["frontend"]);
-  const project: FlowProject = { key: "reservas", label: "reservas", result };
-  const page = result.symbols.find((s) => s.name === "ReservasPageComponent")!;
+  const project: FlowProject = { key: "bookings", label: "bookings", result };
+  const page = result.symbols.find((s) => s.name === "BookingsPageComponent")!;
   const graph = buildFlowGraph([project], {
-    projectKey: "reservas",
+    projectKey: "bookings",
     symbolId: page.id,
     member: null,
   });
-  const start = graph.nodes.find((node) => node.symbol.name === "ReservasPageComponent")!;
+  const start = graph.nodes.find((node) => node.symbol.name === "BookingsPageComponent")!;
   expect(memberSignalLines(start, TEMPLATE_MEMBER)).toEqual([
     "reads store.count",
     "reads store.loading",
-    "reads store.reservas",
+    "reads store.bookings",
   ]);
   expect(graph.nodes.map((node) => node.symbol.name)).toEqual(
-    expect.arrayContaining(["ReservaFormComponent", "ReservasStore", "ReservasService"]),
+    expect.arrayContaining(["BookingFormComponent", "BookingsStore", "BookingsService"]),
   );
   expect(graph.httpNodes.length).toBeGreaterThan(0);
   expect(graph.pending.filter((item) => item.kind === "ambiguous")).toEqual([]);
@@ -73,8 +73,8 @@ it("walks the demo page from its template down to the HTTP call", () => {
 
 it("proves the demo project routes UI through a store", () => {
   const project: FlowProject = {
-    key: "reservas",
-    label: "reservas",
+    key: "bookings",
+    label: "bookings",
     result: analyzeSample(["frontend"]),
   };
   expect(projectUsesStore([project])).toBe(true);
@@ -83,7 +83,7 @@ it("proves the demo project routes UI through a store", () => {
 it("shows the demo app's route table as a wiring card", () => {
   const table = analyzeSample(["frontend"]).symbols.find((symbol) => symbol.name === "routes");
   expect(table?.rel).toBe("frontend/src/app/app.routes.ts");
-  expect(table?.members.map((member) => member.name)).toEqual(["/reservas"]);
+  expect(table?.members.map((member) => member.name)).toEqual(["/bookings"]);
   const verdict = classifySymbol(table?.rel ?? "", {
     name: "routes",
     kind: "class",
@@ -101,27 +101,27 @@ it("orders the demo app from its routes", () => {
     ]),
   ).toEqual([
     ["App", ["AppComponent"]],
-    ["Pages", ["ReservasPageComponent"]],
-    ["Level 1", ["ReservaFormComponent"]],
+    ["Pages", ["BookingsPageComponent"]],
+    ["Level 1", ["BookingFormComponent"]],
   ]);
-  expect(composition?.columns[1].nodes[0].routes).toEqual(["reservas"]);
+  expect(composition?.columns[1].nodes[0].routes).toEqual(["bookings"]);
   expect(composition?.columns[1].nodes[0].guards).toEqual(["authGuard"]);
 });
 
 it("yields every link the demo needs", () => {
   const result = analyzeSample();
-  // Both sides define ReservasService, so lookups name their side.
+  // Both sides define BookingsService, so lookups name their side.
   const flow = (side: string, name: string) =>
     result.symbols.find((s) => s.name === name && s.rel.startsWith(`${side}/`))!.flow!;
-  expect(flow("frontend", "ReservasService").httpCalls.map((c) => c.verb).sort()).toEqual([
+  expect(flow("frontend", "BookingsService").httpCalls.map((c) => c.verb).sort()).toEqual([
     "GET",
     "POST",
   ]);
-  expect(flow("backend", "ReservasController").routes.map((r) => r.path)).toEqual([
-    "/reservas",
-    "/reservas",
+  expect(flow("backend", "BookingsController").routes.map((r) => r.path)).toEqual([
+    "/bookings",
+    "/bookings",
   ]);
-  expect(flow("frontend", "ReservasStore").signals.length).toBeGreaterThan(0);
+  expect(flow("frontend", "BookingsStore").signals.length).toBeGreaterThan(0);
   expect(result.symbols.some((s) => s.decorators?.includes("Entity"))).toBe(true);
 });
 
@@ -131,11 +131,11 @@ it("reaches the POST from a form method, not from a template", () => {
     result.symbols.find((s) => s.name === name && s.rel.startsWith(`${side}/`))!.flow!;
   const link = (facts: { calls: Array<{ member: string; method: string }> }, member: string) =>
     facts.calls.filter((c) => c.member === member).map((c) => c.method);
-  expect(link(flow("frontend", "ReservaFormComponent"), "submit")).toEqual(["add"]);
-  expect(link(flow("frontend", "ReservasStore"), "add")).toContain("create");
-  expect(flow("frontend", "ReservasService").httpCalls.map((c) => c.member)).toContain("create");
-  expect(link(flow("backend", "ReservasController"), "create")).toEqual(["create"]);
-  expect(flow("backend", "ReservasService").repositoryCalls.map((c) => c.method)).toContain("save");
+  expect(link(flow("frontend", "BookingFormComponent"), "submit")).toEqual(["add"]);
+  expect(link(flow("frontend", "BookingsStore"), "add")).toContain("create");
+  expect(flow("frontend", "BookingsService").httpCalls.map((c) => c.member)).toContain("create");
+  expect(link(flow("backend", "BookingsController"), "create")).toEqual(["create"]);
+  expect(flow("backend", "BookingsService").repositoryCalls.map((c) => c.method)).toContain("save");
 });
 
 it("draws the whole chain the video shows", () => {
@@ -145,23 +145,23 @@ it("draws the whole chain the video shows", () => {
     result: analyzeTsFiles(collectInputs(key)),
   });
   const projects = [side("frontend"), side("backend")];
-  const form = projects[0].result.symbols.find((s) => s.name === "ReservaFormComponent")!;
+  const form = projects[0].result.symbols.find((s) => s.name === "BookingFormComponent")!;
   const graph = buildFlowGraph(projects, {
     projectKey: "frontend",
     symbolId: form.id,
     member: "submit",
   });
   expect(graph.nodes.map((n) => `${n.projectKey}:${n.symbol.name}`)).toEqual([
-    "frontend:ReservaFormComponent",
-    "frontend:ReservasStore",
-    "frontend:ReservasService",
-    "backend:ReservasController",
-    "backend:ReservasService",
-    "backend:Reserva",
+    "frontend:BookingFormComponent",
+    "frontend:BookingsStore",
+    "frontend:BookingsService",
+    "backend:BookingsController",
+    "backend:BookingsService",
+    "backend:Booking",
   ]);
   expect(graph.httpNodes[0]).toMatchObject({
     verb: "POST",
-    url: "{apiUrl}reservas",
+    url: "{apiUrl}bookings",
     interceptors: ["authInterceptor"],
   });
   expect(graph.pending).toEqual([]);
@@ -184,14 +184,14 @@ it("draws a proposal across both projects before it reaches the disk", () => {
     content,
     expectedFingerprint: null,
   });
-  const storeRel = "frontend/src/app/reservas/reservas.store.ts";
+  const storeRel = "frontend/src/app/bookings/bookings.store.ts";
   const store = projects[0].result.files.find((f) => f.rel === storeRel);
   expect(store).toBeDefined();
   const original = collectInputs("frontend").find((input) => input.rel === storeRel)!;
   const overlay = buildProposalOverlay(projects, [
     proposed(
       storeRel,
-      original.content.replace("add(dto: CreateReserva): void {", "add(dto: CreateReserva): void {\n    this.loading.set(true);"),
+      original.content.replace("add(dto: CreateBooking): void {", "add(dto: CreateBooking): void {\n    this.loading.set(true);"),
       "modify",
     ),
     proposed(
@@ -201,7 +201,7 @@ it("draws a proposal across both projects before it reaches the disk", () => {
     ),
   ]);
   expect(overlay.notes).toEqual([]);
-  expect(overlay.changes.get(`r:${storeRel}:ReservasStore`)).toEqual({
+  expect(overlay.changes.get(`r:${storeRel}:BookingsStore`)).toEqual({
     change: "modified",
     members: { add: "modified" },
   });
@@ -211,7 +211,7 @@ it("draws a proposal across both projects before it reaches the disk", () => {
   expect(
     overlay.projects[0].result.symbols.some((symbol) => symbol.name === "UsuariosService"),
   ).toBe(false);
-  const form = overlay.projects[0].result.symbols.find((s) => s.name === "ReservaFormComponent")!;
+  const form = overlay.projects[0].result.symbols.find((s) => s.name === "BookingFormComponent")!;
   const graph = applyChangesToGraph(
     buildFlowGraph(overlay.projects, { projectKey: "frontend", symbolId: form.id, member: "submit" }),
     overlay,
@@ -220,7 +220,7 @@ it("draws a proposal across both projects before it reaches the disk", () => {
     change: "modified",
     memberChanges: { add: "modified" },
   });
-  expect(graph.nodes.at(-1)?.symbol.name).toBe("Reserva");
+  expect(graph.nodes.at(-1)?.symbol.name).toBe("Booking");
   expect(graph.pending).toEqual([]);
 });
 
