@@ -604,6 +604,13 @@ still holds. Commits are on `code-xray`.
   does not exist and exactly one file sent to Muse ends with it, Ruth
   records that file. None or several, and it is refused as before.
 
+- **Muse's own pick reads pages before styles.** With templates and
+  styles in their own files, CSS files took places in the 12 Muse
+  reads and the page itself was left out, so Muse could only guess
+  how a feature starts. Styles now fill only the room left, and among
+  components a page comes first, its code before its template. A
+  question in another language than the file names still finds them.
+
 **Agreed and not built yet**
 
 - **Key screen:** store the key in the system keyring, so the app can

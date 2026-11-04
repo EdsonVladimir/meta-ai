@@ -95,6 +95,13 @@ const FILE_ROLES = [
   /\.module\./i,
 ];
 
+const STYLE = /\.(css|scss|sass|less)$/i;
+const PAGE = /(page|view|screen)/i;
+
+function baseNameOf(rel: string): string {
+  return rel.slice(rel.lastIndexOf("/") + 1);
+}
+
 function wordsOf(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? [];
 }
@@ -107,19 +114,32 @@ export function pickMuseFiles(candidates: MuseFile[], message: string): MuseFile
   const words = wordsOf(message);
   const hits = (file: MuseFile): number =>
     words.filter((word) => file.rel.toLowerCase().includes(word)).length;
-  const groups: MuseFile[][] = [...FILE_ROLES.map(() => []), []];
+  // Styles explain little and come last; pages open a feature, and code
+  // comes before its template. The message's language must not matter.
+  const groups: MuseFile[][] = [...FILE_ROLES.map(() => []), [], []];
   for (const file of candidates) {
-    const role = FILE_ROLES.findIndex((pattern) => pattern.test(file.rel));
+    const role = STYLE.test(file.rel)
+      ? FILE_ROLES.length + 1
+      : FILE_ROLES.findIndex((pattern) => pattern.test(file.rel));
     groups[role === -1 ? FILE_ROLES.length : role].push(file);
   }
-  for (const group of groups) group.sort((a, b) => hits(b) - hits(a));
+  const isPage = (file: MuseFile): number => (PAGE.test(baseNameOf(file.rel)) ? 1 : 0);
+  const isMarkup = (file: MuseFile): number => (/\.html?$/i.test(file.rel) ? 1 : 0);
+  for (const group of groups) {
+    group.sort(
+      (a, b) =>
+        hits(b) - hits(a) || isPage(b) - isPage(a) || isMarkup(a) - isMarkup(b),
+    );
+  }
+  const styles = groups.pop() as MuseFile[];
   const picked: MuseFile[] = [];
   for (let turn = 0; picked.length < MUSE_MAX_FILES; turn += 1) {
     const round = groups.flatMap((group) => group.slice(turn, turn + 1));
     if (round.length === 0) break;
     picked.push(...round);
   }
-  return picked.slice(0, MUSE_MAX_FILES);
+  // Styles only fill the room the rest left.
+  return [...picked, ...styles].slice(0, MUSE_MAX_FILES);
 }
 
 /**

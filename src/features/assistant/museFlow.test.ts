@@ -91,6 +91,46 @@ describe("collectMuseFiles", () => {
 describe("pickMuseFiles", () => {
   const files = (rels: string[]) => rels.map((rel) => ({ rootId: "r", rel }));
 
+  it("reads pages and their templates before styles, whatever the language", () => {
+    const rels = [
+      "src/app/app.component.css",
+      "src/app/app.component.html",
+      "src/app/app.component.ts",
+      "src/app/app.routes.ts",
+      "src/app/bookings/booking-form.component.css",
+      "src/app/bookings/booking-form.component.html",
+      "src/app/bookings/booking-form.component.ts",
+      "src/app/bookings/booking.model.ts",
+      "src/app/bookings/bookings-page.component.css",
+      "src/app/bookings/bookings-page.component.html",
+      "src/app/bookings/bookings-page.component.ts",
+      "src/app/bookings/bookings.service.ts",
+      "src/app/bookings/bookings.store.ts",
+      "src/app/core/auth.guard.ts",
+      "src/app/core/auth.interceptor.ts",
+      "src/app/core/environment.ts",
+      "src/index.html",
+      "src/main.ts",
+      "src/styles.css",
+    ];
+    for (const message of [
+      "¿Cómo llegan las reservas a la API? Explícamelo desde la página.",
+      "How do bookings reach the API? Walk me through it from the page.",
+    ]) {
+      const picked = pickMuseFiles(files(rels), message).map((file) => file.rel);
+      expect(picked).toEqual(
+        expect.arrayContaining([
+          "src/app/bookings/bookings-page.component.ts",
+          "src/app/bookings/bookings-page.component.html",
+          "src/app/bookings/booking-form.component.ts",
+          "src/app/bookings/bookings.store.ts",
+          "src/app/bookings/bookings.service.ts",
+        ]),
+      );
+      expect(picked.filter((rel) => rel.endsWith(".css"))).toEqual([]);
+    }
+  });
+
   it("spreads roles instead of taking the first files", () => {
     const picked = pickMuseFiles(
       files([
