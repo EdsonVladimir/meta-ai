@@ -6,23 +6,8 @@ import { BookingsStore } from "./bookings.store";
   selector: "app-booking-form",
   standalone: true,
   imports: [FormsModule],
-  template: `
-    <form (ngSubmit)="submit()">
-      <label>
-        Room
-        <input name="room" [(ngModel)]="room" required />
-      </label>
-      <label>
-        Date
-        <input name="date" type="date" [(ngModel)]="date" required />
-      </label>
-      <label>
-        Guests
-        <input name="guests" type="number" [(ngModel)]="guests" min="1" required />
-      </label>
-      <button type="submit">Book</button>
-    </form>
-  `,
+  templateUrl: "./booking-form.component.html",
+  styleUrl: "./booking-form.component.css",
 })
 export class BookingFormComponent {
   private readonly store = inject(BookingsStore);

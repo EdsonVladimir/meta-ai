@@ -2,6 +2,7 @@
 // examples/bookings yields every link the demo needs.
 import { readdirSync, readFileSync } from "node:fs";
 import { expect, it } from "vitest";
+import { attachComponentAssets } from "../structure/componentAssets";
 import { combineResults } from "../structure/structureMerge";
 import { analyzeTsFiles } from "../structure/tsAnalyze";
 import { classifySymbol } from "./archLayers";
@@ -40,17 +41,24 @@ function collectInputs(side: string): StructureInput[] {
   return out;
 }
 
-function analyzeSample(sides = ["frontend", "backend"]): StructureResult {
+/** Templates and styles live in their own files, read as Ruth reads them. */
+function readSample(_rootId: string, rel: string): Promise<{ text: string }> {
+  const url = new URL(`../../../../examples/bookings/${rel}`, import.meta.url);
+  return Promise.resolve({ text: readFileSync(url, "utf8") });
+}
+
+async function analyzeSample(sides = ["frontend", "backend"]): Promise<StructureResult> {
   const inputs = sides.flatMap(collectInputs);
   const parts: StructureResult[] = [];
   for (let i = 0; i < inputs.length; i += STRUCTURE_LIMITS.maxFiles) {
-    parts.push(analyzeTsFiles(inputs.slice(i, i + STRUCTURE_LIMITS.maxFiles)));
+    const part = analyzeTsFiles(inputs.slice(i, i + STRUCTURE_LIMITS.maxFiles));
+    parts.push(await attachComponentAssets(part, readSample));
   }
   return combineResults(parts);
 }
 
-it("walks the demo page from its template down to the HTTP call", () => {
-  const result = analyzeSample(["frontend"]);
+it("walks the demo page from its template down to the HTTP call", async () => {
+  const result = await analyzeSample(["frontend"]);
   const project: FlowProject = { key: "bookings", label: "bookings", result };
   const page = result.symbols.find((s) => s.name === "BookingsPageComponent")!;
   const graph = buildFlowGraph([project], {
@@ -71,17 +79,17 @@ it("walks the demo page from its template down to the HTTP call", () => {
   expect(graph.pending.filter((item) => item.kind === "ambiguous")).toEqual([]);
 });
 
-it("proves the demo project routes UI through a store", () => {
+it("proves the demo project routes UI through a store", async () => {
   const project: FlowProject = {
     key: "bookings",
     label: "bookings",
-    result: analyzeSample(["frontend"]),
+    result: await analyzeSample(["frontend"]),
   };
   expect(projectUsesStore([project])).toBe(true);
 });
 
-it("shows the demo app's route table as a wiring card", () => {
-  const table = analyzeSample(["frontend"]).symbols.find((symbol) => symbol.name === "routes");
+it("shows the demo app's route table as a wiring card", async () => {
+  const table = (await analyzeSample(["frontend"])).symbols.find((symbol) => symbol.name === "routes");
   expect(table?.rel).toBe("frontend/src/app/app.routes.ts");
   expect(table?.members.map((member) => member.name)).toEqual(["/bookings"]);
   const verdict = classifySymbol(table?.rel ?? "", {
@@ -92,8 +100,8 @@ it("shows the demo app's route table as a wiring card", () => {
   expect(verdict.layer).toBe("composition");
 });
 
-it("orders the demo app from its routes", () => {
-  const composition = buildComposition(analyzeSample(["frontend"]));
+it("orders the demo app from its routes", async () => {
+  const composition = buildComposition(await analyzeSample(["frontend"]));
   expect(
     composition?.columns.map((column) => [
       column.title,
@@ -108,8 +116,8 @@ it("orders the demo app from its routes", () => {
   expect(composition?.columns[1].nodes[0].guards).toEqual(["authGuard"]);
 });
 
-it("yields every link the demo needs", () => {
-  const result = analyzeSample();
+it("yields every link the demo needs", async () => {
+  const result = await analyzeSample();
   // Both sides define BookingsService, so lookups name their side.
   const flow = (side: string, name: string) =>
     result.symbols.find((s) => s.name === name && s.rel.startsWith(`${side}/`))!.flow!;
@@ -125,8 +133,8 @@ it("yields every link the demo needs", () => {
   expect(result.symbols.some((s) => s.decorators?.includes("Entity"))).toBe(true);
 });
 
-it("reaches the POST from a form method, not from a template", () => {
-  const result = analyzeSample();
+it("reaches the POST from a form method, not from a template", async () => {
+  const result = await analyzeSample();
   const flow = (side: string, name: string) =>
     result.symbols.find((s) => s.name === name && s.rel.startsWith(`${side}/`))!.flow!;
   const link = (facts: { calls: Array<{ member: string; method: string }> }, member: string) =>

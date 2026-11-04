@@ -1,0 +1,14 @@
+<section class="bookings">
+  <h1>Room bookings</h1>
+  <p class="bookings-count">{{ store.count() }} bookings</p>
+  @if (store.loading()) {
+    <p>Loading…</p>
+  } @else {
+    <ul class="bookings-list">
+      @for (booking of store.bookings(); track booking.id) {
+        <li>{{ booking.room }} · {{ booking.date }} · {{ booking.guests }} guests</li>
+      }
+    </ul>
+  }
+  <app-booking-form />
+</section>

@@ -1,0 +1,15 @@
+<form class="booking-form" (ngSubmit)="submit()">
+  <label>
+    Room
+    <input name="room" [(ngModel)]="room" required />
+  </label>
+  <label>
+    Date
+    <input name="date" type="date" [(ngModel)]="date" required />
+  </label>
+  <label>
+    Guests
+    <input name="guests" type="number" [(ngModel)]="guests" min="1" required />
+  </label>
+  <button type="submit">Book</button>
+</form>
